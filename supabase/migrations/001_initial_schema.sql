@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE,
   name          TEXT NOT NULL,
   role          TEXT DEFAULT 'kasir',        -- owner / admin / kasir / viewer
+  password_hash TEXT,
   session_token TEXT,
   is_active     BOOLEAN DEFAULT true,
   created_at    TIMESTAMPTZ DEFAULT NOW()
