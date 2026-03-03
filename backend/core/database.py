@@ -18,3 +18,6 @@ def get_supabase() -> Client:
     return _supabase_client
 
 
+
+
+

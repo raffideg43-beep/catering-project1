@@ -8,6 +8,7 @@ from core.config import settings
 from core.database import get_supabase
 from core.dependencies import get_current_user
 from core.security import create_access_token, get_password_hash, verify_password
+from middleware.rate_limiter import login_limiter
 from models.user import LoginRequest, TokenResponse, UserCreate, UserInDB, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -122,7 +123,7 @@ def register_tenant(body: Dict[str, Any]):
     return _build_success(token_response.dict())
 
 
-@router.post("/login", response_model=Dict[str, Any])
+@router.post("/login", response_model=Dict[str, Any], dependencies=[Depends(login_limiter)])
 def login(body: LoginRequest):
     supabase = get_supabase()
     result = supabase.table("users").select("*").eq("email", body.email).execute()
@@ -263,5 +264,8 @@ def get_me(current_user: UserInDB = Depends(get_current_user)):
             "tenant": tenant,
         }
     )
+
+
+
 
 
