@@ -46,7 +46,7 @@ class RateLimiter:
         self.limit = limit
         self.window = window
 
-    async def __call__(
+    def __call__(
         self,
         request: Request,
         current_user: UserInDB = Depends(get_current_user),
