@@ -11,6 +11,8 @@ from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    MessageHandler,
+    filters,
 )
 
 from core.config import settings
@@ -23,6 +25,13 @@ from handlers.auth_handler import (
     start,
 )
 from handlers.menu_handler import build_menu_conversation
+from handlers.nota_handler import (
+    cancel_nota,
+    confirm_nota,
+    edit_item,
+    edit_nota,
+    handle_photo,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -34,25 +43,33 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Initialize dan start bot."""
-    # Create bot application
     app: Application = Application.builder().token(settings.telegram_bot_token).build()
 
-    # ─── Daftarkan ConversationHandlers (HARUS sebelum CommandHandler biasa) ───
+    # ─── ConversationHandlers HARUS sebelum handler biasa ───────────
     app.add_handler(build_menu_conversation())
 
-    # ─── Daftarkan command handlers ───
+    # ─── Foto nota — MessageHandler ──────────────────────────────────
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    # ─── Command handlers ─────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("settings", settings_handler))
 
-    # ─── Daftarkan callback handlers ───
-    app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
-    app.add_handler(CallbackQueryHandler(buka_web, pattern="^buka_web$"))
+    # ─── Callback handlers: nota (confirm / edit / cancel / edit_item) ─
+    app.add_handler(CallbackQueryHandler(confirm_nota, pattern=r"^confirm_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(cancel_nota,  pattern=r"^cancel_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(edit_item,    pattern=r"^edit_item_"))
 
-    # ─── Error handler global ───
+    # ─── Callback handlers: auth / navigation ────────────────────────
+    app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
+    app.add_handler(CallbackQueryHandler(buka_web,       pattern="^buka_web$"))
+
+    # ─── Error handler global ─────────────────────────────────────────
     app.add_error_handler(error_handler)
 
-    # ─── Setup bot commands ───
+    # ─── Bot commands menu ────────────────────────────────────────────
     bot_commands = [
         BotCommand("start",    "Login atau lihat menu utama"),
         BotCommand("menu",     "📅 Input menu mingguan Senin–Sabtu"),
@@ -62,7 +79,6 @@ async def main() -> None:
     ]
     await app.bot.set_my_commands(bot_commands)
 
-    # ─── Start polling ───
     logger.info("Bot starting... Press Ctrl+C to stop")
     async with app:
         await app.run_polling(allowed_updates=[])  # type: ignore[func-returns-value]
