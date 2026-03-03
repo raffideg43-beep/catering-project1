@@ -1,23 +1,21 @@
 """
 backend/workers/ocr_worker.py
-RQ Worker untuk async OCR nota foto — Modul 7
+OCR Worker untuk nota foto — Modul 7
 
-PENTING:
-- Fungsi ini SYNC (bukan async) — RQ tidak support async native
-- Dipanggil oleh rq worker process, bukan FastAPI
-- Semua service dipanggil secara sync
+Dijalankan via FastAPI BackgroundTasks (non-blocking, thread pool).
+Tidak menggunakan RQ/Redis karena rq tidak kompatibel Windows (fork()).
 
-Jalankan worker:
-  rq worker ocr --url redis://localhost:6379
+Untuk production Linux, fungsi process_ocr_job bisa dijalankan via RQ:
+  from rq import Queue
+  Queue("ocr", connection=redis_conn).enqueue(process_ocr_job, ...)
+
+Jalankan: sudah terintegrasi di FastAPI, tidak perlu daemon terpisah.
 """
 
 import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional
-
-from redis import Redis
-from rq import Queue, Retry
 
 from core.config import settings
 from core.database import get_supabase
@@ -27,11 +25,6 @@ from services.ocr_service import OCRService
 from services.validation_service import ValidationService
 
 logger = logging.getLogger(__name__)
-
-# ─── Redis + RQ setup ─────────────────────────────────────────────────────────
-
-redis_conn = Redis.from_url(settings.redis_url)
-ocr_queue = Queue("ocr", connection=redis_conn, default_timeout=120)
 
 
 # ─── Helper: konversi nilai ke Decimal aman ───────────────────────────────────
@@ -199,25 +192,25 @@ def process_ocr_job(
     logger.info(f"OCR job selesai: trx={trx_id}, {len(items_ocr)} items")
 
 
-# ─── Helper: enqueue job dari router ─────────────────────────────────────────
+# ─── Helper untuk FastAPI BackgroundTasks ─────────────────────────────────────
 
-def enqueue_ocr_job(
+def run_ocr_in_background(
     trx_id: str,
     photo_url: str,
     tenant_id: str,
     telegram_id: int,
-) -> str:
+) -> None:
     """
-    Panggil ini dari FastAPI router untuk push job ke Redis queue.
-    Return job ID.
+    Entry-point untuk FastAPI BackgroundTasks.
+    Dipanggil di thread pool (non-blocking terhadap request).
+    Langsung memanggil process_ocr_job sync.
     """
-    job = ocr_queue.enqueue(
-        process_ocr_job,
-        trx_id,
-        photo_url,
-        tenant_id,
-        telegram_id,
-        retry=Retry(max=3, interval=[10, 30, 60]),
-    )
-    logger.info(f"OCR job enqueued: job_id={job.id}, trx={trx_id}")
-    return job.id
+    try:
+        process_ocr_job(
+            trx_id=trx_id,
+            photo_url=photo_url,
+            tenant_id=tenant_id,
+            telegram_id=telegram_id,
+        )
+    except Exception as e:
+        logger.error(f"Background OCR error [{trx_id}]: {e}")

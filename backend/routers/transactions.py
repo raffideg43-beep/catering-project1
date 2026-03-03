@@ -23,6 +23,7 @@ from fastapi import (
     HTTPException,
     Query,
     UploadFile,
+    BackgroundTasks,
     status,
 )
 
@@ -34,7 +35,7 @@ from models.transaction import (
     TransactionUpdate,
 )
 from models.user import UserInDB
-from workers.ocr_worker import enqueue_ocr_job
+from workers.ocr_worker import run_ocr_in_background
 
 router = APIRouter(tags=["transactions"])
 
@@ -51,6 +52,7 @@ ALLOWED_MIME = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
     dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
 )
 async def upload_photo(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -120,24 +122,15 @@ async def upload_photo(
         )
     trx_id: str = data[0]["id"]
 
-    # ─── Push OCR job ke Redis queue ─────────────────────────────────
+    # ─── Jadwalkan OCR di background thread (non-blocking) ───────────
     telegram_id: int = current_user.telegram_id or 0
-    try:
-        enqueue_ocr_job(
-            trx_id=trx_id,
-            photo_url=photo_url,
-            tenant_id=current_user.tenant_id,
-            telegram_id=telegram_id,
-        )
-    except Exception as e:
-        # Queue unavailable — update status failed agar user tahu
-        supabase.table("transactions").update({"status": "failed"}).eq(
-            "id", trx_id
-        ).execute()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"OCR queue tidak tersedia: {e}",
-        )
+    background_tasks.add_task(
+        run_ocr_in_background,
+        trx_id,
+        photo_url,
+        current_user.tenant_id,
+        telegram_id,
+    )
 
     return {
         "success": True,
