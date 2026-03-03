@@ -9,7 +9,7 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from core.config import settings
+from core.config import settings  # type: ignore[assignment]
 from keyboards.main_menu import (
     get_login_menu,
     get_main_menu,
@@ -37,10 +37,11 @@ def require_auth(func: Callable) -> Callable:
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
         if not is_authenticated(context):
-            await update.message.reply_text(
-                "❌ Silakan /start dulu untuk login.",
-                reply_markup=get_login_menu(),
-            )
+            if update.message:
+                await update.message.reply_text(
+                    "❌ Silakan /start dulu untuk login.",
+                    reply_markup=get_login_menu(),
+                )
             return ConversationHandler.END
         return await func(update, context)
 
@@ -53,7 +54,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     Jika dengan argumen (kode): hubungkan akun langsung.
     Jika tanpa argumen: tampilkan pesan sambutan.
     """
-    api_client = get_api_client(settings.backend_url)
+    if not update.message:
+        return
+
+    api_client = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
 
     # Cek apakah sudah authenticated
     if is_authenticated(context):
@@ -76,7 +80,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await clear_session(context)
 
     # Cek apakah ada argumen (kode linking)
-    if context.args and len(context.args) > 0:
+    if context.args and len(context.args) > 0 and update.effective_user:
         linking_code = context.args[0]
         try:
             response = await api_client.post(
@@ -110,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.reply_text(
                     f"{format_error(error_msg)}\n\n"
                     f"Minta kode baru di:\n"
-                    f"{settings.web_url}/settings/telegram",
+                    f"{settings.web_url}/settings/telegram",  # type: ignore[attr-defined]
                 )
                 return
         except Exception as e:
@@ -118,7 +122,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(
                 f"{format_error(str(e))}\n\n"
                 f"Minta kode baru di:\n"
-                f"{settings.web_url}/settings/telegram",
+                f"{settings.web_url}/settings/telegram",  # type: ignore[attr-defined]
             )
             return
 
@@ -127,7 +131,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "👋 Halo! Saya asisten SPPG Anda.\n\n"
         "Untuk mulai, hubungkan akun terlebih dahulu.\n\n"
         "❓ Belum punya akun?\n"
-        f"📝 Daftar di: {settings.web_url}/register\n\n"
+        f"📝 Daftar di: {settings.web_url}/register\n\n"  # type: ignore[attr-defined]
         "✔️ Sudah punya akun?\n"
         "Klik tombol di bawah atau ikuti instruksi.",
         reply_markup=get_login_menu(),
@@ -140,12 +144,14 @@ async def hubungkan_akun(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Tampilkan instruksi step-by-step.
     """
     query = update.callback_query
+    if not query:
+        return
     await query.answer()
 
     await query.edit_message_text(
         "🔗 Cara Hubungkan Akun:\n\n"
         "1️⃣ Buka browser dan masuk ke:\n"
-        f"   {settings.web_url}\n\n"
+        f"   {settings.web_url}\n\n"  # type: ignore[attr-defined]
         "2️⃣ Login atau daftar akun baru\n\n"
         "3️⃣ Pergi ke: Pengaturan → Telegram\n\n"
         "4️⃣ Klik 'Generate Kode Telegram'\n\n"
@@ -161,13 +167,16 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler untuk /logout command.
     """
+    if not update.message:
+        return
+
     if not is_authenticated(context):
         await update.message.reply_text(
             "❌ Kamu belum login. Ketik /start untuk login.",
         )
         return
 
-    api_client = get_api_client(settings.backend_url)
+    api_client = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
     token = get_token(context)
 
     try:
@@ -189,7 +198,10 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     Handler untuk /settings command.
     Tampilkan informasi akun user.
     """
-    api_client = get_api_client(settings.backend_url)
+    if not update.message:
+        return
+
+    api_client = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
     token = get_token(context)
 
     try:
@@ -205,7 +217,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"🏢 SPPG: {tenant.get('name', 'N/A')}\n"
             f"🔑 Role: {user.get('role', 'N/A')}\n\n"
             "Untuk setup lengkap (sekolah, supplier, BOM):\n"
-            f"🌐 {settings.web_url}/settings"
+            f"🌐 {settings.web_url}/settings"  # type: ignore[attr-defined]
         )
 
         await update.message.reply_text(
@@ -224,23 +236,25 @@ async def buka_web(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     Handler callback untuk tombol 'Buka Dashboard Web'.
     """
     query = update.callback_query
+    if not query:
+        return
     await query.answer()
 
     await query.edit_message_text(
         "🌐 Buka dashboard di browser:\n\n"
-        f"👉 {settings.web_url}\n\n"
+        f"👉 {settings.web_url}\n\n"  # type: ignore[attr-defined]
         "💡 Simpan link ini di bookmark\n"
         "untuk akses cepat berikutnya.",
     )
 
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler global untuk error.
     """
     logger.error(f"Exception while handling an update: {context.error}")
 
-    if update and update.effective_message:
+    if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text(
                 f"{format_error('Terjadi kesalahan.')}\n\n"

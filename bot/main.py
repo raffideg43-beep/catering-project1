@@ -3,6 +3,7 @@ Telegram Bot main entry point.
 Handles initialization, handler registration, dan polling.
 """
 
+import asyncio
 import logging
 
 from telegram import BotCommand
@@ -30,10 +31,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def main():
+async def main() -> None:
     """Initialize dan start bot."""
     # Create bot application
-    app = Application.builder().token(settings.telegram_bot_token).build()
+    app: Application = Application.builder().token(settings.telegram_bot_token).build()
 
     # ─── Daftarkan command handlers ───
     app.add_handler(CommandHandler("start", start))
@@ -57,12 +58,11 @@ async def main():
 
     # ─── Start polling ───
     logger.info("Bot starting... Press Ctrl+C to stop")
-    await app.run_polling(allowed_updates=[])
+    async with app:
+        await app.run_polling(allowed_updates=[])  # type: ignore[func-returns-value]
 
 
 if __name__ == "__main__":
-    import asyncio
-
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

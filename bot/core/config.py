@@ -18,4 +18,4 @@ def get_settings() -> BotSettings:
     return BotSettings()  # type: ignore[call-arg]
 
 
-settings = get_settings()
+settings: BotSettings = get_settings()
