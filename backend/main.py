@@ -7,6 +7,12 @@ from core.config import settings
 from core.dependencies import get_current_user, require_role
 from models.user import UserInDB
 from routers import auth as auth_router
+from routers import tenants as tenants_router
+from routers import schools as schools_router
+from routers import suppliers as suppliers_router
+from routers import products as products_router
+from routers import recipes as recipes_router
+from routers import mbg_settings as mbg_settings_router
 
 app = FastAPI(title="MBG Catering Backend", version="1.0.0")
 
@@ -69,6 +75,12 @@ def test_role_kasir(current_user: UserInDB = Depends(get_current_user)):
 # ─── End of test endpoints ───
 
 app.include_router(auth_router.router)
+app.include_router(tenants_router.router, prefix="/tenants")
+app.include_router(schools_router.router, prefix="/schools")
+app.include_router(suppliers_router.router, prefix="/suppliers")
+app.include_router(products_router.router, prefix="/products")
+app.include_router(recipes_router.router, prefix="/recipes")
+app.include_router(mbg_settings_router.router, prefix="/mbg")
 
 
 
