@@ -1,38 +1,44 @@
+import os
+from pathlib import Path
 from functools import lru_cache
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve path .env secara absolut dari lokasi config.py ini
+# config.py ada di backend/core/ → naik 1 level ke backend/
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
-    # Supabase
-    supabase_url: str
-    supabase_service_key: str
+    # --- Supabase ---
+    supabase_url: str = ""
+    supabase_service_key: str = ""
     supabase_anon_key: str | None = None
 
-    # Auth / JWT
-    secret_key: str
+    # --- Auth / JWT ---
+    secret_key: str = "dev-secret-key-ganti-di-production"
     access_token_expire_minutes: int = 1440
     algorithm: str = "HS256"
 
-    # Telegram
+    # --- Telegram ---
     telegram_bot_token: str | None = None
 
-    # AI
+    # --- AI ---
     gemini_api_key: str | None = None
 
-    # Redis
-    redis_url: str
+    # --- Redis ---
+    redis_url: str = "redis://localhost:6379"
 
-    # App
+    # --- App ---
     app_env: str = "development"
-    backend_url: str
-    web_url: str
+    backend_url: str = "http://localhost:8000"
+    web_url: str = "http://localhost:3000"
 
-    # Rate limiting
+    # --- Rate limiting ---
     photo_rate_limit_per_user: int = 10
     photo_rate_limit_window_seconds: int = 60
 
-    # MBG settings (defaults diambil dari MASTER_PLAN, bisa dioverride ENV)
+    # --- MBG settings (sesuai MASTER_PLAN v1.7) ---
     mbg_price_per_portion: int = 15000
     mbg_pph22_rate: float = 0.015
     mbg_ppn_rate: float = 0.11
@@ -40,28 +46,21 @@ class Settings(BaseSettings):
     mbg_labor_allocation: float = 0.15
     mbg_ops_allocation: float = 0.05
 
-    # OCR / Worker
+    # --- OCR / Worker ---
     ocr_worker_count: int = 2
     ocr_job_timeout: int = 120
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        # Path absolut — tidak bergantung dari mana uvicorn dijalankan
+        env_file=str(ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+    return Settings()
 
 
 settings = get_settings()
-
-
-
-
-
-
-
-
-
-
-
-

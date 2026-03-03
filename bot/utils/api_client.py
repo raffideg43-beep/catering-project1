@@ -120,6 +120,34 @@ class APIClient:
             raise Exception(f"Request error: {str(e)}")
 
 
+    async def delete(
+        self,
+        endpoint: str,
+        token: str | None = None,
+    ) -> dict:
+        """DELETE request ke backend."""
+        url = f"{self.base_url}{endpoint}"
+        headers = self._build_headers(token)
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(url, headers=headers)
+                response.raise_for_status()
+                return response.json()
+        except httpx.TimeoutException:
+            raise Exception("Request timeout — backend tidak merespons")
+        except httpx.HTTPStatusError as e:
+            error_msg = "Unknown error"
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get("error", error_data.get("detail", str(e)))
+            except Exception:
+                error_msg = str(e)
+            raise Exception(f"Backend error: {error_msg}")
+        except Exception as e:
+            raise Exception(f"Request error: {str(e)}")
+
+
 # Singleton instance
 def get_api_client(base_url: str) -> APIClient:
     """Factory untuk membuat API client."""

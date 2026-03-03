@@ -22,6 +22,7 @@ from handlers.auth_handler import (
     settings as settings_handler,
     start,
 )
+from handlers.menu_handler import build_menu_conversation
 
 # Setup logging
 logging.basicConfig(
@@ -35,6 +36,9 @@ async def main() -> None:
     """Initialize dan start bot."""
     # Create bot application
     app: Application = Application.builder().token(settings.telegram_bot_token).build()
+
+    # ─── Daftarkan ConversationHandlers (HARUS sebelum CommandHandler biasa) ───
+    app.add_handler(build_menu_conversation())
 
     # ─── Daftarkan command handlers ───
     app.add_handler(CommandHandler("start", start))
@@ -50,9 +54,11 @@ async def main() -> None:
 
     # ─── Setup bot commands ───
     bot_commands = [
-        BotCommand("start", "Login atau lihat menu utama"),
+        BotCommand("start",    "Login atau lihat menu utama"),
+        BotCommand("menu",     "📅 Input menu mingguan Senin–Sabtu"),
         BotCommand("settings", "Lihat pengaturan akun"),
-        BotCommand("logout", "Logout akun"),
+        BotCommand("logout",   "Logout akun"),
+        BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),
     ]
     await app.bot.set_my_commands(bot_commands)
 
