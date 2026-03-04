@@ -64,3 +64,10 @@ export async function apiDelete(endpoint: string) {
   const response = await client.delete(endpoint);
   return response.data;
 }
+
+export async function apiPatch(endpoint: string, data?: any) {
+  const client = getApiClient();
+  const response = await client.patch(endpoint, data);
+  return response.data;
+}
+

@@ -387,24 +387,41 @@ def get_stock_report(
 )
 def get_receivables_report(
     status: str = Query(default="unpaid"),
+    month: Optional[int] = Query(default=None),
+    year: Optional[int] = Query(default=None),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Piutang ke pemerintah (MBG)."""
+    """Piutang ke pemerintah. Filter opsional by status / month / year."""
     supabase = get_supabase()
     tid = current_user.tenant_id
     today = date.today()
 
     q = (
         supabase.table("receivables")
-        .select("id, debtor_name, amount, due_date, status")
+        .select("id, debtor_name, amount, due_date, status, created_at")
         .eq("tenant_id", tid)
     )
     if status != "all":
         q = q.eq("status", status)
+    if month and year:
+        first = date(year, month, 1)
+        last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
+        q = q.gte("created_at", first.isoformat()).lte("created_at", last.isoformat())
 
     resp = q.order("due_date").execute()
     rows = getattr(resp, "data", None) or []
-    total = sum(_d(r.get("amount")) for r in rows)
+
+    total_all     = sum(_d(r.get("amount")) for r in rows)
+    total_paid    = sum(_d(r.get("amount")) for r in rows if r.get("status") == "paid")
+    total_unpaid  = sum(_d(r.get("amount")) for r in rows if r.get("status") != "paid")
+    total_overdue_sum = Decimal("0")
+    for r in rows:
+        if r.get("status") != "paid" and r.get("due_date"):
+            try:
+                if (today - date.fromisoformat(r["due_date"])).days > 0:
+                    total_overdue_sum += _d(r.get("amount"))
+            except Exception:
+                pass
 
     receivables = []
     for r in rows:
@@ -422,6 +439,7 @@ def get_receivables_report(
             "amount": str(_d(r.get("amount"))),
             "pph22_note": "Belum dihitung",
             "due_date": due,
+            "created_at": r.get("created_at", "")[:10],
             "status": r.get("status"),
             "days_overdue": days_overdue,
         })
@@ -429,11 +447,15 @@ def get_receivables_report(
     return {
         "success": True,
         "data": {
-            "total_outstanding": str(total),
+            "total_outstanding": str(total_unpaid),
+            "total_all": str(total_all),
+            "total_paid": str(total_paid),
+            "total_overdue": str(total_overdue_sum),
             "count": len(receivables),
             "receivables": receivables,
         },
     }
+
 
 
 # ─── GET /reports/payables ────────────────────────────────────────────────────
@@ -445,24 +467,44 @@ def get_receivables_report(
 )
 def get_payables_report(
     status: str = Query(default="unpaid"),
+    month: Optional[int] = Query(default=None),
+    year: Optional[int] = Query(default=None),
+    supplier: Optional[str] = Query(default=None),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Hutang ke supplier."""
+    """Hutang ke supplier. Filter by status / month / year / supplier."""
     supabase = get_supabase()
     tid = current_user.tenant_id
     today = date.today()
 
     q = (
         supabase.table("payables")
-        .select("id, supplier_name, amount, pph22_amount, due_date, status")
+        .select("id, supplier_name, amount, pph22_amount, ppn_amount, due_date, status, created_at")
         .eq("tenant_id", tid)
     )
     if status != "all":
         q = q.eq("status", status)
+    if supplier:
+        q = q.ilike("supplier_name", f"%{supplier}%")
+    if month and year:
+        first = date(year, month, 1)
+        last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
+        q = q.gte("created_at", first.isoformat()).lte("created_at", last.isoformat())
 
     resp = q.order("due_date").execute()
     rows = getattr(resp, "data", None) or []
-    total = sum(_d(r.get("amount")) for r in rows if r.get("status") == "unpaid")
+
+    total_all     = sum(_d(r.get("amount")) for r in rows)
+    total_paid    = sum(_d(r.get("amount")) for r in rows if r.get("status") == "paid")
+    total_unpaid  = sum(_d(r.get("amount")) for r in rows if r.get("status") != "paid")
+    total_overdue_sum = Decimal("0")
+    for r in rows:
+        if r.get("status") != "paid" and r.get("due_date"):
+            try:
+                if (today - date.fromisoformat(r["due_date"])).days > 0:
+                    total_overdue_sum += _d(r.get("amount"))
+            except Exception:
+                pass
 
     payables = []
     for r in rows:
@@ -474,12 +516,18 @@ def get_payables_report(
                 days_overdue = max(0, diff)
             except Exception:
                 pass
+        amount = _d(r.get("amount"))
+        pph22  = _d(r.get("pph22_amount"))
+        ppn    = _d(r.get("ppn_amount"))
         payables.append({
             "id": r.get("id"),
             "supplier_name": r.get("supplier_name"),
-            "amount": str(_d(r.get("amount"))),
-            "pph22_amount": str(_d(r.get("pph22_amount"))),
+            "amount": str(amount),
+            "pph22_amount": str(pph22),
+            "ppn_amount": str(ppn),
+            "total_bayar": str(amount + ppn - pph22),
             "due_date": due,
+            "created_at": r.get("created_at", "")[:10],
             "status": r.get("status"),
             "days_overdue": days_overdue,
         })
@@ -487,7 +535,10 @@ def get_payables_report(
     return {
         "success": True,
         "data": {
-            "total_outstanding": str(total),
+            "total_outstanding": str(total_unpaid),
+            "total_all": str(total_all),
+            "total_paid": str(total_paid),
+            "total_overdue": str(total_overdue_sum),
             "count": len(payables),
             "payables": payables,
         },

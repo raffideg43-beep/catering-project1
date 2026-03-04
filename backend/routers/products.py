@@ -261,3 +261,96 @@ def adjust_stock(
         ).execute()
 
     return {"success": True, "data": {"new_stock_qty": float(new_qty)}}
+
+
+# ─── GET /products/{product_id}/history ──────────────────────────────────────
+
+@router.get("/{product_id}/history", response_model=Dict[str, Any])
+def get_product_history(
+    product_id: str,
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Riwayat perubahan stok suatu produk.
+    Hitung running_balance dari oldest ke newest.
+    """
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+
+    # Cek produk ada + filter tenant
+    prod_resp = (
+        supabase.table("products")
+        .select("id, name, unit, stock_qty")
+        .eq("id", product_id)
+        .eq("tenant_id", tid)
+        .single()
+        .execute()
+    )
+    product = getattr(prod_resp, "data", None)
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+
+    # Ambil semua history (untuk hitung running balance), sorted ASC
+    hist_resp = (
+        supabase.table("stock_history")
+        .select("id, change_qty, balance_after, reason, notes, created_at")
+        .eq("product_id", product_id)
+        .eq("tenant_id", tid)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    all_rows = getattr(hist_resp, "data", None) or []
+    total = len(all_rows)
+
+    # Paginated slice
+    paged = all_rows[offset: offset + limit]
+
+    # Running balance: jika ada balance_after pakai itu, jika tidak hitung manual
+    running = Decimal("0")
+    if all_rows:
+        try:
+            # Seed dari baris paling awal
+            running = Decimal(str(all_rows[0].get("balance_after") or 0)) - Decimal(
+                str(all_rows[0].get("change_qty") or 0)
+            )
+        except Exception:
+            running = Decimal("0")
+
+    # Rebuild running balance for all_rows up to paged range
+    balance_map: dict = {}
+    r = Decimal("0")
+    for row in all_rows:
+        try:
+            ba = row.get("balance_after")
+            if ba is not None:
+                r = Decimal(str(ba))
+            else:
+                r += Decimal(str(row.get("change_qty") or 0))
+        except Exception:
+            pass
+        balance_map[row["id"]] = r
+
+    history = [
+        {
+            "id": row.get("id"),
+            "change_qty": str(row.get("change_qty", 0)),
+            "balance_after": str(row.get("balance_after") or balance_map.get(row["id"], 0)),
+            "running_balance": str(balance_map.get(row["id"], 0)),
+            "reason": row.get("reason"),
+            "notes": row.get("notes"),
+            "created_at": row.get("created_at"),
+        }
+        for row in paged
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "product": product,
+            "history": history,
+            "total": total,
+        },
+    }
+
