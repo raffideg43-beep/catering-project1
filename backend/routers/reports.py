@@ -492,3 +492,101 @@ def get_payables_report(
             "payables": payables,
         },
     }
+
+
+# ─── GET /reports/excel/download ──────────────────────────────────────────────
+
+@router.get(
+    "/excel/download",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+async def download_excel(
+    year: Optional[int] = Query(default=None),
+    month: Optional[int] = Query(default=None),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Cek status excel_files:
+    - ready              → return file_url
+    - pending_regenerate → generate sync → return file_url
+    - not_generated      → generate sync → return file_url
+    """
+    import asyncio
+    from services.export_service import ExportService
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+    period_key = f"{y:04d}-{m:02d}"
+
+    excel_resp = (
+        supabase.table("excel_files")
+        .select("status, file_url")
+        .eq("tenant_id", tid)
+        .eq("period", period_key)
+        .limit(1)
+        .execute()
+    )
+    excel_rows = getattr(excel_resp, "data", None) or []
+    excel_row = excel_rows[0] if excel_rows else {}
+    status = excel_row.get("status", "not_generated")
+    file_url = excel_row.get("file_url")
+
+    if status == "ready" and file_url:
+        return {"success": True, "data": {"file_url": file_url, "status": "ready"}}
+
+    # Generate (sync — user menunggu)
+    svc = ExportService()
+    file_url = await svc.regenerate_monthly_excel(tid, y, m, supabase)
+
+    if not file_url:
+        raise HTTPException(500, detail="Gagal generate Excel. Cek server logs.")
+
+    from datetime import datetime, timezone
+    return {
+        "success": True,
+        "data": {
+            "file_url": file_url,
+            "status": "ready",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    }
+
+
+# ─── POST /reports/excel/regenerate ──────────────────────────────────────────
+
+@router.post(
+    "/excel/regenerate",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+async def regenerate_excel(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Generate ulang Excel bulan ini secara sync (user nunggu)."""
+    from datetime import datetime, timezone
+    from services.export_service import ExportService
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+
+    svc = ExportService()
+    file_url = await svc.regenerate_monthly_excel(tid, y, m, supabase)
+
+    if not file_url:
+        raise HTTPException(500, detail="Gagal generate Excel. Cek server logs.")
+
+    return {
+        "success": True,
+        "data": {
+            "file_url": file_url,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    }
+

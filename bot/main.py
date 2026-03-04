@@ -37,6 +37,7 @@ from handlers.report_handler import (
     laporan_hariini_cb,
     laporan_bulanan_cb,
     cek_stok_cb,
+    download_excel_cb,
 )
 from handlers.nota_handler import (
     cancel_nota,
@@ -93,6 +94,7 @@ async def main() -> None:
     app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
     app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
     app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
+    app.add_handler(CallbackQueryHandler(download_excel_cb,  pattern=r"^download_excel_"))
 
 
     # ─── Callback handlers: nota (confirm / edit / cancel / edit_item) ─

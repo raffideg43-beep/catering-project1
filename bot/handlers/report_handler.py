@@ -228,9 +228,23 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     lines += ["", f"📄 Excel: {excel_label}"]
 
+    # Ambil year/month untuk callback
+    y = data.get("year", date.today().year)
+    m = data.get("month", date.today().month)
+
     keyboard_rows = []
     if excel_status == "ready":
-        keyboard_rows.append([InlineKeyboardButton("📥 Download Excel", callback_data="download_excel")])
+        keyboard_rows.append([InlineKeyboardButton(
+            "📥 Download Excel", callback_data=f"download_excel_{y}_{m}"
+        )])
+    elif excel_status == "pending_regenerate":
+        keyboard_rows.append([InlineKeyboardButton(
+            "🔄 Generate Ulang Excel", callback_data=f"download_excel_{y}_{m}"
+        )])
+    else:
+        keyboard_rows.append([InlineKeyboardButton(
+            "📊 Generate Excel", callback_data=f"download_excel_{y}_{m}"
+        )])
     keyboard_rows.append([
         InlineKeyboardButton("📊 Hari Ini", callback_data="laporan_hariini"),
         InlineKeyboardButton("📦 Cek Stok", callback_data="cek_stok"),
@@ -477,3 +491,77 @@ async def cek_stok_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if update.callback_query:
         await update.callback_query.answer()
     await stok_command(update, context)
+
+
+# ─── Callback: download_excel_{year}_{month} ─────────────────────────────────
+
+async def download_excel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Panggil GET /reports/excel/download (sync generate jika perlu).
+    Edit pesan jadi URL download atau error.
+    """
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    # Parse year/month dari callback_data
+    parts = query.data.split("_")  # download_excel_{y}_{m}
+    y = m = None
+    try:
+        if len(parts) >= 4:
+            y = int(parts[2])
+            m = int(parts[3])
+    except Exception:
+        pass
+
+    token = get_token(context)
+    api = get_api_client(settings.backend_url)
+
+    # Tampil loading
+    await query.edit_message_text(
+        "⏳ Menyiapkan file Excel\.\.\.",
+        parse_mode="MarkdownV2",
+    )
+
+    params = ""
+    if y and m:
+        params = f"?year={y}&month={m}"
+
+    try:
+        resp = await api.get(f"/reports/excel/download{params}", token=token)
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ Gagal generate Excel: {_esc(str(e))}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Coba Lagi", callback_data=query.data),
+                InlineKeyboardButton("← Menu",      callback_data="main_menu_callback"),
+            ]]),
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    if not (resp or {}).get("success"):
+        err = (resp or {}).get("detail", "Gagal generate")
+        await query.edit_message_text(
+            f"❌ {_esc(str(err))}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("← Menu", callback_data="main_menu_callback"),
+            ]]),
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    file_url = (resp or {}).get("data", {}).get("file_url", "")
+    bulan_str = BULAN.get(m, str(m)) if m else "?"
+    year_str  = str(y) if y else ""
+
+    await query.edit_message_text(
+        f"✅ *Excel siap\\!*\n\n"
+        f"📥 [Download Pembukuan {_esc(bulan_str)} {_esc(year_str)}]({file_url})\n\n"
+        f"_File tersedia di Supabase Storage\\._",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+        ]]),
+        parse_mode="MarkdownV2",
+    )
