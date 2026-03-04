@@ -2,7 +2,30 @@
 HTTP client untuk komunikasi dengan FastAPI backend.
 """
 
+import logging
 import httpx
+
+logger = logging.getLogger(__name__)
+
+
+class APIError(Exception):
+    """Error dari backend API dengan status_code dan pesan yang sudah diparsing."""
+    def __init__(self, message: str, status_code: int = 0):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+    @classmethod
+    def from_httpx(cls, exc: httpx.HTTPStatusError) -> "APIError":
+        """Parse error message dari response JSON."""
+        try:
+            data = exc.response.json()
+            msg = data.get("error") or data.get("detail") or str(exc)
+        except Exception:
+            msg = str(exc)
+        return cls(message=msg, status_code=exc.response.status_code)
+
+
 
 
 class APIClient:
@@ -41,17 +64,13 @@ class APIClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:
-            raise Exception("Request timeout — backend tidak merespons")
+            raise APIError("Request timeout — backend tidak merespons", status_code=408)
         except httpx.HTTPStatusError as e:
-            error_msg = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", str(e)))
-            except Exception:
-                error_msg = str(e)
-            raise Exception(f"Backend error: {error_msg}")
+            raise APIError.from_httpx(e)
+        except APIError:
+            raise
         except Exception as e:
-            raise Exception(f"Request error: {str(e)}")
+            raise APIError(f"Request error: {str(e)}", status_code=0)
 
     async def post(
         self,
@@ -79,17 +98,13 @@ class APIClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:
-            raise Exception("Request timeout — backend tidak merespons")
+            raise APIError("Request timeout — backend tidak merespons", status_code=408)
         except httpx.HTTPStatusError as e:
-            error_msg = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", str(e)))
-            except Exception:
-                error_msg = str(e)
-            raise Exception(f"Backend error: {error_msg}")
+            raise APIError.from_httpx(e)
+        except APIError:
+            raise
         except Exception as e:
-            raise Exception(f"Request error: {str(e)}")
+            raise APIError(f"Request error: {str(e)}", status_code=0)
 
     async def put(
         self,
@@ -107,17 +122,13 @@ class APIClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:
-            raise Exception("Request timeout — backend tidak merespons")
+            raise APIError("Request timeout — backend tidak merespons", status_code=408)
         except httpx.HTTPStatusError as e:
-            error_msg = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", str(e)))
-            except Exception:
-                error_msg = str(e)
-            raise Exception(f"Backend error: {error_msg}")
+            raise APIError.from_httpx(e)
+        except APIError:
+            raise
         except Exception as e:
-            raise Exception(f"Request error: {str(e)}")
+            raise APIError(f"Request error: {str(e)}", status_code=0)
 
 
     async def delete(
@@ -135,17 +146,13 @@ class APIClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:
-            raise Exception("Request timeout — backend tidak merespons")
+            raise APIError("Request timeout — backend tidak merespons", status_code=408)
         except httpx.HTTPStatusError as e:
-            error_msg = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get("error", error_data.get("detail", str(e)))
-            except Exception:
-                error_msg = str(e)
-            raise Exception(f"Backend error: {error_msg}")
+            raise APIError.from_httpx(e)
+        except APIError:
+            raise
         except Exception as e:
-            raise Exception(f"Request error: {str(e)}")
+            raise APIError(f"Request error: {str(e)}", status_code=0)
 
 
 # Singleton instance

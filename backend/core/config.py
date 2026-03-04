@@ -66,3 +66,26 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def validate_config() -> None:
+    """
+    Validasi semua ENV vars wajib saat startup.
+    Raise ValueError jika ada yang tidak terisi.
+    """
+    required_map = {
+        "SUPABASE_URL":        settings.supabase_url,
+        "SUPABASE_SERVICE_KEY": settings.supabase_service_key,
+        "SECRET_KEY":          settings.secret_key,
+        "TELEGRAM_BOT_TOKEN":  settings.telegram_bot_token,
+        "GEMINI_API_KEY":      settings.gemini_api_key,
+        "REDIS_URL":           settings.redis_url,
+    }
+
+    missing = [k for k, v in required_map.items() if not v]
+
+    if missing:
+        raise ValueError(
+            f"❌ ENV vars wajib tidak ada: {', '.join(missing)}\n"
+            "Periksa file .env Anda."
+        )

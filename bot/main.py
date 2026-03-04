@@ -16,14 +16,16 @@ from telegram.ext import (
 )
 
 from core.config import settings
+from core.error_handler import error_handler as bot_error_handler
 from handlers.auth_handler import (
     buka_web,
-    error_handler,
+    error_handler as auth_error_handler,
     hubungkan_akun,
     logout,
     settings as settings_handler,
     start,
 )
+
 from handlers.menu_handler import build_menu_conversation
 from handlers.belanja_handler import build_belanja_conversation
 from handlers.serah_handler import build_serah_conversation
@@ -113,8 +115,11 @@ async def main() -> None:
     app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
     app.add_handler(CallbackQueryHandler(buka_web,       pattern="^buka_web$"))
 
-    # ─── Error handler global ─────────────────────────────────────────
-    app.add_error_handler(error_handler)
+    # ─── Error handlers ───────────────────────────────────────────────
+    # Global handler dari core/ menangani Network, Forbidden, dan lain-lain
+    app.add_error_handler(bot_error_handler)
+    # Auth-specific handler sebagai fallback di auth_handler
+    # (tidak di-register lagi di sini karena bot_error_handler sudah cover)
 
     # ─── Bot commands menu ────────────────────────────────────────────
     bot_commands = [

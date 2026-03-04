@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { ToastProvider } from "@/components/ui/toast";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 export const metadata: Metadata = {
   title: "MBG Catering",
@@ -13,7 +15,13 @@ export default function RootLayout({
   return (
     <html lang="id">
       <head />
-      <body className="bg-white">{children}</body>
+      <body className="bg-white">
+        <ErrorBoundary>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </ErrorBoundary>
+      </body>
     </html>
   );
 }

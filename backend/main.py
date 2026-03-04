@@ -1,10 +1,14 @@
+import logging
 from typing import Any, Dict
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.config import settings
+from core.config import settings, validate_config
 from core.dependencies import get_current_user, require_role
+from core.error_handlers import register_error_handlers
+from core.health import health_router
+from middleware.logging import RequestLoggingMiddleware
 from models.user import UserInDB
 from routers import auth as auth_router
 from routers import tenants as tenants_router
@@ -19,26 +23,54 @@ from routers import transactions as transactions_router
 from routers import reports as reports_router
 from routers import payables as payables_router
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="MBG Catering Backend", version="1.0.0")
 
-origins = [
-    settings.web_url,
-    "http://localhost:3000",
-    "https://localhost:3000",
-]
+
+# ─── CORS ──────────────────────────────────────────────────────────────────
+if settings.app_env == "development":
+    origins = ["*"]
+else:
+    origins = [
+        o for o in [settings.web_url, settings.backend_url,
+                    "http://localhost:3000", "http://localhost:8000"]
+        if o
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o for o in origins if o],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.add_middleware(RequestLoggingMiddleware)
+
+# ─── Error Handlers ─────────────────────────────────────────────────────────
+register_error_handlers(app)
+
+# ─── Routers ─────────────────────────────────────────────────────────────────
+app.include_router(health_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Startup: validate config dan log info."""
+    try:
+        validate_config()
+    except ValueError as e:
+        logger.warning("Config validation (non-fatal in dev): %s", e)
+    logger.info("Backend started — env: %s", settings.app_env)
+
 
 @app.get("/")
-def health_check():
-    # Mengikuti spesifikasi modul: response sederhana tanpa wrapper.
+def root():
     return {"status": "ok", "version": "1.0.0"}
 
 

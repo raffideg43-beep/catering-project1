@@ -23,19 +23,38 @@ export function getApiClient(): AxiosInstance {
       }
     );
 
-    // Response interceptor: handle 401
+    // Response interceptor: handle error codes
     apiClient.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
+        const status = error.response?.status;
+
+        if (status === 401) {
           if (typeof window !== "undefined") {
             localStorage.removeItem("auth_token");
             window.location.href = "/login";
           }
+        } else if (status === 429) {
+          // Rate limit — tampilkan toast jika ada
+          if (typeof window !== "undefined") {
+            const event = new CustomEvent("app:toast", {
+              detail: { message: "⚠️ Terlalu banyak request. Tunggu sebentar.", type: "warning" },
+            });
+            window.dispatchEvent(event);
+          }
+        } else if (status && status >= 500) {
+          if (typeof window !== "undefined") {
+            const event = new CustomEvent("app:toast", {
+              detail: { message: "❌ Server sedang bermasalah. Coba lagi.", type: "error" },
+            });
+            window.dispatchEvent(event);
+          }
         }
+
         return Promise.reject(error);
       }
     );
+
   }
 
   return apiClient;
