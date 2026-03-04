@@ -148,8 +148,9 @@ async def upload_photo(
     response_model=Dict[str, Any],
     dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
 )
-def confirm_transaction(
+async def confirm_transaction(
     trx_id: str,
+    background_tasks: BackgroundTasks,
     body: ConfirmTransactionRequest = ConfirmTransactionRequest(),
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -159,6 +160,7 @@ def confirm_transaction(
       2. Update stok ATOMIC per item yang punya product_id
       3. Insert cashflow_log
       4. Jika hutang → insert payables
+      5. Trigger regenerate Excel (background)
     """
     supabase = get_supabase()
 
@@ -281,6 +283,21 @@ def confirm_transaction(
     result = {"success": True, "transaction_id": trx_id, "status": "confirmed"}
     if stok_errors:
         result["stok_warnings"] = stok_errors
+
+    # ─── Trigger regenerate Excel bulan ini (background, fire-and-forget) ──
+    from services.export_service import ExportService
+    confirmed_date_str = trx.get("date") or date.today().isoformat()
+    try:
+        confirmed_dt = date.fromisoformat(confirmed_date_str)
+    except ValueError:
+        confirmed_dt = date.today()
+    background_tasks.add_task(
+        ExportService().regenerate_monthly_excel,
+        current_user.tenant_id,
+        confirmed_dt.year,
+        confirmed_dt.month,
+    )
+
     return result
 
 
@@ -662,3 +679,285 @@ def get_batch_status(
             "photos": photos_raw,
         },
     }
+
+
+# ─── PUT /transactions/{trx_id}/items/{item_id} ──────────────────────────────
+
+@router.put(
+    "/{trx_id}/items/{item_id}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+def update_transaction_item(
+    trx_id: str,
+    item_id: str,
+    body: Dict[str, Any],
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Edit qty dan harga_satuan satu item, lalu recalculate total transaksi.
+    Cek is_locked sebelum update.
+    """
+    supabase = get_supabase()
+
+    # Cek lock
+    trx_resp = (
+        supabase.table("transactions")
+        .select("is_locked, tenant_id")
+        .eq("id", trx_id)
+        .eq("tenant_id", current_user.tenant_id)
+        .single()
+        .execute()
+    )
+    trx = getattr(trx_resp, "data", None)
+    if not trx:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
+    if trx.get("is_locked"):
+        raise HTTPException(status_code=403, detail="Transaksi terkunci")
+
+    # Validasi input
+    qty = body.get("qty")
+    harga = body.get("harga_satuan")
+    if qty is None or harga is None:
+        raise HTTPException(status_code=422, detail="qty dan harga_satuan wajib diisi")
+    try:
+        qty_dec = Decimal(str(qty))
+        harga_dec = Decimal(str(harga))
+        if qty_dec <= 0 or harga_dec <= 0:
+            raise ValueError
+    except Exception:
+        raise HTTPException(status_code=422, detail="qty dan harga_satuan harus angka positif")
+
+    subtotal = (qty_dec * harga_dec).quantize(Decimal("0.01"))
+
+    # Update item
+    item_update: Dict[str, Any] = {
+        "qty": str(qty_dec),
+        "price": str(harga_dec),
+        "subtotal": str(subtotal),
+    }
+    if body.get("nama_item"):
+        item_update["product_name"] = body["nama_item"]
+
+    item_resp = (
+        supabase.table("transaction_items")
+        .update(item_update)
+        .eq("id", item_id)
+        .eq("transaction_id", trx_id)
+        .execute()
+    )
+    updated_item = (getattr(item_resp, "data", None) or [{}])[0]
+
+    # Recalculate total semua items
+    all_items_resp = (
+        supabase.table("transaction_items")
+        .select("subtotal")
+        .eq("transaction_id", trx_id)
+        .execute()
+    )
+    all_items = getattr(all_items_resp, "data", None) or []
+    new_total = sum(Decimal(str(i.get("subtotal", 0))) for i in all_items)
+
+    supabase.table("transactions").update({
+        "total": str(new_total.quantize(Decimal("0.01"))),
+    }).eq("id", trx_id).execute()
+
+    return {
+        "success": True,
+        "data": {
+            **updated_item,
+            "subtotal": str(subtotal),
+        },
+        "new_total": str(new_total.quantize(Decimal("0.01"))),
+    }
+
+
+# ─── POST /transactions/manual ────────────────────────────────────────────────
+
+@router.post(
+    "/manual",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+async def create_manual_transaction(
+    background_tasks: BackgroundTasks,
+    body: Dict[str, Any],
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Input belanja manual tanpa foto.
+    Status langsung 'confirmed'. Trigger stok, cashflow, payables, Excel.
+    """
+    supabase = get_supabase()
+    from services.alias_service import AliasService
+    alias_svc = AliasService()
+
+    # ─── Validasi ─────────────────────────────────────────────────────
+    items_input: List[dict] = body.get("items", [])
+    if not items_input:
+        raise HTTPException(status_code=422, detail="items tidak boleh kosong")
+
+    trx_date = body.get("date") or date.today().isoformat()
+    payment_method = body.get("payment_method", "tunai")
+    supplier_name = body.get("supplier_name") or None
+    due_date = body.get("due_date") or None
+    notes = body.get("notes") or None
+
+    # ─── Insert transaksi (status=confirmed langsung) ─────────────────
+    trx_data = {
+        "tenant_id": current_user.tenant_id,
+        "user_id": current_user.id,
+        "type": "expense",
+        "source": "telegram_manual",
+        "status": "confirmed",
+        "date": trx_date,
+        "nama_toko": supplier_name,
+        "payment_method": payment_method,
+        "due_date": due_date,
+        "notes": notes,
+        "pph22_amount": "0.00",
+        "ppn_amount": "0.00",
+        "discount": "0.00",
+        "total": "0.00",
+        "subtotal": "0.00",
+    }
+    resp = supabase.table("transactions").insert(trx_data).execute()
+    data = getattr(resp, "data", None) or []
+    if not data:
+        raise HTTPException(status_code=500, detail="Gagal membuat transaksi")
+    trx_id: str = data[0]["id"]
+
+    # ─── Insert items + stok ──────────────────────────────────────────
+    grand_total = Decimal("0")
+    stok_errors: List[str] = []
+
+    for item_in in items_input:
+        nama_asli: str = item_in.get("nama_item", "")
+        qty = Decimal(str(item_in.get("qty", 1)))
+        satuan = item_in.get("satuan", "pcs")
+        harga = Decimal(str(item_in.get("harga_satuan", 0)))
+        subtotal = (qty * harga).quantize(Decimal("0.01"))
+        grand_total += subtotal
+
+        # Resolve alias
+        alias_result = alias_svc.resolve(nama_asli, current_user.tenant_id, supabase)
+        product_id = alias_result.get("product_id")
+        product_name = alias_result.get("product_name") or nama_asli
+
+        # Ambil HPP dari produk jika ketemu
+        hpp_snapshot = str(harga)
+        if product_id:
+            prod_resp = (
+                supabase.table("products")
+                .select("hpp")
+                .eq("id", product_id)
+                .single()
+                .execute()
+            )
+            hpp_val = (getattr(prod_resp, "data", None) or {}).get("hpp")
+            if hpp_val:
+                hpp_snapshot = str(hpp_val)
+
+        supabase.table("transaction_items").insert({
+            "transaction_id": trx_id,
+            "tenant_id": current_user.tenant_id,
+            "product_id": product_id,
+            "product_name": product_name,
+            "qty": str(qty),
+            "unit": satuan,
+            "price": str(harga),
+            "hpp_snapshot": hpp_snapshot,
+            "subtotal": str(subtotal),
+            "has_ppn": False,
+            "needs_confirmation": alias_result.get("needs_confirmation", False),
+        }).execute()
+
+        # Update stok jika ada product_id
+        if product_id:
+            try:
+                supabase.rpc("increment_stock", {
+                    "p_product_id": product_id,
+                    "p_delta": float(qty),
+                    "p_tenant_id": current_user.tenant_id,
+                }).execute()
+                bal_resp = (
+                    supabase.table("products")
+                    .select("stock_qty")
+                    .eq("id", product_id)
+                    .single()
+                    .execute()
+                )
+                balance = float((getattr(bal_resp, "data", None) or {}).get("stock_qty", 0))
+                supabase.table("stock_history").insert({
+                    "tenant_id": current_user.tenant_id,
+                    "product_id": product_id,
+                    "transaction_id": trx_id,
+                    "change_qty": str(qty),
+                    "balance_after": str(balance),
+                    "reason": "purchase",
+                    "notes": f"Manual: {supplier_name or 'tanpa supplier'}",
+                }).execute()
+            except Exception as e:
+                stok_errors.append(f"{product_name}: {e}")
+
+    # ─── Update total ─────────────────────────────────────────────────
+    supabase.table("transactions").update({
+        "total": str(grand_total),
+        "subtotal": str(grand_total),
+    }).eq("id", trx_id).execute()
+
+    # ─── Cashflow ─────────────────────────────────────────────────────
+    try:
+        supabase.table("cashflow_log").insert({
+            "tenant_id": current_user.tenant_id,
+            "transaction_id": trx_id,
+            "flow_type": "out",
+            "category": "purchase",
+            "amount": str(grand_total),
+            "description": f"Manual: {supplier_name or 'Belanja'}",
+            "date": trx_date,
+        }).execute()
+    except Exception:
+        pass
+
+    # ─── Payables jika hutang ─────────────────────────────────────────
+    if payment_method == "hutang":
+        try:
+            supabase.table("payables").insert({
+                "tenant_id": current_user.tenant_id,
+                "transaction_id": trx_id,
+                "supplier_name": supplier_name or "Supplier",
+                "amount": str(grand_total),
+                "paid_amount": "0.00",
+                "due_date": due_date,
+                "status": "unpaid",
+            }).execute()
+        except Exception:
+            pass
+
+    # ─── Trigger Excel regenerate ──────────────────────────────────────
+    from services.export_service import ExportService
+    try:
+        trx_dt = date.fromisoformat(trx_date)
+    except ValueError:
+        trx_dt = date.today()
+    background_tasks.add_task(
+        ExportService().regenerate_monthly_excel,
+        current_user.tenant_id,
+        trx_dt.year,
+        trx_dt.month,
+    )
+
+    result: Dict[str, Any] = {
+        "success": True,
+        "data": {
+            "transaction_id": trx_id,
+            "total": str(grand_total),
+            "item_count": len(items_input),
+            "supplier_name": supplier_name,
+            "payment_method": payment_method,
+        },
+    }
+    if stok_errors:
+        result["stok_warnings"] = stok_errors
+    return result

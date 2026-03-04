@@ -532,3 +532,83 @@ def _esc(text: str) -> str:
     if not text:
         return ""
     return re.sub(r"([_*\[\]()~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
+# ─── Global text input handler: edit item inline ──────────────────────────────
+
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Tangkap teks bebas untuk edit item inline.
+    Hanya aktif jika context.user_data["editing_item_id"] ada.
+    Format input: "qty harga" — contoh: "10 13500"
+    """
+    if not update.message or not update.message.text:
+        return
+
+    item_id = context.user_data.get("editing_item_id")
+    trx_id = context.user_data.get("editing_trx_id")
+    if not item_id or not trx_id:
+        return  # tidak dalam mode edit, abaikan
+
+    text = update.message.text.strip()
+    parts = text.split()
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "❌ Format salah\\.\nGunakan: `qty harga`\nContoh: `10 13500`",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    try:
+        from decimal import Decimal
+        qty = float(Decimal(parts[0].replace(",", "")))
+        harga = float(Decimal(parts[1].replace(",", "").replace(".", "")))
+        if qty <= 0 or harga <= 0:
+            raise ValueError
+    except Exception:
+        await update.message.reply_text(
+            "❌ Nilai tidak valid\\. qty dan harga harus angka positif\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    token = get_token(context)
+    api = get_api_client(settings.backend_url)
+
+    try:
+        resp = await api.put(
+            f"/transactions/{trx_id}/items/{item_id}",
+            token=token,
+            json={"qty": qty, "harga_satuan": harga},
+        )
+    except Exception as e:
+        await update.message.reply_text(format_error(f"Gagal update item: {e}"))
+        return
+
+    if not resp or not resp.get("success"):
+        await update.message.reply_text(format_error((resp or {}).get("detail", "Update gagal")))
+        return
+
+    # Clear editing state
+    context.user_data.pop("editing_item_id", None)
+
+    data = resp.get("data", {})
+    new_total = resp.get("new_total", "?")
+    subtotal = float(qty) * float(harga)
+    nama = data.get("product_name", "Item")
+    sat = data.get("unit", "pcs")
+
+    def fmt(v): return f"Rp {int(float(v)):,}".replace(",", ".")
+
+    await update.message.reply_text(
+        f"✅ *Item diupdate\\!*\n\n"
+        f"{_esc(nama)}: {_esc(str(qty))}{_esc(sat)} × "
+        f"{_esc(fmt(harga))} \\= {_esc(fmt(subtotal))}\n"
+        f"💰 Total nota baru: *{_esc(fmt(new_total))}*",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✏️ Edit Item Lain",  callback_data=f"edit_{trx_id}"),
+            InlineKeyboardButton("✅ Konfirmasi Nota", callback_data=f"confirm_{trx_id}"),
+        ]]),
+        parse_mode="MarkdownV2",
+    )
+

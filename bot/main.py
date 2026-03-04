@@ -25,12 +25,14 @@ from handlers.auth_handler import (
     start,
 )
 from handlers.menu_handler import build_menu_conversation
+from handlers.belanja_handler import build_belanja_conversation
 from handlers.nota_handler import (
     cancel_nota,
     confirm_nota,
     edit_item,
     edit_nota,
     handle_photo,
+    handle_text_input,
     selesai_kirim,
     konfirmasi_semua,
     batal_semua,
@@ -51,9 +53,15 @@ async def main() -> None:
 
     # ─── ConversationHandlers HARUS sebelum handler biasa ───────────
     app.add_handler(build_menu_conversation())
+    app.add_handler(build_belanja_conversation())
 
     # ─── Foto nota — MessageHandler ──────────────────────────────────
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    # ─── Text handler: edit item inline ──────────────────────────────
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, handle_text_input
+    ))
 
     # ─── Command handlers ─────────────────────────────────────────────
     app.add_handler(CommandHandler("start", start))
@@ -83,6 +91,7 @@ async def main() -> None:
     bot_commands = [
         BotCommand("start",    "Login atau lihat menu utama"),
         BotCommand("menu",     "📅 Input menu mingguan Senin–Sabtu"),
+        BotCommand("belanja",  "📝 Input belanja manual"),
         BotCommand("settings", "Lihat pengaturan akun"),
         BotCommand("logout",   "Logout akun"),
         BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),
