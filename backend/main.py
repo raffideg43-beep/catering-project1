@@ -16,6 +16,8 @@ from routers import mbg_settings as mbg_settings_router
 from routers import mbg as mbg_router
 from routers.mbg import delivery_router as mbg_delivery_router
 from routers import transactions as transactions_router
+from routers import reports as reports_router
+from routers import payables as payables_router
 
 app = FastAPI(title="MBG Catering Backend", version="1.0.0")
 
@@ -87,6 +89,8 @@ app.include_router(mbg_settings_router.router, prefix="/mbg")
 app.include_router(mbg_router.router, prefix="/mbg")
 app.include_router(mbg_delivery_router, prefix="/mbg")
 app.include_router(transactions_router.router, prefix="/transactions")
+app.include_router(reports_router.router)
+app.include_router(payables_router.router)
 
 
 

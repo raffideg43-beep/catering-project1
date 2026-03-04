@@ -27,6 +27,17 @@ from handlers.auth_handler import (
 from handlers.menu_handler import build_menu_conversation
 from handlers.belanja_handler import build_belanja_conversation
 from handlers.serah_handler import build_serah_conversation
+from handlers.report_handler import (
+    hariini_command,
+    laporan_command,
+    stok_command,
+    piutang_command,
+    hutang_command,
+    lunas_hutang,
+    laporan_hariini_cb,
+    laporan_bulanan_cb,
+    cek_stok_cb,
+)
 from handlers.nota_handler import (
     cancel_nota,
     confirm_nota,
@@ -70,6 +81,20 @@ async def main() -> None:
     app.add_handler(CommandHandler("logout", logout))
     app.add_handler(CommandHandler("settings", settings_handler))
 
+    # ─── Command handlers: laporan ────────────────────────────────────
+    app.add_handler(CommandHandler("hariini", hariini_command))
+    app.add_handler(CommandHandler("laporan", laporan_command))
+    app.add_handler(CommandHandler("stok",    stok_command))
+    app.add_handler(CommandHandler("piutang", piutang_command))
+    app.add_handler(CommandHandler("hutang",  hutang_command))
+
+    # ─── Callback handlers: report shortcuts ─────────────────────────
+    app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
+    app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
+    app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
+    app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
+
+
     # ─── Callback handlers: nota (confirm / edit / cancel / edit_item) ─
     app.add_handler(CallbackQueryHandler(confirm_nota, pattern=r"^confirm_[a-f0-9\-]{36}$"))
     app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
@@ -95,6 +120,11 @@ async def main() -> None:
         BotCommand("serah",    "🍱 Konfirmasi penyerahan MBG"),
         BotCommand("menu",     "📅 Input menu mingguan Senin–Sabtu"),
         BotCommand("belanja",  "📝 Input belanja manual"),
+        BotCommand("hariini",  "📊 Ringkasan hari ini"),
+        BotCommand("laporan",  "📈 Laporan bulan ini"),
+        BotCommand("stok",     "📦 Status stok bahan"),
+        BotCommand("piutang",  "💰 Tagihan MBG belum lunas"),
+        BotCommand("hutang",   "💸 Hutang ke supplier"),
         BotCommand("settings", "Lihat pengaturan akun"),
         BotCommand("logout",   "Logout akun"),
         BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),

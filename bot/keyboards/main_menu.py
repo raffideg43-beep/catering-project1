@@ -7,32 +7,34 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def get_main_menu() -> InlineKeyboardMarkup:
     """
-    Get main menu keyboard.
+    Main menu keyboard — Modul 11 update.
 
     Layout:
-    [📷 Catat Belanja] [📝 Belanja Manual]
-    [🍱 Konfirmasi Serah] [📅 Menu Minggu Ini]
-    [📊 Ringkasan] [📦 Cek Stok]
-    [⚙️ Pengaturan]
+    [📷 Catat Nota] [📝 Belanja Manual]
+    [🍱 Konfirmasi Serah] [📅 Menu Minggu]
+    [📊 Laporan Hari Ini] [📈 Laporan Bulanan]
+    [📦 Cek Stok] [⚙️ Pengaturan]
     """
     keyboard = [
         [
-            InlineKeyboardButton("📷 Catat Belanja", callback_data="catat_belanja"),
-            InlineKeyboardButton("📝 Belanja Manual", callback_data="belanja_manual"),
+            InlineKeyboardButton("📷 Catat Nota",     callback_data="catat_belanja"),
+            InlineKeyboardButton("📝 Belanja Manual", callback_data="belanja"),
         ],
         [
-            InlineKeyboardButton("🍱 Konfirmasi Serah", callback_data="konfirmasi_serah"),
-            InlineKeyboardButton("📅 Menu Minggu", callback_data="menu_minggu"),
+            InlineKeyboardButton("🍱 Konfirmasi Serah", callback_data="serah"),
+            InlineKeyboardButton("📅 Menu Minggu",      callback_data="menu_minggu"),
         ],
         [
-            InlineKeyboardButton("📊 Ringkasan", callback_data="ringkasan"),
-            InlineKeyboardButton("📦 Cek Stok", callback_data="cek_stok"),
+            InlineKeyboardButton("📊 Laporan Hari Ini",  callback_data="laporan_hariini"),
+            InlineKeyboardButton("📈 Laporan Bulanan",   callback_data="laporan_bulanan"),
         ],
         [
+            InlineKeyboardButton("📦 Cek Stok",   callback_data="cek_stok"),
             InlineKeyboardButton("⚙️ Pengaturan", callback_data="pengaturan"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
+
 
 
 def get_back_button(callback_data: str = "back_main") -> InlineKeyboardMarkup:
