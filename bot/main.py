@@ -26,6 +26,7 @@ from handlers.auth_handler import (
 )
 from handlers.menu_handler import build_menu_conversation
 from handlers.belanja_handler import build_belanja_conversation
+from handlers.serah_handler import build_serah_conversation
 from handlers.nota_handler import (
     cancel_nota,
     confirm_nota,
@@ -53,6 +54,7 @@ async def main() -> None:
 
     # ─── ConversationHandlers HARUS sebelum handler biasa ───────────
     app.add_handler(build_menu_conversation())
+    app.add_handler(build_serah_conversation())
     app.add_handler(build_belanja_conversation())
 
     # ─── Foto nota — MessageHandler ──────────────────────────────────
@@ -90,6 +92,7 @@ async def main() -> None:
     # ─── Bot commands menu ────────────────────────────────────────────
     bot_commands = [
         BotCommand("start",    "Login atau lihat menu utama"),
+        BotCommand("serah",    "🍱 Konfirmasi penyerahan MBG"),
         BotCommand("menu",     "📅 Input menu mingguan Senin–Sabtu"),
         BotCommand("belanja",  "📝 Input belanja manual"),
         BotCommand("settings", "Lihat pengaturan akun"),

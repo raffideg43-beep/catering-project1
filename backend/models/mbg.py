@@ -1,8 +1,9 @@
 """
 backend/models/mbg.py
 Pydantic models untuk MBG weekly menus — Modul 6
+Ditambah Delivery models — Modul 10
 """
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -58,3 +59,47 @@ class ValidateMenuResponse(BaseModel):
     product: Optional[dict] = None   # {id, name} atau null
     has_bom: bool = False
     bom_ingredients: List[BomIngredient] = []
+
+
+# ─── Modul 10: Delivery Models ────────────────────────────────────────────────
+
+class DeliveryItem(BaseModel):
+    school_id: str
+    portions_sent: int
+    receiver_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class DeliveryBulkRequest(BaseModel):
+    delivery_date: str               # "YYYY-MM-DD"
+    deliveries: List[DeliveryItem]
+
+
+class StockShortageDetail(BaseModel):
+    ingredient: str
+    needed: float
+    available: float
+    shortage: float
+    unit: str
+
+
+class AllocationResult(BaseModel):
+    total_revenue: float
+    price_per_portion: float
+    budget_food: float
+    budget_labor: float
+    budget_ops: float
+    food_pct: float
+    labor_pct: float
+    ops_pct: float
+
+
+class DeliverySummaryResponse(BaseModel):
+    date: str
+    total_portions: int
+    total_schools: int
+    menu_name: Optional[str] = None
+    has_bom: bool = False
+    deliveries: List[Dict[str, Any]] = []
+    allocation: Optional[Dict[str, Any]] = None
+    stok_status: str = "tidak_ada_menu"  # "dipotong" | "tidak_ada_bom" | "tidak_ada_menu"

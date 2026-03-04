@@ -442,3 +442,389 @@ def delete_weekly_menu(
     ).eq("week_start", ws.isoformat()).eq("day_of_week", dow).execute()
 
     return {"success": True, "message": f"Menu tanggal {entry_date} dihapus"}
+
+
+# =============================================================================
+# DELIVERY ROUTER — prefix = /mbg/deliveries  (Modul 10)
+# =============================================================================
+
+from fastapi import BackgroundTasks  # noqa: E402
+
+from models.mbg import DeliveryBulkRequest  # noqa: E402
+from services.recipe_service import RecipeService  # noqa: E402
+from services.pdf_service import PDFService  # noqa: E402
+from services.export_service import ExportService  # noqa: E402
+
+delivery_router = APIRouter(prefix="/deliveries", tags=["mbg-deliveries"])
+
+
+# ─── POST /mbg/deliveries/bulk ────────────────────────────────────────────────
+
+@delivery_router.post(
+    "/bulk",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+async def create_bulk_delivery(
+    body: DeliveryBulkRequest,
+    background_tasks: BackgroundTasks,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Konfirmasi penyerahan MBG ke beberapa sekolah sekaligus — ATOMIK.
+    Rollback manual jika ada langkah gagal.
+    """
+    supabase = get_supabase()
+    recipe_svc = RecipeService()
+    pdf_svc = PDFService()
+    tenant_id = current_user.tenant_id
+
+    # ─── Langkah 1: Validasi input ───────────────────────────────────
+    try:
+        delivery_date = date.fromisoformat(body.delivery_date)
+    except ValueError:
+        raise HTTPException(422, detail="Format delivery_date harus YYYY-MM-DD")
+
+    if delivery_date > date.today():
+        raise HTTPException(422, detail="delivery_date tidak boleh di masa depan")
+
+    if not body.deliveries:
+        raise HTTPException(422, detail="deliveries tidak boleh kosong")
+
+    for d in body.deliveries:
+        if d.portions_sent <= 0:
+            raise HTTPException(422, detail=f"portions_sent harus > 0 untuk school_id {d.school_id}")
+
+    # Validasi school_id milik tenant + UNIQUE constraint
+    school_ids = [d.school_id for d in body.deliveries]
+    schools_resp = (
+        supabase.table("schools")
+        .select("id, name, daily_portions")
+        .eq("tenant_id", tenant_id)
+        .in_("id", school_ids)
+        .execute()
+    )
+    db_schools = {s["id"]: s for s in (getattr(schools_resp, "data", None) or [])}
+
+    for d in body.deliveries:
+        if d.school_id not in db_schools:
+            raise HTTPException(422, detail=f"school_id {d.school_id} tidak ditemukan")
+
+    # Cek duplikat
+    exist_resp = (
+        supabase.table("mbg_deliveries")
+        .select("id, school_id")
+        .eq("tenant_id", tenant_id)
+        .eq("delivery_date", body.delivery_date)
+        .in_("school_id", school_ids)
+        .execute()
+    )
+    existing = getattr(exist_resp, "data", None) or []
+    if existing:
+        dup_ids = [e["school_id"] for e in existing]
+        dup_names = [db_schools.get(sid, {}).get("name", sid) for sid in dup_ids]
+        raise HTTPException(409, detail=f"Delivery sudah ada untuk: {', '.join(dup_names)}")
+
+    # ─── Langkah 2: Ambil menu hari itu ──────────────────────────────
+    dow = delivery_date.weekday() + 1
+    ws = _get_week_start(delivery_date)
+    menu_resp = (
+        supabase.table("mbg_weekly_menus")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .eq("week_start", ws.isoformat())
+        .eq("day_of_week", dow)
+        .limit(1)
+        .execute()
+    )
+    menu_rows = getattr(menu_resp, "data", None) or []
+    menu_info = menu_rows[0] if menu_rows else None
+    menu_id = (menu_info or {}).get("menu_id")
+    warning: str | None = None
+    stok_dipotong = False
+
+    # ─── Langkah 3: Cek stok BOM (jika menu + BOM ada) ────────────────
+    total_portions = sum(d.portions_sent for d in body.deliveries)
+
+    if menu_id:
+        stock_check = recipe_svc.calculate(menu_id, total_portions, tenant_id, supabase)
+        if stock_check.get("has_bom") and not stock_check.get("can_produce"):
+            shortage_details = [
+                {
+                    "ingredient": ing["name"],
+                    "needed": ing["total_needed"],
+                    "available": ing["available"],
+                    "shortage": ing["shortage"],
+                    "unit": ing["unit"],
+                }
+                for ing in stock_check.get("ingredients", [])
+                if not ing["sufficient"]
+            ]
+            raise HTTPException(status_code=400, detail={
+                "success": False,
+                "error": "Stok tidak cukup",
+                "details": shortage_details,
+            })
+    else:
+        warning = "Tidak ada menu/BOM hari ini, stok tidak dipotong"
+
+    # ─── Langkah 4: Insert deliveries per sekolah ────────────────────
+    inserted_delivery_ids: list = []
+    delivery_records: list = []
+    try:
+        for d in body.deliveries:
+            row = {
+                "tenant_id": tenant_id,
+                "school_id": d.school_id,
+                "delivery_date": body.delivery_date,
+                "portions_sent": d.portions_sent,
+                "receiver_name": d.receiver_name,
+                "notes": d.notes,
+                "status": "confirmed",
+            }
+            ins_resp = supabase.table("mbg_deliveries").insert(row).execute()
+            ins_data = (getattr(ins_resp, "data", None) or [{}])[0]
+            inserted_delivery_ids.append(ins_data.get("id"))
+            delivery_records.append({
+                **row,
+                "id": ins_data.get("id"),
+                "school_name": db_schools.get(d.school_id, {}).get("name", d.school_id),
+            })
+    except Exception as e:
+        # Rollback deliveries yang sudah diinsert
+        for did in inserted_delivery_ids:
+            if did:
+                try:
+                    supabase.table("mbg_deliveries").delete().eq("id", did).execute()
+                except Exception:
+                    pass
+        raise HTTPException(500, detail=f"Gagal insert delivery: {e}")
+
+    # ─── Langkah 5: Potong stok ───────────────────────────────────────
+    if menu_id and stock_check.get("has_bom"):
+        try:
+            recipe_svc.deduct_stock(menu_id, total_portions, tenant_id, supabase, delivery_date)
+            stok_dipotong = True
+        except Exception as e:
+            # Rollback deliveries
+            for did in inserted_delivery_ids:
+                if did:
+                    try:
+                        supabase.table("mbg_deliveries").delete().eq("id", did).execute()
+                    except Exception:
+                        pass
+            raise HTTPException(500, detail=f"Gagal potong stok: {e}")
+
+    # ─── Langkah 6: Ambil allocation settings + hitung ────────────────
+    alloc_resp = (
+        supabase.table("mbg_allocation_settings")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .limit(1)
+        .execute()
+    )
+    alloc_settings = (getattr(alloc_resp, "data", None) or [{}])[0]
+    price_per_portion = float(alloc_settings.get("price_per_portion") or 15000)
+    food_pct   = float(alloc_settings.get("food_pct")   or 0.80)
+    labor_pct  = float(alloc_settings.get("labor_pct")  or 0.15)
+    ops_pct    = float(alloc_settings.get("ops_pct")    or 0.05)
+
+    total_revenue = price_per_portion * total_portions
+    budget_food   = round(total_revenue * food_pct, 2)
+    budget_labor  = round(total_revenue * labor_pct, 2)
+    budget_ops    = round(total_revenue * ops_pct, 2)
+
+    allocation = {
+        "total_revenue": total_revenue,
+        "price_per_portion": price_per_portion,
+        "budget_food": budget_food,
+        "budget_labor": budget_labor,
+        "budget_ops": budget_ops,
+        "food_pct": round(food_pct * 100, 1),
+        "labor_pct": round(labor_pct * 100, 1),
+        "ops_pct": round(ops_pct * 100, 1),
+    }
+
+    # ─── Langkah 6b: Insert mbg_budget_allocations ───────────────────
+    alloc_row = {
+        "tenant_id": tenant_id,
+        "delivery_date": body.delivery_date,
+        "total_portions": total_portions,
+        "price_per_portion": str(price_per_portion),
+        "total_revenue": str(total_revenue),
+        "pph22_deduction": "0.00",
+        "net_revenue": str(total_revenue),
+        "budget_food": str(budget_food),
+        "budget_labor": str(budget_labor),
+        "budget_ops": str(budget_ops),
+        "actual_food_cost": "0.00",
+        "actual_labor_cost": str(budget_labor),
+        "actual_ops_cost": str(budget_ops),
+        "net_profit": "0.00",
+    }
+    alloc_insert_resp = supabase.table("mbg_budget_allocations").insert(alloc_row).execute()
+    alloc_db = (getattr(alloc_insert_resp, "data", None) or [{}])[0]
+    alloc_id = alloc_db.get("id")
+
+    # ─── Langkah 7: Insert piutang (receivables) ─────────────────────
+    from datetime import timedelta as _td
+    due_date = (delivery_date + _td(days=30)).isoformat()
+    recv_resp = supabase.table("receivables").insert({
+        "tenant_id": tenant_id,
+        "debtor_name": "Pemerintah - MBG",
+        "amount": str(total_revenue),
+        "pph22_amount": "0.00",
+        "due_date": due_date,
+        "source": "mbg_delivery",
+        "status": "unpaid",
+    }).execute()
+    receivable_id = ((getattr(recv_resp, "data", None) or [{}])[0]).get("id")
+
+    # ─── Langkah 8: Generate draft nota PDF ──────────────────────────
+    tenant_resp = (
+        supabase.table("tenants")
+        .select("id, name")
+        .eq("id", tenant_id)
+        .single()
+        .execute()
+    )
+    tenant_info = getattr(tenant_resp, "data", None) or {"id": tenant_id, "name": "SPPG"}
+    menu_info_dict = {
+        "name": (menu_info or {}).get("menu_name", "—"),
+        "id": menu_id,
+    }
+    pdf_url = pdf_svc.generate_mbg_delivery_note(
+        deliveries=delivery_records,
+        tenant_info=tenant_info,
+        menu_info=menu_info_dict,
+        allocation=allocation,
+        delivery_date=body.delivery_date,
+        supabase=supabase,
+    )
+
+    # Update pdf_draft_url di budget_allocations
+    if alloc_id and pdf_url:
+        supabase.table("mbg_budget_allocations").update(
+            {"pdf_draft_url": pdf_url}
+        ).eq("id", alloc_id).execute()
+
+    # ─── Langkah 9: Trigger regenerate Excel (background) ────────────
+    background_tasks.add_task(
+        ExportService().regenerate_monthly_excel,
+        tenant_id,
+        delivery_date.year,
+        delivery_date.month,
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "delivery_date": body.delivery_date,
+            "total_schools": len(body.deliveries),
+            "total_portions": total_portions,
+            "deliveries": delivery_records,
+            "allocation": allocation,
+            "receivable_id": receivable_id,
+            "pdf_draft_url": pdf_url,
+            "stok_dipotong": stok_dipotong,
+            "warning": warning,
+        },
+    }
+
+
+# ─── GET /mbg/deliveries/summary ─────────────────────────────────────────────
+
+@delivery_router.get("/summary", response_model=Dict[str, Any])
+def get_delivery_summary(
+    date_param: str = Query(default=None, alias="date"),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Ringkasan penyerahan MBG untuk tanggal tertentu (default hari ini)."""
+    supabase = get_supabase()
+    tenant_id = current_user.tenant_id
+
+    try:
+        target_date = date.fromisoformat(date_param) if date_param else date.today()
+    except ValueError:
+        raise HTTPException(422, detail="Format date harus YYYY-MM-DD")
+
+    # Ambil deliveries
+    del_resp = (
+        supabase.table("mbg_deliveries")
+        .select("*, schools(name)")
+        .eq("tenant_id", tenant_id)
+        .eq("delivery_date", target_date.isoformat())
+        .execute()
+    )
+    deliveries_raw = getattr(del_resp, "data", None) or []
+
+    total_portions = sum(d.get("portions_sent", 0) for d in deliveries_raw)
+
+    # Ambil menu
+    dow = target_date.weekday() + 1
+    ws = _get_week_start(target_date)
+    menu_resp = (
+        supabase.table("mbg_weekly_menus")
+        .select("menu_name, menu_id")
+        .eq("tenant_id", tenant_id)
+        .eq("week_start", ws.isoformat())
+        .eq("day_of_week", dow)
+        .limit(1)
+        .execute()
+    )
+    menu_rows = getattr(menu_resp, "data", None) or []
+    menu_row = menu_rows[0] if menu_rows else None
+    menu_name = (menu_row or {}).get("menu_name")
+    menu_id = (menu_row or {}).get("menu_id")
+
+    has_bom = False
+    stok_status = "tidak_ada_menu"
+    if menu_id:
+        bom_chk = (
+            supabase.table("recipes")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("menu_id", menu_id)
+            .limit(1)
+            .execute()
+        )
+        has_bom = bool(getattr(bom_chk, "data", None))
+        stok_status = "tidak_ada_bom" if not has_bom else (
+            "dipotong" if deliveries_raw else "tidak_ada_bom"
+        )
+
+    # Ambil alokasi
+    alloc_resp = (
+        supabase.table("mbg_budget_allocations")
+        .select("total_revenue, budget_food, budget_labor, budget_ops")
+        .eq("tenant_id", tenant_id)
+        .eq("delivery_date", target_date.isoformat())
+        .limit(1)
+        .execute()
+    )
+    alloc_rows = getattr(alloc_resp, "data", None) or []
+    allocation = alloc_rows[0] if alloc_rows else None
+
+    deliveries_clean = [
+        {
+            "school_name": (d.get("schools") or {}).get("name", "?"),
+            "portions_sent": d.get("portions_sent"),
+            "receiver_name": d.get("receiver_name"),
+            "status": d.get("status"),
+        }
+        for d in deliveries_raw
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "date": target_date.isoformat(),
+            "total_portions": total_portions,
+            "total_schools": len(deliveries_clean),
+            "menu_name": menu_name,
+            "has_bom": has_bom,
+            "deliveries": deliveries_clean,
+            "allocation": allocation,
+            "stok_status": stok_status,
+        },
+    }
