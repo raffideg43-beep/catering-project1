@@ -1,34 +1,45 @@
 """
 bot/handlers/nota_handler.py
-Handler untuk foto nota: upload → backend → OCR async — Modul 7
+Handler foto nota: single + batch upload + kompresi — Modul 7 & 8
 
-Alur:
-  User kirim foto → download dari Telegram → POST /transactions/from-photo
-  Backend OCR selesai → worker kirim notif balik ke user
-  User klik Konfirmasi/Edit/Batalkan → callback handler
+State machine:
+  User kirim foto → compress → tambah ke batch (context)
+  Klik "Selesai" / 5 foto / timeout 5 menit → submit_batch → backend
+  Backend OCR selesai → notif Telegram → konfirmasi/edit/batalkan
 """
 
 import logging
-from io import BytesIO
+import time
+from uuid import uuid4
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes
 
 from core.config import settings
 from keyboards.main_menu import get_main_menu
 from utils.api_client import get_api_client
 from utils.formatter import format_error
-from utils.session import get_token, get_role, is_authenticated
+from utils.image_utils import compress_photo
+from utils.session import get_role, get_token, is_authenticated
 
 logger = logging.getLogger(__name__)
 
-# Role yang boleh input transaksi
+BATCH_TIMEOUT = 300   # 5 menit
+MAX_BATCH_SIZE = 5
+
 CAN_INPUT_ROLES = {"owner", "admin", "kasir"}
 
 
 def _can_input(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    role = get_role(context)
-    return role in CAN_INPUT_ROLES
+    return get_role(context) in CAN_INPUT_ROLES
+
+
+# ─── Tombol helper ────────────────────────────────────────────────────────────
+
+def _batch_keyboard(n: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"✅ Selesai Kirim ({n} foto)", callback_data="selesai_kirim"),
+    ]])
 
 
 # ─── Handler: user kirim foto ─────────────────────────────────────────────────
@@ -38,13 +49,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     Terima foto dari user:
       1. Cek auth + role
       2. Download foto (ukuran terbesar)
-      3. POST ke /transactions/from-photo (multipart)
-      4. Reply dengan status pending
+      3. Kompres dengan compress_photo()
+      4. Tambah ke batch aktif (context.user_data)
+      5. Edit/kirim pesan status batch
+      6. Auto-submit jika n >= MAX_BATCH_SIZE
     """
     if not update.message or not update.message.photo:
         return
 
-    # ─── Cek auth ────────────────────────────────────────────────────
     if not is_authenticated(context):
         await update.message.reply_text(
             "❌ Silakan /start dulu untuk login.",
@@ -58,73 +70,210 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    # ─── Download foto — ambil ukuran terbesar ────────────────────────
-    photo = update.message.photo[-1]   # index -1 = resolusi terbesar
-    await update.message.reply_text("⏳ Mengirim foto...")
-
+    # ─── Download + Kompres ───────────────────────────────────────────
+    photo = update.message.photo[-1]
     try:
         photo_file = await photo.get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
+        raw_bytes = await photo_file.download_as_bytearray()
+        photo_bytes = compress_photo(bytes(raw_bytes))
     except Exception as e:
-        logger.error(f"Download foto gagal: {e}")
-        await update.message.reply_text(
-            format_error(f"Gagal mengambil foto: {e}")
-        )
+        logger.error(f"Download/kompres foto gagal: {e}")
+        await update.message.reply_text(format_error(f"Gagal mengambil foto: {e}"))
         return
 
-    # ─── Upload ke backend via multipart ─────────────────────────────
-    token = get_token(context)
-    api = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    user_id = update.effective_user.id if update.effective_user else 0
 
-    telegram_id = update.effective_user.id if update.effective_user else 0
-    filename = f"{telegram_id}_{photo.file_unique_id}.jpg"
+    # ─── Inisialisasi batch jika belum ada ───────────────────────────
+    batch = context.user_data.get("active_batch")
+    if not batch:
+        batch = {
+            "batch_id": str(uuid4()),
+            "photos": [],
+            "start_time": time.time(),
+            "message_id": None,
+        }
+        context.user_data["active_batch"] = batch
+
+        # Batalkan timeout lama jika ada
+        jobs = context.job_queue.get_jobs_by_name(f"batch_timeout_{chat_id}")
+        for j in jobs:
+            j.schedule_removal()
+
+        # Jadwalkan auto-timeout 5 menit
+        context.job_queue.run_once(
+            check_batch_timeout,
+            when=BATCH_TIMEOUT,
+            name=f"batch_timeout_{chat_id}",
+            chat_id=chat_id,
+            user_id=user_id,
+            data={"chat_id": chat_id},
+        )
+
+    # ─── Tambah foto ke batch ────────────────────────────────────────
+    batch["photos"].append(photo_bytes)
+    n = len(batch["photos"])
+
+    # ─── Edit/kirim pesan status ─────────────────────────────────────
+    status_text = (
+        f"📸 *{n} foto diterima\\.*\n"
+        f"Kirim foto lagi atau klik Selesai\\.\n"
+        f"⏱️ Auto\\-kirim dalam 5 menit"
+    )
+
+    msg_id = batch.get("message_id")
+    try:
+        if msg_id:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text=status_text,
+                reply_markup=_batch_keyboard(n),
+                parse_mode="MarkdownV2",
+            )
+        else:
+            sent = await update.message.reply_text(
+                status_text,
+                reply_markup=_batch_keyboard(n),
+                parse_mode="MarkdownV2",
+            )
+            batch["message_id"] = sent.message_id
+    except Exception as e:
+        logger.warning(f"Edit/kirim pesan batch gagal: {e}")
+        sent = await update.message.reply_text(
+            status_text,
+            reply_markup=_batch_keyboard(n),
+            parse_mode="MarkdownV2",
+        )
+        batch["message_id"] = sent.message_id
+
+    # ─── Auto-submit jika sudah MAX ───────────────────────────────────
+    if n >= MAX_BATCH_SIZE:
+        await submit_batch(context, chat_id)
+
+
+# ─── submit_batch: kirim semua foto ke backend ───────────────────────────────
+
+async def submit_batch(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    """Kirim semua foto di batch aktif ke backend via multipart POST."""
+    batch = context.user_data.get("active_batch")
+    if not batch or not batch.get("photos"):
+        return
+
+    photos_bytes: list = batch["photos"]
+    n = len(photos_bytes)
+    batch_id: str = batch["batch_id"]
+    msg_id = batch.get("message_id")
+    token = get_token(context)
+
+    # Kasih tahu user sedang mengupload
+    try:
+        if msg_id:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text=f"⏳ Mengirim {n} foto ke server\\.\\.\\.",
+                parse_mode="MarkdownV2",
+            )
+    except Exception:
+        pass
+
+    # Clear batch dari context SEBELUM upload (prevent double-submit)
+    del context.user_data["active_batch"]
+
+    # ─── Build multipart files ────────────────────────────────────────
+    files = [("files", (f"foto_{i+1}.jpg", pb, "image/jpeg")) for i, pb in enumerate(photos_bytes)]
+    api = get_api_client(settings.backend_url)
 
     try:
         resp = await api.post(
-            "/transactions/from-photo",
+            "/transactions/from-photo-batch",
             token=token,
-            files={
-                "file": (filename, bytes(photo_bytes), "image/jpeg"),
-            },
+            files=[("batch_id", (None, batch_id)), *files],
         )
     except Exception as e:
-        logger.error(f"Upload foto error: {e}")
-        await update.message.reply_text(
-            "❌ Gagal mengirim foto ke server.\n\n"
-            "Coba lagi atau gunakan /belanja untuk input manual.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✏️ Input Manual", callback_data="belanja_manual")],
-            ]),
+        logger.error(f"submit_batch error: {e}")
+        resp = None
+
+    if resp and resp.get("success"):
+        success_text = (
+            f"⏳ *{n} foto sedang diproses\\.*\n"
+            "Kami akan kabari hasilnya sebentar lagi\\."
         )
+        try:
+            if msg_id:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=success_text,
+                    parse_mode="MarkdownV2",
+                )
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=success_text, parse_mode="MarkdownV2")
+        except Exception:
+            pass
+    else:
+        err_text = (
+            "❌ Gagal mengirim foto\\. Coba lagi\\.\n"
+        )
+        retry_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔄 Coba Kirim Ulang", callback_data="retry_photo"),
+            InlineKeyboardButton("✏️ Input Manual",     callback_data="belanja_manual"),
+        ]])
+        try:
+            if msg_id:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=err_text,
+                    reply_markup=retry_kb,
+                    parse_mode="MarkdownV2",
+                )
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=err_text, reply_markup=retry_kb, parse_mode="MarkdownV2")
+        except Exception:
+            pass
+
+
+# ─── Callback: selesai_kirim ─────────────────────────────────────────────────
+
+async def selesai_kirim(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+    chat_id = update.effective_chat.id if update.effective_chat else 0
+    await submit_batch(context, chat_id)
+
+
+# ─── Job: check_batch_timeout ────────────────────────────────────────────────
+
+async def check_batch_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Auto-submit batch jika timeout 5 menit sejak foto pertama."""
+    chat_id = context.job.chat_id if context.job else 0
+    # Akses user_data via callback_context — tidak bisa langsung di job
+    # Kirim pesan info dulu, lalu submit
+    batch = (context.user_data or {}).get("active_batch")
+    if not batch or not batch.get("photos"):
         return
 
-    if not resp.get("success"):
-        await update.message.reply_text(
-            format_error(resp.get("detail", "Upload gagal"))
+    n = len(batch["photos"])
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⏰ Waktu habis, {n} foto sedang diproses otomatis\\.",
+            parse_mode="MarkdownV2",
         )
-        return
+    except Exception:
+        pass
 
-    data = resp.get("data", {})
-    trx_id = data.get("transaction_id", "")
-
-    # Simpan di context untuk penggunaan callback selanjutnya
-    context.user_data["last_trx_id"] = trx_id
-
-    await update.message.reply_text(
-        "📸 *Foto diterima\\!*\n\n"
-        "⏳ Sedang membaca nota\\.\\.\\.\n"
-        "Kami akan kabari setelah selesai\\.",
-        parse_mode="MarkdownV2",
-    )
+    await submit_batch(context, chat_id)
 
 
-# ─── Callback: konfirmasi nota ────────────────────────────────────────────────
+# ─── Callback: konfirmasi nota single ────────────────────────────────────────
 
 async def confirm_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Callback data: confirm_{trx_id}
-    POST /transactions/{trx_id}/confirm
-    """
+    """Callback: confirm_{trx_id}"""
     query = update.callback_query
     if not query:
         return
@@ -132,7 +281,7 @@ async def confirm_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     trx_id = query.data.replace("confirm_", "")
     token = get_token(context)
-    api = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
+    api = get_api_client(settings.backend_url)
 
     try:
         resp = await api.post(f"/transactions/{trx_id}/confirm", token=token)
@@ -141,36 +290,25 @@ async def confirm_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     if not resp.get("success"):
-        await query.edit_message_text(
-            format_error(resp.get("detail", "Konfirmasi gagal"))
-        )
+        await query.edit_message_text(format_error(resp.get("detail", "Konfirmasi gagal")))
         return
 
     warnings = resp.get("stok_warnings", [])
-    warn_text = ""
-    if warnings:
-        warn_text = "\n\n⚠️ " + "\n⚠️ ".join(warnings[:3])
+    warn_text = "\n\n⚠️ " + "\n⚠️ ".join(warnings[:3]) if warnings else ""
 
     await query.edit_message_text(
-        f"✅ *Nota dikonfirmasi\\!*\n\n"
-        f"Stok \\& arus kas sudah diupdate\\.{_esc(warn_text)}",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📊 Lihat Ringkasan", callback_data="show_summary"),
-                InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
-            ]
-        ]),
+        f"✅ *Nota dikonfirmasi\\!*\n\nStok \\& arus kas sudah diupdate\\.{_esc(warn_text)}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+        ]]),
         parse_mode="MarkdownV2",
     )
 
 
-# ─── Callback: edit nota ──────────────────────────────────────────────────────
+# ─── Callback: edit nota ─────────────────────────────────────────────────────
 
 async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Callback data: edit_{trx_id}
-    Tampilkan daftar items untuk dipilih user yang ingin diedit.
-    """
+    """Callback: edit_{trx_id}"""
     query = update.callback_query
     if not query:
         return
@@ -178,7 +316,7 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     trx_id = query.data.replace("edit_", "")
     token = get_token(context)
-    api = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
+    api = get_api_client(settings.backend_url)
 
     try:
         resp = await api.get(f"/transactions/{trx_id}", token=token)
@@ -190,7 +328,6 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     items = trx.get("items", [])
     nama_toko = trx.get("nama_toko") or "Nota"
 
-    # Simpan context untuk edit item selanjutnya
     context.user_data["editing_trx_id"] = trx_id
     context.user_data["editing_items"] = items
 
@@ -198,8 +335,7 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for idx, item in enumerate(items):
         qty = float(item.get("qty", 0))
         sat = item.get("unit", "pcs")
-        harga_raw = item.get("price", 0)
-        harga = f"Rp {int(harga_raw):,}".replace(",", ".")
+        harga = f"Rp {int(item.get('price', 0)):,}".replace(",", ".")
         nama = item.get("product_name", "?")[:20]
         conf = " ⚠️" if item.get("needs_confirmation") else ""
         buttons.append([
@@ -212,20 +348,16 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     buttons.append([InlineKeyboardButton("← Kembali", callback_data=f"back_nota_{trx_id}")])
 
     await query.edit_message_text(
-        f"✏️ *Edit Nota — {_esc(nama_toko)}*\n\n"
-        f"Pilih item yang ingin diedit \\({len(items)} item\\):",
+        f"✏️ *Edit Nota — {_esc(nama_toko)}*\n\nPilih item yang ingin diedit \\({len(items)} item\\):",
         reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode="MarkdownV2",
     )
 
 
-# ─── Callback: batalkan nota ──────────────────────────────────────────────────
+# ─── Callback: batalkan nota ─────────────────────────────────────────────────
 
 async def cancel_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Callback data: cancel_{trx_id}
-    DELETE /transactions/{trx_id} (soft delete — status=voided)
-    """
+    """Callback: cancel_{trx_id}"""
     query = update.callback_query
     if not query:
         return
@@ -233,7 +365,7 @@ async def cancel_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     trx_id = query.data.replace("cancel_", "")
     token = get_token(context)
-    api = get_api_client(settings.backend_url)  # type: ignore[attr-defined]
+    api = get_api_client(settings.backend_url)
 
     try:
         await api.delete(f"/transactions/{trx_id}", token=token)
@@ -243,28 +375,23 @@ async def cancel_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await query.edit_message_text(
         "❌ Nota dibatalkan\\.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback")]
-        ]),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+        ]]),
         parse_mode="MarkdownV2",
     )
 
 
-# ─── Callback: edit item spesifik ─────────────────────────────────────────────
+# ─── Callback: edit_item ─────────────────────────────────────────────────────
 
 async def edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Callback data: edit_item_{trx_id}_{item_idx}
-    Tampilkan detail item dan instruksi edit.
-    """
+    """Callback: edit_item_{trx_id}_{idx}"""
     query = update.callback_query
     if not query:
         return
     await query.answer()
 
     parts = query.data.split("_")
-    # format: edit_item_{trx_id}_{idx} — trx_id bisa punya dash
-    # edit_item_ prefix = 10 chars, idx = parts[-1]
     try:
         item_idx = int(parts[-1])
         trx_id = "_".join(parts[2:-1])
@@ -282,9 +409,7 @@ async def edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     qty = float(item.get("qty", 0))
     sat = item.get("unit", "pcs")
     harga = item.get("price", 0)
-    conf_note = ""
-    if item.get("needs_confirmation"):
-        conf_note = "\n⚠️ _Nama item ini tidak cocok di database produk_"
+    conf_note = "\n⚠️ _Nama item ini tidak cocok di database produk_" if item.get("needs_confirmation") else ""
 
     context.user_data["editing_item_idx"] = item_idx
     context.user_data["editing_item_id"] = item.get("id")
@@ -293,15 +418,114 @@ async def edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"✏️ *Edit: {_esc(nama)}*{conf_note}\n\n"
         f"Qty saat ini: {qty} {_esc(sat)}\n"
         f"Harga saat ini: Rp {int(harga):,}\n\n".replace(",", ".") +
-        "Ketik: `qty\\_baru harga\\_baru`\n"
-        "Contoh: `10 12500`\n\n"
-        "Atau ketik /skip untuk kembali tanpa ubah\\.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("← Kembali", callback_data=f"edit_{trx_id}")]
-        ]),
+        "Ketik: `qty\\_baru harga\\_baru`\nContoh: `10 12500`\n\n"
+        "Atau /skip untuk kembali tanpa ubah\\.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Kembali", callback_data=f"edit_{trx_id}")
+        ]]),
         parse_mode="MarkdownV2",
     )
 
+
+# ─── Callback batch: konfirmasi semua ────────────────────────────────────────
+
+async def konfirmasi_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: konfirmasi_semua_{batch_id}"""
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer("Memproses...")
+
+    batch_id = query.data.replace("konfirmasi_semua_", "")
+    token = get_token(context)
+    api = get_api_client(settings.backend_url)
+
+    try:
+        batch_resp = await api.get(f"/transactions/batch/{batch_id}", token=token)
+    except Exception as e:
+        await query.edit_message_text(format_error(f"Gagal ambil data batch: {e}"))
+        return
+
+    photos = (batch_resp.get("data") or {}).get("photos", [])
+    confirmed = 0
+    errors = []
+
+    for p in photos:
+        tid = p.get("trx_id")
+        if not tid or p.get("status") not in ("pending_confirm", "done"):
+            continue
+        try:
+            r = await api.post(f"/transactions/{tid}/confirm", token=token)
+            if r.get("success"):
+                confirmed += 1
+            else:
+                errors.append(tid[:8])
+        except Exception as e:
+            errors.append(f"{tid[:8]}: {e}")
+
+    err_note = f"\n\n⚠️ {len(errors)} gagal: {', '.join(errors[:3])}" if errors else ""
+    await query.edit_message_text(
+        f"✅ *{confirmed} nota dikonfirmasi\\!*\n\nStok \\& arus kas sudah diupdate\\.{_esc(err_note)}",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ─── Callback batch: batal semua ─────────────────────────────────────────────
+
+async def batal_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: batal_semua_{batch_id}"""
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer("Membatalkan...")
+
+    batch_id = query.data.replace("batal_semua_", "")
+    token = get_token(context)
+    api = get_api_client(settings.backend_url)
+
+    try:
+        batch_resp = await api.get(f"/transactions/batch/{batch_id}", token=token)
+    except Exception as e:
+        await query.edit_message_text(format_error(f"Gagal ambil data batch: {e}"))
+        return
+
+    photos = (batch_resp.get("data") or {}).get("photos", [])
+    cancelled = 0
+    for p in photos:
+        tid = p.get("trx_id")
+        if not tid:
+            continue
+        try:
+            await api.delete(f"/transactions/{tid}", token=token)
+            cancelled += 1
+        except Exception:
+            pass
+
+    await query.edit_message_text(
+        f"❌ *{cancelled} nota dibatalkan\\.*",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ─── Callback batch: kirim ulang ─────────────────────────────────────────────
+
+async def kirim_ulang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback: kirim_ulang_{batch_id}"""
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    # Bersihkan active_batch agar user bisa kirim ulang dari awal
+    context.user_data.pop("active_batch", None)
+
+    await query.edit_message_text(
+        "📸 Kirim ulang foto yang gagal\\.\nBot akan proses secara terpisah\\.",
+        parse_mode="MarkdownV2",
+    )
+
+
+# ─── Utility ─────────────────────────────────────────────────────────────────
 
 def _esc(text: str) -> str:
     import re

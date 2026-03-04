@@ -39,8 +39,8 @@ from workers.ocr_worker import run_ocr_in_background
 
 router = APIRouter(tags=["transactions"])
 
-# Max upload size: 10 MB
-MAX_PHOTO_BYTES = 10 * 1024 * 1024
+# Safety net setelah kompresi di bot side — max 2MB
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
 
 
@@ -457,3 +457,208 @@ def delete_transaction(
     ).eq("tenant_id", current_user.tenant_id).execute()
 
     return {"success": True, "message": "Transaksi dibatalkan"}
+
+
+# ─── POST /transactions/from-photo-batch ─────────────────────────────────────
+
+@router.post(
+    "/from-photo-batch",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+async def upload_photo_batch(
+    background_tasks: BackgroundTasks,
+    batch_id: str = File(...),
+    files: List[UploadFile] = File(...),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Terima 1-5 foto sekaligus.
+    Tiap foto diproses independen — error 1 foto tidak hentikan lainnya.
+    Membuat 1 record photo_batches yang mengaggregasi semua transaksi.
+    """
+    supabase = get_supabase()
+
+    # ─── Validasi jumlah foto ─────────────────────────────────────────
+    if not files:
+        raise HTTPException(status_code=422, detail="Tidak ada foto yang dikirim")
+    if len(files) > 5:
+        raise HTTPException(status_code=422, detail="Maksimum 5 foto per batch")
+
+    batch_photos: List[dict] = []
+    trx_ids: List[str] = []
+    period_folder = date.today().strftime("%Y-%m")
+    telegram_id: int = current_user.telegram_id or 0
+
+    # ─── Proses tiap foto ────────────────────────────────────────────
+    for file in files:
+        content_type = file.content_type or ""
+        if content_type not in ALLOWED_MIME:
+            batch_photos.append({
+                "status": "failed",
+                "error_message": f"Tipe file tidak didukung: {content_type}",
+            })
+            continue
+
+        image_bytes = await file.read()
+        if len(image_bytes) > MAX_PHOTO_BYTES:
+            batch_photos.append({
+                "status": "failed",
+                "error_message": "Foto terlalu besar (max 2MB). Kompres foto sebelum kirim.",
+            })
+            continue
+
+        # Upload ke Supabase Storage
+        ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png"
+        file_name = f"{uuid.uuid4()}.{ext}"
+        storage_path = f"{current_user.tenant_id}/notas/{period_folder}/{file_name}"
+        try:
+            supabase.storage.from_("nota-photos").upload(
+                path=storage_path,
+                file=image_bytes,
+                file_options={"content-type": content_type},
+            )
+            url_resp = supabase.storage.from_("nota-photos").get_public_url(storage_path)
+            photo_url = url_resp if isinstance(url_resp, str) else str(url_resp)
+        except Exception as e:
+            batch_photos.append({"status": "failed", "error_message": f"Upload gagal: {e}"})
+            continue
+
+        # Insert transaksi record
+        trx_data = {
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "type": "expense",
+            "source": "telegram_photo",
+            "status": "processing",
+            "photo_url": photo_url,
+            "date": date.today().isoformat(),
+            "total": "0.00",
+            "pph22_amount": "0.00",
+            "ppn_amount": "0.00",
+            "subtotal": "0.00",
+            "discount": "0.00",
+        }
+        resp = supabase.table("transactions").insert(trx_data).execute()
+        data = getattr(resp, "data", None) or []
+        if not data:
+            batch_photos.append({"status": "failed", "error_message": "Gagal insert transaksi"})
+            continue
+
+        trx_id = data[0]["id"]
+        trx_ids.append(trx_id)
+        batch_photos.append({
+            "trx_id": trx_id,
+            "photo_url": photo_url,
+            "status": "processing",
+        })
+
+        # Enqueue OCR background task
+        background_tasks.add_task(
+            run_ocr_in_background,
+            trx_id,
+            photo_url,
+            current_user.tenant_id,
+            telegram_id,
+            batch_id,
+        )
+
+    # ─── Insert photo_batches record ──────────────────────────────────
+    from datetime import datetime, timedelta, timezone
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    total_valid = len(trx_ids)
+    total_failed = len(batch_photos) - total_valid
+
+    try:
+        supabase.table("photo_batches").insert({
+            "id": batch_id,
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.id,
+            "telegram_id": telegram_id,
+            "total_photos": len(files),
+            "processed": 0,
+            "failed": total_failed,
+            "status": "processing",
+            "photos": batch_photos,
+            "expires_at": expires_at,
+        }).execute()
+    except Exception as e:
+        # Batch record gagal — non-fatal, OCR tetap jalan
+        pass
+
+    return {
+        "success": True,
+        "data": {
+            "batch_id": batch_id,
+            "total": len(files),
+            "accepted": total_valid,
+            "failed_immediately": total_failed,
+            "transaction_ids": trx_ids,
+            "message": f"Memproses {total_valid} foto... Kami akan kabari setelah selesai.",
+        },
+    }
+
+
+# ─── GET /transactions/batch/{batch_id} ──────────────────────────────────────
+
+@router.get(
+    "/batch/{batch_id}",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+def get_batch_status(
+    batch_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Status batch + detail tiap foto."""
+    supabase = get_supabase()
+
+    batch_resp = (
+        supabase.table("photo_batches")
+        .select("*")
+        .eq("id", batch_id)
+        .eq("tenant_id", current_user.tenant_id)
+        .single()
+        .execute()
+    )
+    batch = getattr(batch_resp, "data", None)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch tidak ditemukan")
+
+    # Enrich tiap foto dengan data transaksi terbaru
+    photos_raw: List[dict] = batch.get("photos") or []
+    trx_ids_in_batch = [p["trx_id"] for p in photos_raw if p.get("trx_id")]
+    if trx_ids_in_batch:
+        trx_resp = (
+            supabase.table("transactions")
+            .select("id, status, nama_toko, total")
+            .in_("id", trx_ids_in_batch)
+            .execute()
+        )
+        trx_map = {t["id"]: t for t in (getattr(trx_resp, "data", None) or [])}
+        for p in photos_raw:
+            tid = p.get("trx_id")
+            if tid and tid in trx_map:
+                p.update({
+                    "status": trx_map[tid].get("status", p.get("status")),
+                    "nama_toko": trx_map[tid].get("nama_toko"),
+                    "total": trx_map[tid].get("total"),
+                })
+
+    processed = batch.get("processed", 0)
+    failed = batch.get("failed", 0)
+    total = batch.get("total_photos", 0)
+    is_complete = (processed + failed) >= total
+
+    return {
+        "success": True,
+        "data": {
+            "batch_id": batch_id,
+            "status": batch.get("status"),
+            "total_photos": total,
+            "processed": processed,
+            "failed": failed,
+            "is_complete": is_complete,
+            "photos": photos_raw,
+        },
+    }

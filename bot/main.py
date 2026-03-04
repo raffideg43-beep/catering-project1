@@ -31,6 +31,10 @@ from handlers.nota_handler import (
     edit_item,
     edit_nota,
     handle_photo,
+    selesai_kirim,
+    konfirmasi_semua,
+    batal_semua,
+    kirim_ulang,
 )
 
 # Setup logging
@@ -61,6 +65,12 @@ async def main() -> None:
     app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
     app.add_handler(CallbackQueryHandler(cancel_nota,  pattern=r"^cancel_[a-f0-9\-]{36}$"))
     app.add_handler(CallbackQueryHandler(edit_item,    pattern=r"^edit_item_"))
+
+    # ─── Callback handlers: batch ────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(selesai_kirim,    pattern=r"^selesai_kirim$"))
+    app.add_handler(CallbackQueryHandler(konfirmasi_semua, pattern=r"^konfirmasi_semua_"))
+    app.add_handler(CallbackQueryHandler(batal_semua,      pattern=r"^batal_semua_"))
+    app.add_handler(CallbackQueryHandler(kirim_ulang,      pattern=r"^kirim_ulang_"))
 
     # ─── Callback handlers: auth / navigation ────────────────────────
     app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
