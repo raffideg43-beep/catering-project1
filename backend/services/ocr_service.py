@@ -74,7 +74,7 @@ class OCRService:
 
     def __init__(self) -> None:
         self.api_key = settings.gemini_api_key
-        self.model = "gemini-1.5-flash"
+        self.model = settings.gemini_ocr_model
         self.api_url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent?key={self.api_key}"
