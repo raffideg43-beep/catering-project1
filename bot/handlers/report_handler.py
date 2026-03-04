@@ -520,7 +520,7 @@ async def download_excel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Tampil loading
     await query.edit_message_text(
-        "⏳ Menyiapkan file Excel\.\.\.",
+        "⏳ Menyiapkan file Excel\\.\\.\\.",
         parse_mode="MarkdownV2",
     )
 
