@@ -1,35 +1,27 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import bcrypt as _bcrypt
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """
-    Create a signed JWT access token.
-    """
+    """Create a signed JWT access token."""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
 def verify_token(token: str) -> Dict[str, Any]:
-    """
-    Decode and validate a JWT token, or raise HTTP 401.
-    """
+    """Decode and validate a JWT token, or raise HTTP 401."""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,20 +30,14 @@ def verify_token(token: str) -> Dict[str, Any]:
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """Hash password menggunakan bcrypt langsung (tanpa passlib)."""
+    salt = _bcrypt.gensalt()
+    return _bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
-
-
-
-
-
-
-
-
-
-
-
-
+    """Verifikasi password terhadap hash bcrypt."""
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False

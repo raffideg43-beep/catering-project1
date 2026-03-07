@@ -58,7 +58,7 @@ def get_daily_report(
         supabase.table("mbg_budget_allocations")
         .select("total_portions, total_revenue, budget_food, budget_labor, budget_ops")
         .eq("tenant_id", tid)
-        .eq("delivery_date", date_str)
+        .eq("date", date_str)
         .limit(1)
         .execute()
     )
@@ -104,7 +104,7 @@ def get_daily_report(
     # ─── Expenses: transaksi hari ini ────────────────────────────────
     exp_resp = (
         supabase.table("transactions")
-        .select("id, total, nama_toko")
+        .select("id, total, suppliers(name)")
         .eq("tenant_id", tid)
         .eq("date", date_str)
         .eq("type", "expense")
@@ -117,7 +117,7 @@ def get_daily_report(
     # Group by supplier
     sup_map: Dict[str, dict] = {}
     for r in exp_rows:
-        name = r.get("nama_toko") or "Tanpa Supplier"
+        name = (r.get("suppliers") or {}).get("name") or "Tanpa Supplier"
         if name not in sup_map:
             sup_map[name] = {"supplier_name": name, "total": Decimal("0"), "count": 0}
         sup_map[name]["total"] += _d(r.get("total"))
@@ -214,10 +214,10 @@ def get_monthly_report(
     # ─── MBG bulanan ─────────────────────────────────────────────────
     alloc_resp = (
         supabase.table("mbg_budget_allocations")
-        .select("total_portions, total_revenue, delivery_date")
+        .select("total_portions, total_revenue, date")
         .eq("tenant_id", tid)
-        .gte("delivery_date", first.isoformat())
-        .lte("delivery_date", last.isoformat())
+        .gte("date", first.isoformat())
+        .lte("date", last.isoformat())
         .execute()
     )
     alloc_rows = getattr(alloc_resp, "data", None) or []
@@ -229,7 +229,7 @@ def get_monthly_report(
     # ─── Expenses bulanan ─────────────────────────────────────────────
     exp_resp = (
         supabase.table("transactions")
-        .select("id, total, nama_toko")
+        .select("id, total, suppliers(name)")
         .eq("tenant_id", tid)
         .eq("type", "expense")
         .eq("status", "confirmed")
@@ -243,7 +243,7 @@ def get_monthly_report(
     # Top suppliers
     sup_map: Dict[str, Decimal] = {}
     for r in exp_rows:
-        name = r.get("nama_toko") or "Tanpa Supplier"
+        name = (r.get("suppliers") or {}).get("name") or "Tanpa Supplier"
         sup_map[name] = sup_map.get(name, Decimal("0")) + _d(r.get("total"))
     top_suppliers = [
         {"name": k, "total": str(v)}
@@ -281,16 +281,21 @@ def get_monthly_report(
 
     # ─── Excel status ─────────────────────────────────────────────────
     period_key = f"{y:04d}-{m:02d}"
-    excel_resp = (
-        supabase.table("excel_files")
-        .select("status")
-        .eq("tenant_id", tid)
-        .eq("period", period_key)
-        .limit(1)
-        .execute()
-    )
-    excel_rows = getattr(excel_resp, "data", None) or []
-    excel_status = (excel_rows[0] if excel_rows else {}).get("status", "not_generated")
+    excel_status = "not_generated"
+    try:
+        excel_resp = (
+            supabase.table("excel_files")
+            .select("status")
+            .eq("tenant_id", tid)
+            .eq("period", period_key)
+            .limit(1)
+            .execute()
+        )
+        excel_rows = getattr(excel_resp, "data", None) or []
+        excel_status = (excel_rows[0] if excel_rows else {}).get("status", "not_generated")
+    except Exception as e:
+        import logging
+        logging.warning("Failed to fetch excel_files status: %s", e)
 
     return {
         "success": True,

@@ -261,7 +261,7 @@ export default function PembukuanPage() {
                                                 <td className="px-4 py-3"><StatusBadge status={trx.status} /></td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
-                                                        <a href={`/dashboard/pembukuan/${trx.id}`} className="text-blue-600 hover:underline text-xs">👁 Detail</a>
+                                                        <a href={`/pembukuan/${trx.id}`} className="text-blue-600 hover:underline text-xs">👁 Detail</a>
                                                         {trx.status === "processing" && (
                                                             <button
                                                                 onClick={() => handleKonfirmasi(trx.id)}

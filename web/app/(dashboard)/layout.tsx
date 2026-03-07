@@ -6,12 +6,12 @@ import { isAuthenticated, clearToken } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
-  { href: "/dashboard/pembukuan", icon: "📋", label: "Pembukuan" },
-  { href: "/dashboard/mbg", icon: "🍱", label: "MBG" },
-  { href: "/dashboard/stok", icon: "📦", label: "Stok" },
-  { href: "/dashboard/piutang", icon: "💰", label: "Piutang" },
-  { href: "/dashboard/hutang", icon: "💸", label: "Hutang" },
-  { href: "/dashboard/settings", icon: "⚙️", label: "Pengaturan" },
+  { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
+  { href: "/mbg", icon: "🍱", label: "MBG" },
+  { href: "/stok", icon: "📦", label: "Stok" },
+  { href: "/piutang", icon: "💰", label: "Piutang" },
+  { href: "/hutang", icon: "💸", label: "Hutang" },
+  { href: "/settings", icon: "⚙️", label: "Pengaturan" },
 ];
 
 export default function DashboardLayout({

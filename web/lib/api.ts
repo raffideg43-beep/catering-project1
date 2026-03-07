@@ -35,7 +35,6 @@ export function getApiClient(): AxiosInstance {
             window.location.href = "/login";
           }
         } else if (status === 429) {
-          // Rate limit — tampilkan toast jika ada
           if (typeof window !== "undefined") {
             const event = new CustomEvent("app:toast", {
               detail: { message: "⚠️ Terlalu banyak request. Tunggu sebentar.", type: "warning" },
@@ -54,6 +53,8 @@ export function getApiClient(): AxiosInstance {
         return Promise.reject(error);
       }
     );
+
+
 
   }
 

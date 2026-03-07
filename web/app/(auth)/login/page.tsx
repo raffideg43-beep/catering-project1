@@ -26,7 +26,12 @@ export default function LoginPage() {
         setError(result.error || "Login gagal");
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Terjadi error");
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Terjadi error, coba lagi";
+      setError(msg);
     } finally {
       setLoading(false);
     }

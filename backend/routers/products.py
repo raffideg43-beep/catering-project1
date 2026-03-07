@@ -66,7 +66,6 @@ def create_product(
                 "sell_price": float(body.sell_price),
                 "stock_qty": float(body.stock_qty),
                 "stock_min": float(body.stock_min),
-                "notes": body.notes,
                 "is_active": True,
             }
         )
@@ -134,8 +133,6 @@ def update_product(
         update_data["sell_price"] = float(body.sell_price)
     if body.stock_min is not None:
         update_data["stock_min"] = float(body.stock_min)
-    if body.notes is not None:
-        update_data["notes"] = body.notes
 
     response = (
         supabase.table("products")

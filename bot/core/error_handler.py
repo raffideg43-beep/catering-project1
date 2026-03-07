@@ -7,7 +7,7 @@ import logging
 import traceback
 
 from telegram import Update
-from telegram.error import Forbidden, NetworkError, TimedOut
+from telegram.error import Conflict, Forbidden, NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
@@ -16,15 +16,15 @@ logger = logging.getLogger(__name__)
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler error global.
-    - NetworkError / TimedOut → log warning, tidak ganggu user
+    - NetworkError / TimedOut / Conflict → log warning, tidak ganggu user
     - Forbidden (bot diblock) → log info
     - Lainnya → log error + kirim pesan ke user jika bisa
     """
     err = context.error
 
     # ─── Network issues — bot akan retry sendiri ──────────────────────
-    if isinstance(err, (NetworkError, TimedOut)):
-        logger.warning("Network issue (ignored): %s", type(err).__name__)
+    if isinstance(err, (NetworkError, TimedOut, Conflict)):
+        logger.warning("Network issue/Conflict (ignored): %s", type(err).__name__)
         return
 
     # ─── Bot diblok user ──────────────────────────────────────────────

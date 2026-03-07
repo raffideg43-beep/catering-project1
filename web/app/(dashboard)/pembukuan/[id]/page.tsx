@@ -91,7 +91,7 @@ export default function TransactionDetailPage() {
         setConfirmLoading(true);
         try {
             await apiPost(`/transactions/${id}/confirm`);
-            router.push("/dashboard/pembukuan");
+            router.push("/pembukuan");
         } catch {
             alert("Gagal konfirmasi.");
             setConfirmLoading(false);
@@ -102,7 +102,7 @@ export default function TransactionDetailPage() {
         if (!confirm("Batalkan transaksi ini? Tindakan tidak dapat dibatalkan.")) return;
         try {
             await apiDelete(`/transactions/${id}`);
-            router.push("/dashboard/pembukuan");
+            router.push("/pembukuan");
         } catch {
             alert("Gagal membatalkan transaksi.");
         }
@@ -121,7 +121,7 @@ export default function TransactionDetailPage() {
             <div className="text-center py-20 space-y-3">
                 <p className="text-4xl">⚠️</p>
                 <p className="text-red-600 font-medium">{error ?? "Transaksi tidak ditemukan."}</p>
-                <a href="/dashboard/pembukuan" className="text-blue-600 hover:underline text-sm">← Kembali ke Pembukuan</a>
+                <a href="/pembukuan" className="text-blue-600 hover:underline text-sm">← Kembali ke Pembukuan</a>
             </div>
         );
     }
@@ -134,7 +134,7 @@ export default function TransactionDetailPage() {
         <div className="space-y-5 max-w-4xl">
             <PageHeader
                 title="Detail Transaksi"
-                backHref="/dashboard/pembukuan"
+                backHref="/pembukuan"
                 backLabel="Kembali ke Pembukuan"
                 actions={
                     <div className="flex gap-2">

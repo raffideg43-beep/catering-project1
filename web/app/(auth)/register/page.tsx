@@ -26,15 +26,23 @@ export default function RegisterPage() {
       const result = await apiPost("/auth/register-tenant", formData);
       if (result.success) {
         setToken(result.data.access_token);
-        router.push("/dashboard/onboarding");
+        router.push("/onboarding");
       } else {
         setError(result.error || "Registrasi gagal");
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Terjadi error");
+      // Axios error: err.response.data berisi JSON dari backend
+      // Custom interceptor reject: err.response berisi axios response object
+      const msg =
+        err?.response?.data?.error ||   // AxiosError 4xx: { success:false, error:"..." }
+        err?.response?.data?.detail ||  // FastAPI validation error
+        err?.message ||
+        "Terjadi error, coba lagi";
+      setError(msg);
     } finally {
       setLoading(false);
     }
+
   }
 
   return (

@@ -35,6 +35,12 @@ def get_current_tenant(current_user: UserInDB = Depends(get_current_user)):
     if not tenant_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
+    # Ambil contact_name dari nama tabel users (owner)
+    owner_query = supabase.table("users").select("name").eq("tenant_id", current_user.tenant_id).eq("role", "owner").limit(1).execute()
+    owners = getattr(owner_query, "data", None)
+    if owners:
+        tenant_data["contact_name"] = owners[0].get("name")
+
     return {"success": True, "data": TenantResponse(**tenant_data)}
 
 
@@ -57,24 +63,45 @@ def update_tenant(
         update_data["business_type"] = body.business_type
     if body.sppg_code is not None:
         update_data["sppg_code"] = body.sppg_code
+    
     if body.contact_name is not None:
-        update_data["contact_name"] = body.contact_name
+        # Field "contact_name" tidak ada di tabel tenants. 
+        # Simpan nama pemilik ke master tabel users supaya UI tidak kehilangan datanya
+        user_update = supabase.table("users").update({"name": body.contact_name}).eq("tenant_id", current_user.tenant_id).eq("role", "owner").execute()
 
-    response = (
-        supabase.table("tenants")
-        .update(update_data)
-        .eq("id", current_user.tenant_id)
-        .execute()
-    )
+    # Hanya jalankan update di tabel tenants KETIKA ada field selain contact_name
+    tenant_list = []
+    if update_data:
+        response = (
+            supabase.table("tenants")
+            .update(update_data)
+            .eq("id", current_user.tenant_id)
+            .execute()
+        )
+        tenant_list = getattr(response, "data", None) or []
+    else:
+        # Panggil ulang datanya saja tanpa update ke tabel tenants karena kosong
+        response = supabase.table("tenants").select("*").eq("id", current_user.tenant_id).execute()
+        tenant_list = getattr(response, "data", None) or []
 
-    tenant_list = getattr(response, "data", None) or []
     if not tenant_list:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update tenant",
         )
 
-    return {"success": True, "data": TenantResponse(**tenant_list[0])}
+    # Sisipkan contact_name di response akhir
+    tenant_resp = tenant_list[0]
+    if body.contact_name is not None:
+        tenant_resp["contact_name"] = body.contact_name
+    elif current_user:
+        # Ambil kembali the latest name kalau nggak disubmit tp ada di db users
+        owner_query = supabase.table("users").select("name").eq("tenant_id", current_user.tenant_id).eq("role", "owner").limit(1).execute()
+        owners = getattr(owner_query, "data", None)
+        if owners:
+            tenant_resp["contact_name"] = owners[0].get("name")
+
+    return {"success": True, "data": TenantResponse(**tenant_resp)}
 
 
 @router.post("/telegram-link-code", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner"]))])

@@ -15,7 +15,7 @@ class UserInDB(BaseModel):
     id: str
     tenant_id: str
     telegram_id: Optional[int] = None
-    email: EmailStr
+    email: str
     name: str
     role: str
     is_active: bool = True

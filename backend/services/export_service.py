@@ -150,11 +150,11 @@ class ExportService:
             supabase.table("mbg_budget_allocations")
             .select("*")
             .eq("tenant_id", tenant_id)
-            .gte("delivery_date", first.isoformat())
-            .lte("delivery_date", last.isoformat())
+            .gte("date", first.isoformat())
+            .lte("date", last.isoformat())
             .execute()
         )
-        allocations = {r["delivery_date"]: r for r in (getattr(ba_resp, "data", None) or [])}
+        allocations = {r.get("date"): r for r in (getattr(ba_resp, "data", None) or [])}
 
         # Weekly menus (for menu names)
         wm_resp = (
@@ -170,7 +170,7 @@ class ExportService:
         # Transactions + items + suppliers
         trx_resp = (
             supabase.table("transactions")
-            .select("id, date, nama_toko, supplier_id, total, payment_method, status")
+            .select("id, date, suppliers(name), supplier_id, total, payment_method, status")
             .eq("tenant_id", tenant_id)
             .eq("type", "expense")
             .eq("status", "confirmed")

@@ -112,12 +112,12 @@ def test_role_kasir(current_user: UserInDB = Depends(get_current_user)):
 # ─── End of test endpoints ───
 
 app.include_router(auth_router.router)
-app.include_router(tenants_router.router, prefix="/tenants")
-app.include_router(schools_router.router, prefix="/schools")
-app.include_router(suppliers_router.router, prefix="/suppliers")
-app.include_router(products_router.router, prefix="/products")
-app.include_router(recipes_router.router, prefix="/recipes")
-app.include_router(mbg_settings_router.router, prefix="/mbg")
+app.include_router(tenants_router.router)
+app.include_router(schools_router.router)
+app.include_router(suppliers_router.router)
+app.include_router(products_router.router)
+app.include_router(recipes_router.router)
+app.include_router(mbg_settings_router.router)
 app.include_router(mbg_router.router, prefix="/mbg")
 app.include_router(mbg_delivery_router, prefix="/mbg")
 app.include_router(transactions_router.router, prefix="/transactions")

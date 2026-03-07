@@ -23,7 +23,7 @@ def list_schools(
 ):
     """List schools."""
     supabase = get_supabase()
-    query = supabase.table("mbg_schools").select("*").eq("tenant_id", current_user.tenant_id)
+    query = supabase.table("schools").select("*").eq("tenant_id", current_user.tenant_id)
 
     if is_active:
         query = query.eq("is_active", True)
@@ -52,7 +52,7 @@ def create_school(
 
     # Cek duplikat
     existing = (
-        supabase.table("mbg_schools")
+        supabase.table("schools")
         .select("id")
         .eq("tenant_id", current_user.tenant_id)
         .eq("name", body.name)
@@ -65,14 +65,14 @@ def create_school(
         )
 
     response = (
-        supabase.table("mbg_schools")
+        supabase.table("schools")
         .insert(
             {
                 "tenant_id": current_user.tenant_id,
                 "name": body.name,
                 "address": body.address,
-                "pic_name": body.contact_name,
-                "default_portion": body.default_portions,
+                "contact_name": body.contact_name,
+                "default_portions": body.default_portions,
                 "notes": body.notes,
                 "is_active": True,
             }
@@ -105,14 +105,14 @@ def update_school(
     if body.address is not None:
         update_data["address"] = body.address
     if body.contact_name is not None:
-        update_data["pic_name"] = body.contact_name
+        update_data["contact_name"] = body.contact_name
     if body.default_portions is not None:
-        update_data["default_portion"] = body.default_portions
+        update_data["default_portions"] = body.default_portions
     if body.notes is not None:
         update_data["notes"] = body.notes
 
     response = (
-        supabase.table("mbg_schools")
+        supabase.table("schools")
         .update(update_data)
         .eq("id", school_id)
         .eq("tenant_id", current_user.tenant_id)
@@ -134,7 +134,7 @@ def delete_school(
     """Soft delete school."""
     supabase = get_supabase()
 
-    supabase.table("mbg_schools").update({"is_active": False}).eq("id", school_id).eq(
+    supabase.table("schools").update({"is_active": False}).eq("id", school_id).eq(
         "tenant_id", current_user.tenant_id
     ).execute()
 

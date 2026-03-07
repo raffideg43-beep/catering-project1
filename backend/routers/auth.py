@@ -113,6 +113,7 @@ def register_tenant(body: Dict[str, Any]):
         tenant_id=user_row["tenant_id"],
     )
 
+
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
         data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id},

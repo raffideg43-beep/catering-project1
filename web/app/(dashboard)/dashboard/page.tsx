@@ -199,7 +199,7 @@ export default function DashboardPage() {
                                     </span>
                                 </div>
                             ))}
-                            <a href="/dashboard/stok" className="text-xs text-blue-600 hover:underline mt-2 inline-block">
+                            <a href="/stok" className="text-xs text-blue-600 hover:underline mt-2 inline-block">
                                 Lihat semua stok →
                             </a>
                         </div>
@@ -216,7 +216,7 @@ export default function DashboardPage() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="font-semibold text-gray-800">🧾 Transaksi Terbaru</h2>
-                    <a href="/dashboard/pembukuan" className="text-xs text-blue-600 hover:underline">Lihat semua →</a>
+                    <a href="/pembukuan" className="text-xs text-blue-600 hover:underline">Lihat semua →</a>
                 </div>
                 {transactions.length === 0 ? (
                     <p className="text-center text-gray-400 text-sm py-6">Belum ada transaksi bulan ini</p>
@@ -245,7 +245,7 @@ export default function DashboardPage() {
                                         </td>
                                         <td className="py-2 text-right">
                                             <a
-                                                href={`/dashboard/pembukuan/${trx.id}`}
+                                                href={`/pembukuan/${trx.id}`}
                                                 className="text-blue-600 hover:underline text-xs whitespace-nowrap"
                                             >
                                                 Lihat Detail
@@ -270,9 +270,9 @@ export default function DashboardPage() {
                             } catch { alert("Gagal generate Excel"); }
                         }
                     },
-                    { label: "📋 Lihat Piutang", href: "/dashboard/piutang" },
-                    { label: "💸 Lihat Hutang", href: "/dashboard/hutang" },
-                    { label: "⚙️ Settings", href: "/dashboard/settings" },
+                    { label: "📋 Lihat Piutang", href: "/piutang" },
+                    { label: "💸 Lihat Hutang", href: "/hutang" },
+                    { label: "⚙️ Settings", href: "/settings" },
                 ].map((item) => (
                     <a
                         key={item.label}

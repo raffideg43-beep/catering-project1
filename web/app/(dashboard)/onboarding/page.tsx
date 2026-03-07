@@ -41,7 +41,7 @@ export default function OnboardingPage() {
       setCurrentStep((currentStep + 1) as 1 | 2 | 3 | 4 | 5);
     } else {
       // Selesai onboarding
-      window.location.href = "/dashboard/pembukuan";
+      window.location.href = "/pembukuan";
     }
   };
 
@@ -60,18 +60,16 @@ export default function OnboardingPage() {
         {STEPS.map((step) => (
           <div
             key={step.number}
-            className={`flex flex-col items-center ${
-              step.number <= currentStep ? "opacity-100" : "opacity-50"
-            }`}
+            className={`flex flex-col items-center ${step.number <= currentStep ? "opacity-100" : "opacity-50"
+              }`}
           >
             <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                step.number === currentStep
+              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${step.number === currentStep
                   ? "bg-blue-600 text-white"
                   : step.number < currentStep
                     ? "bg-green-600 text-white"
                     : "bg-gray-300"
-              }`}
+                }`}
             >
               {step.number < currentStep ? "✓" : step.number}
             </div>

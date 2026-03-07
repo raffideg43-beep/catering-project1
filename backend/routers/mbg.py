@@ -648,7 +648,7 @@ async def create_bulk_delivery(
     # ─── Langkah 6b: Insert mbg_budget_allocations ───────────────────
     alloc_row = {
         "tenant_id": tenant_id,
-        "delivery_date": body.delivery_date,
+        "date": body.delivery_date,
         "total_portions": total_portions,
         "price_per_portion": str(price_per_portion),
         "total_revenue": str(total_revenue),
@@ -798,7 +798,7 @@ def get_delivery_summary(
         supabase.table("mbg_budget_allocations")
         .select("total_revenue, budget_food, budget_labor, budget_ops")
         .eq("tenant_id", tenant_id)
-        .eq("delivery_date", target_date.isoformat())
+        .eq("date", target_date.isoformat())
         .limit(1)
         .execute()
     )

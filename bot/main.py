@@ -152,106 +152,112 @@ class _RunPollingSignal(Exception):
         self.app = app
 
 
-if __name__ == "__main__":
-    # Python 3.13 + Windows: set SelectorEventLoop
+import asyncio as _asyncio
+
+def main():
     if sys.platform == "win32":
+        import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    import asyncio as _asyncio
+    from core.config import settings as _settings
+    from core.error_handler import error_handler as bot_error_handler
+    from handlers.auth_handler import (
+        buka_web, error_handler as auth_error_handler,
+        hubungkan_akun, logout, settings as settings_handler, start,
+    )
+    from handlers.menu_handler import build_menu_conversation
+    from handlers.belanja_handler import build_belanja_conversation
+    from handlers.serah_handler import build_serah_conversation
+    from handlers.report_handler import (
+        hariini_command, laporan_command, stok_command,
+        piutang_command, hutang_command, lunas_hutang,
+        laporan_hariini_cb, laporan_bulanan_cb, cek_stok_cb, download_excel_cb,
+    )
+    from handlers.nota_handler import (
+        cancel_nota, confirm_nota, edit_item, edit_nota,
+        handle_photo, handle_text_input, selesai_kirim,
+        konfirmasi_semua, batal_semua, kirim_ulang,
+    )
 
-    # Build app dulu di sync context
-    async def _build():
-        return await _create_app()
+    from telegram import BotCommand
+    from telegram.ext import (
+        Application, CallbackQueryHandler, CommandHandler,
+        MessageHandler, filters,
+    )
 
-    async def _create_app():
-        from core.config import settings as _settings
-        from core.error_handler import error_handler as bot_error_handler
-        from handlers.auth_handler import (
-            buka_web, error_handler as auth_error_handler,
-            hubungkan_akun, logout, settings as settings_handler, start,
-        )
-        from handlers.menu_handler import build_menu_conversation
-        from handlers.belanja_handler import build_belanja_conversation
-        from handlers.serah_handler import build_serah_conversation
-        from handlers.report_handler import (
-            hariini_command, laporan_command, stok_command,
-            piutang_command, hutang_command, lunas_hutang,
-            laporan_hariini_cb, laporan_bulanan_cb, cek_stok_cb, download_excel_cb,
-        )
-        from handlers.nota_handler import (
-            cancel_nota, confirm_nota, edit_item, edit_nota,
-            handle_photo, handle_text_input, selesai_kirim,
-            konfirmasi_semua, batal_semua, kirim_ulang,
-        )
+    async def post_init(application: Application):
+        cmds = [
+            BotCommand("start",    "Login atau lihat menu utama"),
+            BotCommand("serah",    "🍱 Konfirmasi penyerahan MBG"),
+            BotCommand("menu",     "📅 Input menu mingguan"),
+            BotCommand("belanja",  "📝 Input belanja manual"),
+            BotCommand("hariini",  "📊 Ringkasan hari ini"),
+            BotCommand("laporan",  "📈 Laporan bulan ini"),
+            BotCommand("stok",     "📦 Status stok bahan"),
+            BotCommand("piutang",  "💰 Tagihan MBG belum lunas"),
+            BotCommand("hutang",   "💸 Hutang ke supplier"),
+            BotCommand("settings", "Lihat pengaturan akun"),
+            BotCommand("logout",   "Logout akun"),
+            BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),
+        ]
+        await application.bot.set_my_commands(cmds)
 
-        from telegram import BotCommand
-        from telegram.ext import (
-            Application, CallbackQueryHandler, CommandHandler,
-            MessageHandler, filters,
-        )
+    import warnings
+    from telegram.warnings import PTBUserWarning
+    warnings.filterwarnings("ignore", category=PTBUserWarning)
 
-        app = Application.builder().token(_settings.telegram_bot_token).build()
+    # Disable job_queue on Windows Python 3.13 to prevent weakref TypeError
+    # Increase HTTP timeouts to prevent telegram.error.TimedOut on slow network
+    app = (
+        Application.builder()
+        .token(_settings.telegram_bot_token)
+        .job_queue(None)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(30.0)
+        .get_updates_read_timeout(45.0)
+        .get_updates_connect_timeout(45.0)
+        .get_updates_pool_timeout(45.0)
+        .post_init(post_init)
+        .build()
+    )
 
-        app.add_handler(build_menu_conversation())
-        app.add_handler(build_serah_conversation())
-        app.add_handler(build_belanja_conversation())
-        app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
-        app.add_handler(CommandHandler("start",    start))
-        app.add_handler(CommandHandler("logout",   logout))
-        app.add_handler(CommandHandler("settings", settings_handler))
-        app.add_handler(CommandHandler("hariini",  hariini_command))
-        app.add_handler(CommandHandler("laporan",  laporan_command))
-        app.add_handler(CommandHandler("stok",     stok_command))
-        app.add_handler(CommandHandler("piutang",  piutang_command))
-        app.add_handler(CommandHandler("hutang",   hutang_command))
-        app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
-        app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
-        app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
-        app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
-        app.add_handler(CallbackQueryHandler(download_excel_cb,  pattern=r"^download_excel_"))
-        app.add_handler(CallbackQueryHandler(confirm_nota, pattern=r"^confirm_[a-f0-9\-]{36}$"))
-        app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
-        app.add_handler(CallbackQueryHandler(cancel_nota,  pattern=r"^cancel_[a-f0-9\-]{36}$"))
-        app.add_handler(CallbackQueryHandler(edit_item,    pattern=r"^edit_item_"))
-        app.add_handler(CallbackQueryHandler(selesai_kirim,    pattern=r"^selesai_kirim$"))
-        app.add_handler(CallbackQueryHandler(konfirmasi_semua, pattern=r"^konfirmasi_semua_"))
-        app.add_handler(CallbackQueryHandler(batal_semua,      pattern=r"^batal_semua_"))
-        app.add_handler(CallbackQueryHandler(kirim_ulang,      pattern=r"^kirim_ulang_"))
-        app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
-        app.add_handler(CallbackQueryHandler(buka_web,       pattern="^buka_web$"))
-        app.add_error_handler(bot_error_handler)
-        return app
+    app.add_handler(build_menu_conversation())
+    app.add_handler(build_serah_conversation())
+    app.add_handler(build_belanja_conversation())
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
+    app.add_handler(CommandHandler("start",    start))
+    app.add_handler(CommandHandler("logout",   logout))
+    app.add_handler(CommandHandler("settings", settings_handler))
+    app.add_handler(CommandHandler("hariini",  hariini_command))
+    app.add_handler(CommandHandler("laporan",  laporan_command))
+    app.add_handler(CommandHandler("stok",     stok_command))
+    app.add_handler(CommandHandler("piutang",  piutang_command))
+    app.add_handler(CommandHandler("hutang",   hutang_command))
+    app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
+    app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
+    app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
+    app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
+    app.add_handler(CallbackQueryHandler(download_excel_cb,  pattern=r"^download_excel_"))
+    app.add_handler(CallbackQueryHandler(confirm_nota, pattern=r"^confirm_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(cancel_nota,  pattern=r"^cancel_[a-f0-9\-]{36}$"))
+    app.add_handler(CallbackQueryHandler(edit_item,    pattern=r"^edit_item_"))
+    app.add_handler(CallbackQueryHandler(selesai_kirim,    pattern=r"^selesai_kirim$"))
+    app.add_handler(CallbackQueryHandler(konfirmasi_semua, pattern=r"^konfirmasi_semua_"))
+    app.add_handler(CallbackQueryHandler(batal_semua,      pattern=r"^batal_semua_"))
+    app.add_handler(CallbackQueryHandler(kirim_ulang,      pattern=r"^kirim_ulang_"))
+    app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))
+    app.add_handler(CallbackQueryHandler(buka_web,       pattern="^buka_web$"))
+    app.add_error_handler(bot_error_handler)
 
-    # run_polling harus dipanggil LANGSUNG dari sync context, bukan dari dalam coroutine
-    loop = _asyncio.new_event_loop()
-    _asyncio.set_event_loop(loop)
+    logger.info("Bot starting... Press Ctrl+C to stop")
+    app.run_polling(allowed_updates=[])
+
+if __name__ == "__main__":
     try:
-        app = loop.run_until_complete(_create_app())
-        # Set bot commands
-        async def _set_commands(a):
-            from telegram import BotCommand
-            cmds = [
-                BotCommand("start",    "Login atau lihat menu utama"),
-                BotCommand("serah",    "🍱 Konfirmasi penyerahan MBG"),
-                BotCommand("menu",     "📅 Input menu mingguan"),
-                BotCommand("belanja",  "📝 Input belanja manual"),
-                BotCommand("hariini",  "📊 Ringkasan hari ini"),
-                BotCommand("laporan",  "📈 Laporan bulan ini"),
-                BotCommand("stok",     "📦 Status stok bahan"),
-                BotCommand("piutang",  "💰 Tagihan MBG belum lunas"),
-                BotCommand("hutang",   "💸 Hutang ke supplier"),
-                BotCommand("settings", "Lihat pengaturan akun"),
-                BotCommand("logout",   "Logout akun"),
-                BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),
-            ]
-            await a.bot.set_my_commands(cmds)
-        loop.run_until_complete(_set_commands(app))
-        logger.info("Bot starting... Press Ctrl+C to stop")
-        # run_polling memanage event loop sendiri — panggil di luar asyncio.run()
-        app.run_polling(allowed_updates=[], close_loop=False)
+        main()
     except KeyboardInterrupt:
         logger.info("Bot stopped.")
-    finally:
-        loop.close()
-
