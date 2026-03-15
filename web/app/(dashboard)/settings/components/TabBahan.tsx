@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { Rupiah } from "@/components/ui/rupiah";
 
@@ -32,8 +32,19 @@ interface SimIngredient {
   total_needed: number; available: number; sufficient: boolean; shortage: number;
 }
 
-interface CompFormItem {
-  ingredient_id: string; qty_needed: number; unit: string;
+interface FormRowItem {
+  ingredient_name: string; // for autocomplete
+  ingredient_id: string | null;
+  qty_needed: number;
+  unit: string;
+}
+
+interface ParsedBelanja {
+  name: string;
+  qty: number;
+  unit: string;
+  price: number;
+  subtotal: number;
 }
 
 /* ═══ Main TabBahan ════════════════════════════════════════════════════════ */
@@ -46,31 +57,27 @@ export function TabBahan() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  /* ─── Bahan form ─────────────────────────────────────────────────── */
-  const [showBahanModal, setShowBahanModal] = useState(false);
-  const [editingBahanId, setEditingBahanId] = useState<string | null>(null);
-  const [bahanForm, setBahanForm] = useState({
-    name: "", category: "bahan_baku", unit: "kg", hpp: 0, sell_price: 0, stock_min: 0, notes: ""
-  });
+  /* ─── Belanja (Manual Input) ─────────────────────────────────────── */
+  const [belanjaText, setBelanjaText] = useState("");
+  const [parsedBelanja, setParsedBelanja] = useState<ParsedBelanja[]>([]);
+  const [belanjaErrors, setBelanjaErrors] = useState<string[]>([]);
 
   /* ─── Component form (with inline ingredient rows) ───────────────── */
   const [showCompModal, setShowCompModal] = useState(false);
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [compForm, setCompForm] = useState({ name: "", description: "" });
-  const [compFormItems, setCompFormItems] = useState<CompFormItem[]>([{ ingredient_id: "", qty_needed: 0, unit: "" }]);
+  const [compFormItems, setCompFormItems] = useState<FormRowItem[]>([{ ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }]);
 
   /* ─── Menu BOM ───────────────────────────────────────────────────── */
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [menuRecipes, setMenuRecipes] = useState<Record<string, Recipe[]>>({});
   const [bomPreview, setBomPreview] = useState<Record<string, SimIngredient[]>>({});
-  const [attachingComp, setAttachingComp] = useState<string | null>(null);
-  const [attachCompId, setAttachCompId] = useState("");
-  const [addingDirectFor, setAddingDirectFor] = useState<string | null>(null);
-  const [directForm, setDirectForm] = useState({ ingredient_id: "", qty_needed: 0, unit: "" });
 
-  /* ─── Menu form ──────────────────────────────────────────────────── */
+  /* ─── Menu form (Integrated) ─────────────────────────────────────── */
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [menuForm, setMenuForm] = useState({ name: "", unit: "porsi" });
+  const [menuFormComps, setMenuFormComps] = useState<{ component_id: string }[]>([]);
+  const [menuFormDirects, setMenuFormDirects] = useState<FormRowItem[]>([]);
 
   /* ═══ Data fetching ══════════════════════════════════════════════════ */
 
@@ -107,68 +114,143 @@ export function TabBahan() {
     } catch (e) { console.error(e); }
   };
 
-  /* ═══ Handlers ═══════════════════════════════════════════════════════ */
+  /* ═══ Helpers ═════════════════════════════════════════════════════════ */
 
-  // ── Bahan
-  const openBahanForm = (prod?: Product) => {
-    if (prod) {
-      setEditingBahanId(prod.id);
-      setBahanForm({ name: prod.name, category: prod.category, unit: prod.unit, hpp: prod.hpp, sell_price: prod.sell_price, stock_min: prod.stock_min, notes: "" });
-    } else {
-      setEditingBahanId(null);
-      setBahanForm({ name: "", category: "bahan_baku", unit: "kg", hpp: 0, sell_price: 0, stock_min: 0, notes: "" });
-    }
-    setShowBahanModal(true);
+  const getCompName = (compId: string) => components.find(c => c.id === compId)?.name || "?";
+  const getIngName = (ingId: string) => products.find(p => p.id === ingId)?.name || "?";
+  const getIngUnit = (ingId: string) => products.find(p => p.id === ingId)?.unit || "";
+
+  // Helper: Find product by exact name (case insensitive)
+  const findProductByName = (name: string): Product | undefined => {
+    return products.find(p => p.name.toLowerCase().trim() === name.toLowerCase().trim());
   };
 
-  const saveBahan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (saving) return;
+  // Helper: Create product if not exists
+  const getOrCreateIngredient = async (name: string, unit: string): Promise<string> => {
+    const existing = findProductByName(name);
+    if (existing) return existing.id;
+    // Create new
+    const payload = { name: name.trim(), category: "bahan_baku", unit: unit || "kg", hpp: 0, sell_price: 0, stock_min: 0, stock_qty: 0 };
+    const res = await apiPost("/products", payload);
+    return res?.data?.id;
+  };
+
+  /* ═══ Belanja Parser Handlers ═════════════════════════════════════════ */
+
+  useEffect(() => {
+    if (!belanjaText.trim()) {
+      setParsedBelanja([]);
+      setBelanjaErrors([]);
+      return;
+    }
+    const lines = belanjaText.split("\n").map(l => l.trim()).filter(l => l);
+    const parsed: ParsedBelanja[] = [];
+    const errs: string[] = [];
+
+    lines.forEach(line => {
+      // Format: nama qty satuan harga
+      const parts = line.split(" ");
+      if (parts.length < 4) {
+        errs.push(`Format salah: "${line}" (butuh 4 kata)`);
+        return;
+      }
+      const priceStr = parts.pop()!;
+      const unitStr = parts.pop()!;
+      const qtyStr = parts.pop()!;
+      const nameStr = parts.join(" ");
+
+      const qty = parseFloat(qtyStr.replace(/,/g, '.'));
+      const price = parseFloat(priceStr.replace(/[^0-9.-]+/g, ""));
+
+      if (isNaN(qty) || isNaN(price)) {
+        errs.push(`Angka tidak valid: "${line}"`);
+        return;
+      }
+
+      parsed.push({
+        name: nameStr,
+        qty,
+        unit: unitStr.toLowerCase(),
+        price,
+        subtotal: qty * price
+      });
+    });
+    setParsedBelanja(parsed);
+    setBelanjaErrors(errs);
+  }, [belanjaText]);
+
+  const submitBelanja = async () => {
+    if (parsedBelanja.length === 0 || saving) return;
     setSaving(true);
     try {
-      if (editingBahanId) await apiPut(`/products/${editingBahanId}`, bahanForm);
-      else await apiPost("/products", { ...bahanForm, stock_qty: 0 });
-      setShowBahanModal(false);
+      const items = parsedBelanja.map(p => ({
+        nama_item: p.name,
+        qty: p.qty,
+        satuan: p.unit,
+        harga_satuan: p.price,
+        subtotal: p.subtotal
+      }));
+
+      await apiPost("/transactions/manual", {
+        supplier_name: "Input Manual Web",
+        date: new Date().toISOString().split('T')[0],
+        payment_method: "tunai",
+        items: items
+      });
+
+      setBelanjaText("");
+      setParsedBelanja([]);
+      alert("✅ Belanja berhasil disimpan! Stok bertambah dan bahan baru telah dibuat otomatis.");
       await fetchAll();
     } catch (err: any) {
-      alert(err?.response?.data?.detail || "Gagal menyimpan bahan");
+      alert(err?.response?.data?.detail || "Gagal menyimpan belanja");
     } finally {
       setSaving(false);
     }
   };
 
-  const deleteBahan = async (id: string) => {
-    if (!confirm("Hapus bahan ini?")) return;
-    try { await apiDelete(`/products/${id}`); fetchAll(); } catch { alert("Gagal menghapus bahan"); }
-  };
+  /* ═══ Component Handlers ═════════════════════════════════════════════ */
 
-  // ── Component (with inline items)
   const openCompForm = (comp?: Component) => {
     if (comp) {
       setEditingCompId(comp.id);
       setCompForm({ name: comp.name, description: comp.description || "" });
       setCompFormItems(
         comp.items.length > 0
-          ? comp.items.map(it => ({ ingredient_id: it.ingredient_id, qty_needed: it.qty_needed, unit: it.unit || "" }))
-          : [{ ingredient_id: "", qty_needed: 0, unit: "" }]
+          ? comp.items.map(it => ({
+            ingredient_id: it.ingredient_id,
+            ingredient_name: it.product_name || getIngName(it.ingredient_id),
+            qty_needed: it.qty_needed,
+            unit: it.unit || ""
+          }))
+          : [{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]
       );
     } else {
       setEditingCompId(null);
       setCompForm({ name: "", description: "" });
-      setCompFormItems([{ ingredient_id: "", qty_needed: 0, unit: "" }]);
+      setCompFormItems([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]);
     }
     setShowCompModal(true);
   };
 
-  const addCompFormRow = () => setCompFormItems(prev => [...prev, { ingredient_id: "", qty_needed: 0, unit: "" }]);
-  const removeCompFormRow = (idx: number) => setCompFormItems(prev => prev.filter((_, i) => i !== idx));
-  const updateCompFormRow = (idx: number, field: keyof CompFormItem, value: string | number) => {
-    setCompFormItems(prev => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+  const updateCompRowName = (idx: number, val: string) => {
+    setCompFormItems(prev => {
+      const nw = [...prev];
+      nw[idx].ingredient_name = val;
+      const exist = findProductByName(val);
+      if (exist) {
+        nw[idx].ingredient_id = exist.id;
+        nw[idx].unit = exist.unit;
+      } else {
+        nw[idx].ingredient_id = null;
+      }
+      return nw;
+    });
   };
 
   const compFormValid = compForm.name.trim().length > 0
     && compFormItems.length > 0
-    && compFormItems.every(r => r.ingredient_id && r.qty_needed > 0);
+    && compFormItems.every(r => r.ingredient_name.trim() && r.qty_needed > 0);
 
   const saveComp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,10 +260,7 @@ export function TabBahan() {
       let compId = editingCompId;
 
       if (editingCompId) {
-        // Update name/description
         await apiPut(`/recipes/components/${editingCompId}`, compForm);
-
-        // Delete old items, re-insert new ones
         const existing = components.find(c => c.id === editingCompId);
         if (existing) {
           for (const item of existing.items) {
@@ -189,17 +268,17 @@ export function TabBahan() {
           }
         }
       } else {
-        // Create new component
         const res = await apiPost("/recipes/components", compForm);
         compId = res?.data?.id;
         if (!compId) throw new Error("Gagal membuat komponen");
       }
 
-      // Insert all items
+      // Process items (auto-create ingredients if needed)
       for (const item of compFormItems) {
-        if (item.ingredient_id && item.qty_needed > 0) {
+        if (item.ingredient_name.trim() && item.qty_needed > 0) {
+          const actualIngId = await getOrCreateIngredient(item.ingredient_name, item.unit);
           await apiPost(`/recipes/components/${compId}/items`, {
-            ingredient_id: item.ingredient_id,
+            ingredient_id: actualIngId,
             qty_needed: item.qty_needed,
             unit: item.unit || undefined,
           });
@@ -208,11 +287,8 @@ export function TabBahan() {
 
       setShowCompModal(false);
       await fetchAll();
-    } catch (err: any) {
-      alert(err?.response?.data?.detail || "Gagal menyimpan komponen");
-    } finally {
-      setSaving(false);
-    }
+    } catch (err: any) { alert(err?.response?.data?.detail || "Gagal menyimpan komponen"); }
+    finally { setSaving(false); }
   };
 
   const deleteComp = async (id: string) => {
@@ -221,113 +297,157 @@ export function TabBahan() {
     catch (err: any) { alert(err?.response?.data?.detail || "Gagal menghapus komponen"); }
   };
 
-  // ── Menu BOM
+  /* ═══ Menu Handlers ══════════════════════════════════════════════════ */
+
   const toggleMenu = async (menuId: string) => {
     if (expandedMenu === menuId) { setExpandedMenu(null); return; }
     setExpandedMenu(menuId);
     await fetchMenuRecipes(menuId);
   };
 
-  const attachComponent = async (menuId: string) => {
-    if (!attachCompId || saving) return;
-    setSaving(true);
-    try {
-      await apiPost("/recipes/attach-component", { menu_id: menuId, component_id: attachCompId });
-      setAttachingComp(null);
-      setAttachCompId("");
-      await fetchMenuRecipes(menuId);
-    } catch (err: any) { alert(err?.response?.data?.detail || "Gagal menambah komponen"); }
-    finally { setSaving(false); }
-  };
-
-  const addDirectIngredient = async (menuId: string) => {
-    if (!directForm.ingredient_id || directForm.qty_needed <= 0 || saving) return;
-    setSaving(true);
-    try {
-      await apiPost("/recipes", {
-        menu_id: menuId, ingredient_id: directForm.ingredient_id,
-        qty_needed: directForm.qty_needed, unit: directForm.unit || "kg"
-      });
-      setAddingDirectFor(null);
-      setDirectForm({ ingredient_id: "", qty_needed: 0, unit: "" });
-      await fetchMenuRecipes(menuId);
-    } catch (err: any) { alert(err?.response?.data?.detail || "Gagal menambah bahan"); }
-    finally { setSaving(false); }
-  };
-
   const deleteRecipe = async (recipeId: string, menuId: string) => {
-    try { await apiDelete(`/recipes/${recipeId}`); await fetchMenuRecipes(menuId); }
-    catch { alert("Gagal menghapus"); }
+    try { await apiDelete(`/recipes/${recipeId}`); await fetchMenuRecipes(menuId); } catch { alert("Gagal menghapus"); }
   };
+
+  const openMenuForm = () => {
+    setMenuForm({ name: "", unit: "porsi" });
+    setMenuFormComps([]);
+    setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]);
+    setShowMenuModal(true);
+  };
+
+  const updateMenuDirectRow = (idx: number, val: string) => {
+    setMenuFormDirects(prev => {
+      const nw = [...prev];
+      nw[idx].ingredient_name = val;
+      const exist = findProductByName(val);
+      if (exist) {
+        nw[idx].ingredient_id = exist.id;
+        nw[idx].unit = exist.unit;
+      } else {
+        nw[idx].ingredient_id = null;
+      }
+      return nw;
+    });
+  };
+
+  const menuFormValid = menuForm.name.trim().length > 0
+    && (menuFormComps.length > 0 || menuFormDirects.some(r => r.ingredient_name.trim() && r.qty_needed > 0));
 
   const saveMenu = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving) return;
+    if (saving || !menuFormValid) return;
     setSaving(true);
     try {
-      await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, hpp: 0, sell_price: 0, stock_min: 0 });
+      // 1. Create Menu Product
+      const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, hpp: 0, sell_price: 0, stock_min: 0 });
+      const menuId = prodRes?.data?.id;
+      if (!menuId) throw new Error("Gagal membuat menu");
+
+      // 2. Attach Components
+      for (const comp of menuFormComps) {
+        if (comp.component_id) {
+          await apiPost("/recipes/attach-component", { menu_id: menuId, component_id: comp.component_id });
+        }
+      }
+
+      // 3. Attach Direct Ingredients
+      for (const item of menuFormDirects) {
+        if (item.ingredient_name.trim() && item.qty_needed > 0) {
+          const actualIngId = await getOrCreateIngredient(item.ingredient_name, item.unit);
+          await apiPost("/recipes", {
+            menu_id: menuId, ingredient_id: actualIngId,
+            qty_needed: item.qty_needed, unit: item.unit || "kg"
+          });
+        }
+      }
+
       setShowMenuModal(false);
-      setMenuForm({ name: "", unit: "porsi" });
       await fetchAll();
     } catch (err: any) { alert(err?.response?.data?.detail || "Gagal menyimpan menu"); }
     finally { setSaving(false); }
   };
-
-  /* ═══ Helpers ═════════════════════════════════════════════════════════ */
-
-  const getCompName = (compId: string) => components.find(c => c.id === compId)?.name || "?";
-  const getIngName = (ingId: string) => products.find(p => p.id === ingId)?.name || "?";
-  const getIngUnit = (ingId: string) => products.find(p => p.id === ingId)?.unit || "";
 
   if (loading) return <div className="text-gray-500 py-8 text-center">Memuat data...</div>;
 
   /* ═══ JSX ════════════════════════════════════════════════════════════ */
   return (
     <div className="space-y-10">
+      <datalist id="bahan-list">
+        {bahan.map(b => <option key={b.id} value={b.name} />)}
+      </datalist>
 
-      {/* ═══════════════════ BAGIAN 1: BAHAN BAKU ═══════════════════════ */}
+      {/* ═══════════════════ BAGIAN 1: BELANJA MANUAL ═══════════════════ */}
       <section>
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">🧪 Bahan Baku & Kemasan</h2>
-            <p className="text-gray-500 text-sm mt-1">Kelola master data bahan baku pembentuk resep MBG.</p>
-          </div>
-          <button onClick={() => openBahanForm()} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm">+ Tambah Bahan</button>
+        <div className="mb-4">
+          <h2 className="text-2xl font-bold text-gray-900">🛒 Input Belanja Manual</h2>
+          <p className="text-gray-500 text-sm mt-1">
+            Jika tidak pakai Telegram, masukkan bahan dari nota di sini.<br />
+            Format: <code className="bg-gray-100 px-1 rounded">nama qty satuan harga</code> per baris (contoh: <code className="bg-gray-100 px-1 rounded">Beras 10 kg 12000</code>). Bahan baru akan dibuat otomatis.
+          </p>
         </div>
 
-        {bahan.length === 0 ? (
-          <div className="text-gray-400 text-center py-6 bg-gray-50 rounded-lg">Belum ada data bahan baku.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="border-b bg-gray-50">
-                  <th className="px-4 py-3 font-semibold text-gray-700">Nama Bahan</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Kategori</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Satuan</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">HPP</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Min. Stok</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bahan.map(p => (
-                  <tr key={p.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                    <td className="px-4 py-3 text-gray-600 capitalize">{p.category.replace("_", " ")}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.unit}</td>
-                    <td className="px-4 py-3 text-gray-600"><Rupiah amount={p.hpp} /></td>
-                    <td className="px-4 py-3 text-gray-600">{p.stock_min}</td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button onClick={() => openBahanForm(p)} className="text-blue-600 hover:text-blue-800 font-medium px-2 py-1 bg-blue-50 rounded text-xs">Edit</button>
-                      <button onClick={() => deleteBahan(p.id)} className="text-red-600 hover:text-red-800 font-medium px-2 py-1 bg-red-50 rounded text-xs">Hapus</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={belanjaText}
+              onChange={e => setBelanjaText(e.target.value)}
+              placeholder="Telur 30 pcs 2000&#10;Minyak Goreng 2 liter 18000"
+              className="w-full h-48 p-3 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            {belanjaErrors.map((err, i) => (
+              <p key={i} className="text-xs text-red-600">⚠️ {err}</p>
+            ))}
           </div>
-        )}
+
+          <div className="bg-gray-50 rounded-lg p-4 border flex flex-col">
+            <h4 className="font-semibold text-gray-700 mb-3 text-sm">Preview Item:</h4>
+            {parsedBelanja.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                Belum ada item valid.
+              </div>
+            ) : (
+              <div className="overflow-y-auto max-h-40 flex-1">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="pb-1 text-gray-500 font-medium">Item</th>
+                      <th className="pb-1 text-gray-500 font-medium text-right">Harga</th>
+                      <th className="pb-1 text-gray-500 font-medium text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedBelanja.map((p, i) => (
+                      <tr key={i} className="border-b border-gray-100">
+                        <td className="py-2">
+                          <div className="font-medium text-gray-900">{p.name}</div>
+                          <div className="text-xs text-gray-500">{p.qty} {p.unit}</div>
+                        </td>
+                        <td className="py-2 text-right text-gray-600"><Rupiah amount={p.price} /></td>
+                        <td className="py-2 text-right font-medium text-gray-900"><Rupiah amount={p.subtotal} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2} className="pt-2 font-bold text-right">TOTAL:</td>
+                      <td className="pt-2 font-bold text-right text-blue-700">
+                        <Rupiah amount={parsedBelanja.reduce((sum, p) => sum + p.subtotal, 0)} />
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            <button
+              disabled={parsedBelanja.length === 0 || saving}
+              onClick={submitBelanja}
+              className="w-full mt-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
+            >
+              {saving ? "Menyimpan..." : `Simpan ${parsedBelanja.length} Item ke Stok`}
+            </button>
+          </div>
+        </div>
       </section>
 
       <hr className="border-gray-200" />
@@ -337,7 +457,7 @@ export function TabBahan() {
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">🧩 Komponen Resep (Reusable)</h2>
-            <p className="text-gray-500 text-sm mt-1">Buat komponen sekali, pakai di banyak menu.</p>
+            <p className="text-gray-500 text-sm mt-1">Buat komponen resep sekali, bisa dipakai di banyak menu.</p>
           </div>
           <button onClick={() => openCompForm()} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm">+ Komponen Baru</button>
         </div>
@@ -365,7 +485,7 @@ export function TabBahan() {
                   ) : (
                     comp.items.map(item => (
                       <div key={item.id} className="text-sm bg-gray-50 px-3 py-1.5 rounded text-gray-700">
-                        • {item.product_name || getIngName(item.ingredient_id)} — <span className="text-gray-500">{item.qty_needed}{item.unit}</span>
+                        • {item.product_name || getIngName(item.ingredient_id)} — <span className="text-gray-500">{item.qty_needed} {item.unit}</span>
                       </div>
                     ))
                   )}
@@ -383,9 +503,9 @@ export function TabBahan() {
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">🍽️ Menu & Resep BOM</h2>
-            <p className="text-gray-500 text-sm mt-1">Setiap menu = kombinasi komponen + bahan tambahan.</p>
+            <p className="text-gray-500 text-sm mt-1">Setiap menu adalah tabel Bill of Material. Otomatis potong stok saat dibuat.</p>
           </div>
-          <button onClick={() => setShowMenuModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium text-sm">+ Menu Baru</button>
+          <button onClick={openMenuForm} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium text-sm">+ Menu Baru</button>
         </div>
 
         {menus.length === 0 ? (
@@ -411,80 +531,52 @@ export function TabBahan() {
                       </div>
                     </div>
                     <span className="text-gray-400 text-sm">
-                      {compRecipes.length} komponen, {directRecipes.length} bahan langsung
+                      {compRecipes.length} komponen, {directRecipes.length} bahan
                     </span>
                   </button>
 
                   {isOpen && (
-                    <div className="px-5 pb-5 border-t bg-gray-50/50 space-y-4">
+                    <div className="px-5 pb-5 border-t bg-gray-50/50 space-y-4 pt-4">
 
                       {/* Komponen attached */}
-                      <div className="mt-4">
+                      <div>
                         <h4 className="font-semibold text-gray-700 mb-2 text-sm">🧩 Komponen:</h4>
                         {compRecipes.length === 0
-                          ? <p className="text-gray-400 text-sm italic">Belum ada komponen</p>
+                          ? <p className="text-gray-400 text-sm italic">Belum ada komponen terpasang</p>
                           : <div className="space-y-1">{compRecipes.map(r => (
                               <div key={r.id} className="flex justify-between items-center bg-purple-50 px-3 py-2 rounded text-sm">
                                 <span className="text-purple-800">🧩 {getCompName(r.component_id!)}</span>
                                 <button onClick={() => deleteRecipe(r.id, menu.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
                               </div>
                             ))}</div>}
-
-                        {attachingComp === menu.id ? (
-                          <div className="flex gap-2 mt-2">
-                            <select value={attachCompId} onChange={e => setAttachCompId(e.target.value)} className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
-                              <option value="">Pilih komponen...</option>
-                              {components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <button disabled={saving} onClick={() => attachComponent(menu.id)} className="px-3 py-1.5 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:opacity-50">✅</button>
-                            <button onClick={() => setAttachingComp(null)} className="px-2 py-1.5 text-gray-500 text-sm">✕</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => { setAttachingComp(menu.id); setAttachCompId(""); }} className="text-purple-600 hover:text-purple-800 text-sm font-medium mt-2">+ Attach Komponen</button>
-                        )}
                       </div>
 
                       {/* Direct ingredients */}
                       <div>
-                        <h4 className="font-semibold text-gray-700 mb-2 text-sm">🧪 Bahan Tambahan:</h4>
+                        <h4 className="font-semibold text-gray-700 mb-2 text-sm">🧪 Bahan Baku Langsung:</h4>
                         {directRecipes.length === 0
-                          ? <p className="text-gray-400 text-sm italic">Belum ada bahan langsung</p>
+                          ? <p className="text-gray-400 text-sm italic">Belum ada bahan baku langsung</p>
                           : <div className="space-y-1">{directRecipes.map(r => (
                               <div key={r.id} className="flex justify-between items-center bg-green-50 px-3 py-2 rounded text-sm">
                                 <span className="text-green-800">• {getIngName(r.ingredient_id!)} <span className="text-green-600">{r.qty_needed} {r.unit}</span></span>
                                 <button onClick={() => deleteRecipe(r.id, menu.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
                               </div>
                             ))}</div>}
-
-                        {addingDirectFor === menu.id ? (
-                          <div className="flex gap-2 items-end mt-2">
-                            <select value={directForm.ingredient_id} onChange={e => { const id = e.target.value; setDirectForm({ ...directForm, ingredient_id: id, unit: id ? getIngUnit(id) || directForm.unit : directForm.unit }); }} className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
-                              <option value="">Pilih bahan...</option>
-                              {bahan.length === 0 ? <option disabled>— Tambah bahan baku dulu di atas —</option> : bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
-                            </select>
-                            <input type="number" step="0.001" min="0" placeholder="Qty" value={directForm.qty_needed || ""} onChange={e => setDirectForm({ ...directForm, qty_needed: parseFloat(e.target.value) || 0 })} className="w-20 px-2 py-1.5 border rounded text-sm" />
-                            <input type="text" placeholder="Satuan" value={directForm.unit} onChange={e => setDirectForm({ ...directForm, unit: e.target.value })} className="w-16 px-2 py-1.5 border rounded text-sm" />
-                            <button disabled={saving} onClick={() => addDirectIngredient(menu.id)} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50">✅</button>
-                            <button onClick={() => setAddingDirectFor(null)} className="px-2 py-1.5 text-gray-500 text-sm">✕</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => { setAddingDirectFor(menu.id); setDirectForm({ ingredient_id: "", qty_needed: 0, unit: "" }); }} className="text-green-600 hover:text-green-800 text-sm font-medium mt-2">+ Tambah Bahan Langsung</button>
-                        )}
                       </div>
 
                       {/* BOM Preview */}
-                      <div>
+                      <div className="pt-2 border-t border-gray-200">
                         <button onClick={() => fetchBomPreview(menu.id)} className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors">
-                          👁️ Lihat Total Bahan (BOM Preview)
+                          👁️ Lihat Total Bahan Asli (BOM Preview)
                         </button>
                         {preview && (
                           <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                            <h4 className="font-bold text-blue-800 mb-2 text-sm">📋 Total Bahan per 1 Porsi (Setelah Expand Komponen):</h4>
+                            <h4 className="font-bold text-blue-800 mb-2 text-sm">📋 Total Kebutuhan Bahan per 1 {menu.unit}:</h4>
                             {preview.length === 0
-                              ? <p className="text-gray-500 text-sm">Tidak ada bahan (BOM kosong)</p>
+                              ? <p className="text-gray-500 text-sm">Tidak ada bahan terhubung (BOM kosong)</p>
                               : <table className="w-full text-sm">
                                   <thead><tr className="text-left text-blue-700 border-b border-blue-200">
-                                    <th className="py-1 pr-4">Bahan</th><th className="py-1 pr-4">Butuh</th><th className="py-1 pr-4">Stok</th><th className="py-1">Status</th>
+                                    <th className="py-1 pr-4">Bahan Asli</th><th className="py-1 pr-4">Kebutuhan</th><th className="py-1 pr-4">Stok Gudang</th><th className="py-1">Status Produksi</th>
                                   </tr></thead>
                                   <tbody>{preview.map((ing, i) => (
                                     <tr key={i} className="border-b border-blue-100">
@@ -492,7 +584,7 @@ export function TabBahan() {
                                       <td className="py-1.5 pr-4 text-gray-600">{ing.total_needed} {ing.unit}</td>
                                       <td className="py-1.5 pr-4 text-gray-600">{ing.available} {ing.unit}</td>
                                       <td className="py-1.5">{ing.sufficient
-                                        ? <span className="text-green-600 font-medium">✅ Cukup</span>
+                                        ? <span className="text-green-600 font-medium">✅ Aman</span>
                                         : <span className="text-red-600 font-medium">❌ Kurang {ing.shortage}</span>}</td>
                                     </tr>
                                   ))}</tbody>
@@ -512,102 +604,53 @@ export function TabBahan() {
 
       {/* ═══════════════════ MODALS ═════════════════════════════════════ */}
 
-      {/* ── Modal: Bahan ─────────────────────────────────────────────── */}
-      {showBahanModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <form onSubmit={saveBahan}>
-              <div className="p-6 space-y-4">
-                <h3 className="text-xl font-bold">{editingBahanId ? "Edit" : "Tambah"} Bahan Baku</h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nama Bahan</label>
-                  <input required type="text" value={bahanForm.name} onChange={e => setBahanForm({ ...bahanForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
-                    <select value={bahanForm.category} onChange={e => setBahanForm({ ...bahanForm, category: e.target.value })} className="w-full px-4 py-2 border rounded-lg bg-white">
-                      <option value="bahan_baku">Bahan Baku</option>
-                      <option value="kemasan">Kemasan</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Satuan Dasar</label>
-                    <input required placeholder="kg, liter, pcs" type="text" value={bahanForm.unit} onChange={e => setBahanForm({ ...bahanForm, unit: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Harga Beli (HPP)</label>
-                    <input type="number" required min="0" value={bahanForm.hpp} onChange={e => setBahanForm({ ...bahanForm, hpp: parseInt(e.target.value) || 0 })} className="w-full px-4 py-2 border rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Min. Stok</label>
-                    <input type="number" required min="0" step="0.1" value={bahanForm.stock_min} onChange={e => setBahanForm({ ...bahanForm, stock_min: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 border rounded-lg" />
-                  </div>
-                </div>
-              </div>
-              <div className="p-4 border-t flex gap-2 justify-end sticky bottom-0 bg-white">
-                <button type="button" onClick={() => setShowBahanModal(false)} className="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium">Batal</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
-                  {saving ? "Menyimpan..." : "Simpan"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal: Komponen (with inline ingredient rows) ─────────────── */}
+      {/* ── Modal: Komponen ───────────────────────────────────────────── */}
       {showCompModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <form onSubmit={saveComp}>
               <div className="p-6 space-y-4">
                 <h3 className="text-xl font-bold">{editingCompId ? "Edit" : "Buat"} Komponen Resep</h3>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nama Komponen</label>
-                  <input required type="text" placeholder="mis: Nasi Putih, Ayam Goreng" value={compForm.name} onChange={e => setCompForm({ ...compForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                  <input required autoFocus type="text" placeholder="mis: Nasi Putih, Bumbu Halus" value={compForm.name} onChange={e => setCompForm({ ...compForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi (opsional)</label>
                   <input type="text" placeholder="Keterangan singkat" value={compForm.description} onChange={e => setCompForm({ ...compForm, description: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
                 </div>
 
-                {/* Ingredient rows */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Bahan-bahan dalam komponen ini:</label>
-                  <div className="space-y-2">
-                    {compFormItems.map((row, idx) => (
-                      <div key={idx} className="flex gap-2 items-center bg-gray-50 p-2 rounded-lg">
-                        <select value={row.ingredient_id}
-                          onChange={e => {
-                            const ingId = e.target.value;
-                            updateCompFormRow(idx, "ingredient_id", ingId);
-                            // Auto-fill satuan dari bahan yang dipilih
-                            if (ingId) {
-                              const u = getIngUnit(ingId);
-                              if (u) updateCompFormRow(idx, "unit", u);
-                            }
-                          }}
-                          className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
-                          <option value="">Pilih bahan...</option>
-                          {bahan.length === 0 ? <option disabled>— Tambah bahan baku dulu di atas —</option> : bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
-                        </select>
-                        <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
-                          onChange={e => updateCompFormRow(idx, "qty_needed", parseFloat(e.target.value) || 0)}
-                          className="w-20 px-2 py-1.5 border rounded text-sm" />
-                        <input type="text" placeholder="Satuan" value={row.unit}
-                          onChange={e => updateCompFormRow(idx, "unit", e.target.value)}
-                          className="w-16 px-2 py-1.5 border rounded text-sm" />
-                        <button type="button" onClick={() => removeCompFormRow(idx)}
-                          disabled={compFormItems.length <= 1}
-                          className="text-red-400 hover:text-red-600 text-lg disabled:opacity-30 px-1">🗑</button>
-                      </div>
-                    ))}
+                <div className="pt-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Resep Komponen ini:</label>
+                  <div className="bg-gray-50 border rounded-lg p-3">
+                    <div className="flex text-xs font-semibold text-gray-500 mb-2 px-1">
+                      <div className="flex-1">Nama Bahan Baku</div>
+                      <div className="w-20">Qty</div>
+                      <div className="w-16">Satuan</div>
+                      <div className="w-6"></div>
+                    </div>
+                    <div className="space-y-2">
+                      {compFormItems.map((row, idx) => (
+                        <div key={idx} className="flex gap-2 items-start">
+                          <input required type="text" list="bahan-list" placeholder="Pilih / ketik bahan..."
+                            value={row.ingredient_name} onChange={e => updateCompRowName(idx, e.target.value)}
+                            className="flex-1 px-2 py-1.5 border rounded text-sm bg-white" />
+                          <input required type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
+                            onChange={e => setCompFormItems(prev => prev.map((r, i) => i === idx ? { ...r, qty_needed: parseFloat(e.target.value) || 0 } : r))}
+                            className="w-20 px-2 py-1.5 border rounded text-sm" />
+                          <input required type="text" placeholder="Satuan" value={row.unit}
+                            onChange={e => setCompFormItems(prev => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                            className="w-16 px-2 py-1.5 border rounded text-sm" />
+                          <button type="button" onClick={() => setCompFormItems(prev => prev.filter((_, i) => i !== idx))}
+                            disabled={compFormItems.length <= 1} className="text-gray-400 hover:text-red-500 text-lg disabled:opacity-30 pt-1">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setCompFormItems(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }])}
+                      className="text-purple-600 hover:text-purple-800 text-sm font-medium mt-3 block">+ Tambah Bahan</button>
                   </div>
-                  <button type="button" onClick={addCompFormRow} className="text-purple-600 hover:text-purple-800 text-sm font-medium mt-2">+ Tambah Bahan</button>
+                  <p className="text-xs text-gray-400 mt-2">💡 Jika nama bahan diketik manual dan belum terdaftar di master data, sistem akan otomatis mendaftarkannya.</p>
                 </div>
               </div>
 
@@ -622,26 +665,85 @@ export function TabBahan() {
         </div>
       )}
 
-      {/* ── Modal: Menu Baru ──────────────────────────────────────────── */}
+      {/* ── Modal: Menu Baru (Integrated) ─────────────────────────────── */}
       {showMenuModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <form onSubmit={saveMenu}>
-              <div className="p-6 space-y-4">
-                <h3 className="text-xl font-bold">Menu Baru</h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nama Menu</label>
-                  <input required type="text" placeholder="mis: Nasi Ayam Fillet" value={menuForm.name} onChange={e => setMenuForm({ ...menuForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+              <div className="p-6 space-y-5">
+                <h3 className="text-xl font-bold">Menu BOM Baru</h3>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Menu</label>
+                    <input required autoFocus type="text" placeholder="Bistik Sapi Mentega" value={menuForm.name} onChange={e => setMenuForm({ ...menuForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Satuan Produk</label>
+                    <input required type="text" value={menuForm.unit} onChange={e => setMenuForm({ ...menuForm, unit: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                  </div>
                 </div>
+
+                {/* Komponen Input */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Satuan</label>
-                  <input type="text" value={menuForm.unit} onChange={e => setMenuForm({ ...menuForm, unit: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <span>🧩 Komponen</span>
+                  </label>
+                  <div className="bg-purple-50/50 border border-purple-100 rounded-lg p-3">
+                    <div className="space-y-2">
+                      {menuFormComps.map((row, idx) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                          <select required value={row.component_id} onChange={e => setMenuFormComps(prev => prev.map((r, i) => i===idx ? {component_id: e.target.value} : r))} className="flex-1 px-3 py-1.5 border rounded-lg text-sm bg-white">
+                            <option value="">Pilih komponen resep...</option>
+                            {components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <button type="button" onClick={() => setMenuFormComps(prev => prev.filter((_, i) => i !== idx))} className="text-gray-400 hover:text-red-500 text-lg">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setMenuFormComps(prev => [...prev, { component_id: "" }])} className="text-purple-600 hover:text-purple-800 text-sm font-medium mt-2">+ Pasang Komponen</button>
+                  </div>
                 </div>
+
+                {/* Direct Ingredients Input */}
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <span>🧪 Bahan Baku Langsung</span>
+                  </label>
+                  <div className="bg-green-50/50 border border-green-100 rounded-lg p-3">
+                    <div className="flex text-xs font-semibold text-gray-500 mb-2 px-1">
+                      <div className="flex-1">Nama Bahan Asli</div>
+                      <div className="w-20">Qty</div>
+                      <div className="w-16">Satuan</div>
+                      <div className="w-6"></div>
+                    </div>
+                    <div className="space-y-2">
+                      {menuFormDirects.map((row, idx) => (
+                        <div key={idx} className="flex gap-2 items-start">
+                          <input type="text" list="bahan-list" placeholder="Pilih / ketik bahan..."
+                            value={row.ingredient_name} onChange={e => updateMenuDirectRow(idx, e.target.value)}
+                            className="flex-1 px-2 py-1.5 border rounded text-sm bg-white" />
+                          <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
+                            onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, qty_needed: parseFloat(e.target.value) || 0 } : r))}
+                            className="w-20 px-2 py-1.5 border rounded text-sm" />
+                          <input type="text" placeholder="Satuan" value={row.unit}
+                            onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                            className="w-16 px-2 py-1.5 border rounded text-sm" />
+                          <button type="button" onClick={() => setMenuFormDirects(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-gray-400 hover:text-red-500 text-lg pt-1">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setMenuFormDirects(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }])}
+                      className="text-green-600 hover:text-green-800 text-sm font-medium mt-3">+ Tambah Bahan Langsung</button>
+                  </div>
+                </div>
+
               </div>
-              <div className="p-4 border-t flex gap-2 justify-end sticky bottom-0 bg-white">
+              <div className="p-4 border-t flex gap-2 justify-end sticky bottom-0 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                 <button type="button" onClick={() => setShowMenuModal(false)} className="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50 font-medium">Batal</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium disabled:opacity-50">
-                  {saving ? "Menyimpan..." : "Simpan"}
+                <button type="submit" disabled={saving || !menuFormValid} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium disabled:opacity-50">
+                  {saving ? "Menyimpan BOM..." : "Simpan Menu & Resep"}
                 </button>
               </div>
             </form>

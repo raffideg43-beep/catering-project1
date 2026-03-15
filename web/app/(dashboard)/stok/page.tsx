@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiGet, apiDelete } from "@/lib/api";
+import { apiGet, apiDelete, apiPut } from "@/lib/api";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 
@@ -48,6 +48,8 @@ export default function StokPage() {
     const [modalProduct, setModalProduct] = useState<Product | null>(null);
     const [history, setHistory] = useState<HistoryRow[]>([]);
     const [histLoading, setHistLoading] = useState(false);
+    const [editingMinStockId, setEditingMinStockId] = useState<string | null>(null);
+    const [editMinStockValue, setEditMinStockValue] = useState("");
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -113,6 +115,17 @@ export default function StokPage() {
             fetchData();
         } catch (err: any) {
             alert(err?.response?.data?.detail || "Gagal menghapus item");
+        }
+    };
+
+    const handleSaveMinStock = async (p: Product) => {
+        try {
+            const val = parseFloat(editMinStockValue) || 0;
+            await apiPut(`/products/${p.id}`, { stock_min: val });
+            setEditingMinStockId(null);
+            fetchData();
+        } catch (err: any) {
+            alert("Gagal update stok minimum.");
         }
     };
 
@@ -223,7 +236,27 @@ export default function StokPage() {
                                             <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
                                             <td className="px-4 py-2.5 text-right">{formatRp(p.hpp)}</td>
                                             <td className="px-4 py-2.5 text-right font-semibold">{p.stock_qty.toLocaleString("id-ID")}</td>
-                                            <td className="px-4 py-2.5 text-right text-gray-400">{p.stock_min.toLocaleString("id-ID")}</td>
+                                            <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                                                {editingMinStockId === p.id ? (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <input type="number" min="0" step="0.1" autoFocus
+                                                            value={editMinStockValue} onChange={e => setEditMinStockValue(e.target.value)}
+                                                            className="w-20 px-2 py-1 border rounded text-xs bg-white text-right"
+                                                            onKeyDown={e => {
+                                                                if (e.key === "Enter") handleSaveMinStock(p);
+                                                                if (e.key === "Escape") setEditingMinStockId(null);
+                                                            }}
+                                                        />
+                                                        <button onClick={() => handleSaveMinStock(p)} className="text-green-600 hover:text-green-800 text-lg">✅</button>
+                                                        <button onClick={() => setEditingMinStockId(null)} className="text-gray-400 hover:text-red-500 text-lg">✕</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-end gap-2 group cursor-pointer" onClick={() => { setEditingMinStockId(p.id); setEditMinStockValue(String(p.stock_min)); }}>
+                                                        <span>{p.stock_min.toLocaleString("id-ID")}</span>
+                                                        <span className="text-gray-300 group-hover:text-blue-500 transition-colors">✏️</span>
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-2.5">
                                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.className}`}>{st.label}</span>
                                             </td>
