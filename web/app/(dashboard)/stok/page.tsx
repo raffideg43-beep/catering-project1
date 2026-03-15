@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiDelete } from "@/lib/api";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 
@@ -106,6 +106,16 @@ export default function StokPage() {
         else { setSortCol(col); setSortAsc(true); }
     };
 
+    const handleDeleteProduct = async (p: Product) => {
+        if (!confirm(`Hapus "${p.name}" dari daftar stok?`)) return;
+        try {
+            await apiDelete(`/products/${p.id}`);
+            fetchData();
+        } catch (err: any) {
+            alert(err?.response?.data?.detail || "Gagal menghapus item");
+        }
+    };
+
     const exportCsv = () => {
         const rows = [["Nama", "Kategori", "Satuan", "HPP", "Stok Saat Ini", "Stok Min", "Nilai Stok"]];
         sorted.forEach(p => rows.push([
@@ -188,6 +198,7 @@ export default function StokPage() {
                                         { key: null, label: "Stok Min" },
                                         { key: "status", label: "Status" },
                                         { key: "nilai", label: "Nilai Stok" },
+                                        { key: null, label: "Aksi" },
                                     ].map(col => (
                                         <th key={col.label}
                                             className={`text-left px-4 py-2.5 text-gray-500 font-medium text-xs whitespace-nowrap ${col.key ? "cursor-pointer hover:text-gray-800" : ""}`}
@@ -217,13 +228,16 @@ export default function StokPage() {
                                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.className}`}>{st.label}</span>
                                             </td>
                                             <td className="px-4 py-2.5 text-right font-medium">{formatRp(nilai)}</td>
+                                            <td className="px-4 py-2.5 text-center">
+                                                <button onClick={() => handleDeleteProduct(p)} className="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 bg-red-50 rounded hover:bg-red-100 transition-colors">🗑️ Hapus</button>
+                                            </td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
                             <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                                 <tr>
-                                    <td className="px-4 py-2.5 font-bold" colSpan={7}>TOTAL NILAI STOK</td>
+                                    <td className="px-4 py-2.5 font-bold" colSpan={8}>TOTAL NILAI STOK</td>
                                     <td className="px-4 py-2.5 font-bold text-right">{formatRp(totalNilai)}</td>
                                 </tr>
                             </tfoot>

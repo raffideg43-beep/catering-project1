@@ -458,12 +458,12 @@ export function TabBahan() {
 
                         {addingDirectFor === menu.id ? (
                           <div className="flex gap-2 items-end mt-2">
-                            <select value={directForm.ingredient_id} onChange={e => setDirectForm({ ...directForm, ingredient_id: e.target.value })} className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
+                            <select value={directForm.ingredient_id} onChange={e => { const id = e.target.value; setDirectForm({ ...directForm, ingredient_id: id, unit: id ? getIngUnit(id) || directForm.unit : directForm.unit }); }} className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
                               <option value="">Pilih bahan...</option>
-                              {bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
+                              {bahan.length === 0 ? <option disabled>— Tambah bahan baku dulu di atas —</option> : bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
                             </select>
                             <input type="number" step="0.001" min="0" placeholder="Qty" value={directForm.qty_needed || ""} onChange={e => setDirectForm({ ...directForm, qty_needed: parseFloat(e.target.value) || 0 })} className="w-20 px-2 py-1.5 border rounded text-sm" />
-                            <input type="text" placeholder="unit" value={directForm.unit} onChange={e => setDirectForm({ ...directForm, unit: e.target.value })} className="w-16 px-2 py-1.5 border rounded text-sm" />
+                            <input type="text" placeholder="Satuan" value={directForm.unit} onChange={e => setDirectForm({ ...directForm, unit: e.target.value })} className="w-16 px-2 py-1.5 border rounded text-sm" />
                             <button disabled={saving} onClick={() => addDirectIngredient(menu.id)} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50">✅</button>
                             <button onClick={() => setAddingDirectFor(null)} className="px-2 py-1.5 text-gray-500 text-sm">✕</button>
                           </div>
@@ -585,7 +585,7 @@ export function TabBahan() {
                           onChange={e => {
                             const ingId = e.target.value;
                             updateCompFormRow(idx, "ingredient_id", ingId);
-                            // Auto-fill unit from product
+                            // Auto-fill satuan dari bahan yang dipilih
                             if (ingId) {
                               const u = getIngUnit(ingId);
                               if (u) updateCompFormRow(idx, "unit", u);
@@ -593,12 +593,12 @@ export function TabBahan() {
                           }}
                           className="flex-1 px-2 py-1.5 border rounded text-sm bg-white">
                           <option value="">Pilih bahan...</option>
-                          {bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
+                          {bahan.length === 0 ? <option disabled>— Tambah bahan baku dulu di atas —</option> : bahan.map(b => <option key={b.id} value={b.id}>{b.name} ({b.unit})</option>)}
                         </select>
                         <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
                           onChange={e => updateCompFormRow(idx, "qty_needed", parseFloat(e.target.value) || 0)}
                           className="w-20 px-2 py-1.5 border rounded text-sm" />
-                        <input type="text" placeholder="unit" value={row.unit}
+                        <input type="text" placeholder="Satuan" value={row.unit}
                           onChange={e => updateCompFormRow(idx, "unit", e.target.value)}
                           className="w-16 px-2 py-1.5 border rounded text-sm" />
                         <button type="button" onClick={() => removeCompFormRow(idx)}
