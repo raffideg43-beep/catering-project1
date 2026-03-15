@@ -844,6 +844,25 @@ async def create_manual_transaction(
         product_id = alias_result.get("product_id")
         product_name = alias_result.get("product_name") or nama_asli
 
+        # Jika produk belum ada, buat otomatis sebagai bahan_baku
+        if not product_id:
+            try:
+                new_prod_resp = supabase.table("products").insert({
+                    "tenant_id": current_user.tenant_id,
+                    "name": product_name,
+                    "category": "bahan_baku",
+                    "unit": satuan,
+                    "hpp": str(harga),
+                    "sell_price": "0.00",
+                    "stock_min": "0",
+                    "stock_qty": "0" 
+                }).execute()
+                new_prod_data = getattr(new_prod_resp, "data", None) or []
+                if new_prod_data:
+                    product_id = new_prod_data[0]["id"]
+            except Exception as e:
+                stok_errors.append(f"Gagal auto-create produk '{product_name}': {e}")
+        
         # Ambil HPP dari produk jika ketemu
         hpp_snapshot = str(harga)
         if product_id:
