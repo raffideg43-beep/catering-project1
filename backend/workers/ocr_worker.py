@@ -153,7 +153,6 @@ def process_ocr_job(
             "hpp_snapshot": str(harga),
             "has_ppn": has_ppn,
             "subtotal": str(sub),
-            "needs_confirmation": needs_confirm,
         }
 
         try:
@@ -516,7 +515,6 @@ def run_ocr_in_background(
             "hpp_snapshot": str(harga),
             "has_ppn": has_ppn,
             "subtotal": str(sub),
-            "needs_confirmation": needs_confirm,
         }
 
         try:

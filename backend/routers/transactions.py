@@ -869,7 +869,6 @@ async def create_manual_transaction(
             "hpp_snapshot": hpp_snapshot,
             "subtotal": str(subtotal),
             "has_ppn": False,
-            "needs_confirmation": alias_result.get("needs_confirmation", False),
         }).execute()
 
         # Update stok jika ada product_id
