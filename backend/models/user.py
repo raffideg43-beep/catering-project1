@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
     role: str = "owner"
     telegram_id: Optional[int] = None
@@ -45,13 +45,13 @@ class UserInDB(BaseModel):
 class UserResponse(BaseModel):
     id: str
     name: str
-    email: EmailStr
+    email: str
     role: str
     tenant_id: str
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 

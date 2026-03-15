@@ -42,6 +42,27 @@ def _batch_keyboard(n: int) -> InlineKeyboardMarkup:
     ]])
 
 
+# ─── Handler: Tombol Catat Nota ──────────────────────────────────────────────
+
+async def catat_nota_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback ketika user tekan tombol 'Catat Nota'."""
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    await query.edit_message_text(
+        "📷 *CATAT NOTA OTOMATIS*\n\n"
+        "Silakan kirim foto nota belanja Anda di chat ini "
+        "\\(bisa banyak foto sekaligus\\)\\.\n\n"
+        "Setelah semua foto terkirim, klik tombol *Selesai* yang muncul\\.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback")
+        ]]),
+        parse_mode="MarkdownV2"
+    )
+
+
 # ─── Handler: user kirim foto ─────────────────────────────────────────────────
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -77,6 +98,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         raw_bytes = await photo_file.download_as_bytearray()
         photo_bytes = compress_photo(bytes(raw_bytes))
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"Download/kompres foto gagal: {e}")
         await update.message.reply_text(format_error(f"Gagal mengambil foto: {e}"))
         return
@@ -139,6 +162,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             batch["message_id"] = sent.message_id
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.warning(f"Edit/kirim pesan batch gagal: {e}")
         sent = await update.message.reply_text(
             status_text,
@@ -192,6 +217,8 @@ async def submit_batch(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None
             files=[("batch_id", (None, batch_id)), *files],
         )
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"submit_batch error: {e}")
         resp = None
 
@@ -286,6 +313,8 @@ async def confirm_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         resp = await api.post(f"/transactions/{trx_id}/confirm", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal konfirmasi: {e}"))
         return
 
@@ -321,6 +350,8 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         resp = await api.get(f"/transactions/{trx_id}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Tidak bisa load: {e}"))
         return
 
@@ -370,6 +401,8 @@ async def cancel_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         await api.delete(f"/transactions/{trx_id}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal batalkan: {e}"))
         return
 
@@ -443,6 +476,8 @@ async def konfirmasi_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         batch_resp = await api.get(f"/transactions/batch/{batch_id}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal ambil data batch: {e}"))
         return
 
@@ -461,6 +496,8 @@ async def konfirmasi_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             else:
                 errors.append(tid[:8])
         except Exception as e:
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             errors.append(f"{tid[:8]}: {e}")
 
     err_note = f"\n\n⚠️ {len(errors)} gagal: {', '.join(errors[:3])}" if errors else ""
@@ -486,6 +523,8 @@ async def batal_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         batch_resp = await api.get(f"/transactions/batch/{batch_id}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal ambil data batch: {e}"))
         return
 
@@ -582,6 +621,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             json={"qty": qty, "harga_satuan": harga},
         )
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await update.message.reply_text(format_error(f"Gagal update item: {e}"))
         return
 

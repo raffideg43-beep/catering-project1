@@ -87,7 +87,10 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     if not is_authenticated(context):
-        await msg.reply_text("❌ Silakan /start dulu untuk login.")
+        if update.callback_query:
+            await update.callback_query.answer("❌ Sesi log off. Ketik /start untuk memuat ulang.", show_alert=True)
+        else:
+            await msg.reply_text("❌ Silakan /start dulu untuk login.")
         return ConversationHandler.END
 
     if not _can_input(context):
@@ -102,6 +105,8 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         menu_resp = await api.get("/mbg/weekly-menus/today", token=token)
         schools_resp = await api.get("/schools?is_active=true&limit=50", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await msg.reply_text(format_error(f"Gagal ambil data: {e}"))
         return ConversationHandler.END
 
@@ -120,7 +125,7 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     hari = HARI_INDO.get(today.strftime("%A"), today.strftime("%A"))
     tanggal = today.strftime("%d/%m/%Y")
 
-    # Bangun schools dict dengan default = daily_portions
+    # Bangun schools dict dengan default = default_portions
     schools: Dict[str, dict] = {}
     for s in schools_raw:
         sid = s.get("id", "")
@@ -128,7 +133,7 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             continue
         schools[sid] = {
             "name": s.get("name") or "Sekolah",
-            "portions": int(s.get("daily_portions") or s.get("quota") or 100),
+            "portions": int(s.get("default_portions") or s.get("quota") or 100),
         }
 
     context.user_data["serah_data"] = {
@@ -167,7 +172,7 @@ async def edit_porsi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     await query.edit_message_text(
         f"✏️ *Edit Porsi: {_esc(nama)}*\n\n"
-        f"Kuota default: {default_porsi} porsi\n\n"
+        f"Kuota default: {_esc(str(default_porsi))} porsi\n\n"
         "Ketik jumlah porsi yang dikirim hari ini:",
         parse_mode="MarkdownV2",
     )
@@ -312,8 +317,14 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         resp = await api.post("/mbg/deliveries/bulk", token=token, json=payload)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"konfirmasi_serah error: {e}")
-        resp = None
+        raw = getattr(e, "raw_data", None)
+        if raw is not None:
+             resp = {"success": False, "detail": raw.get("detail") or raw}
+        else:
+             resp = None
 
     # Bersihkan context
     for k in ("serah_data", "serah_alloc", "editing_school_id"):

@@ -111,15 +111,3 @@ def check_transaction_lock(
         )
 
     return transaction_data
-
-
-
-
-
-
-
-
-
-
-
-

@@ -28,3 +28,10 @@ def get_supabase() -> Client:
 
 
 
+
+
+
+
+
+
+

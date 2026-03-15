@@ -799,11 +799,12 @@ async def create_manual_transaction(
 
     trx_date = body.get("date") or date.today().isoformat()
     payment_method = body.get("payment_method", "tunai")
-    supplier_name = body.get("supplier_name") or None
     due_date = body.get("due_date") or None
     notes = body.get("notes") or None
 
     # ─── Insert transaksi (status=confirmed langsung) ─────────────────
+    supplier_name = body.get("supplier_name") or None
+
     trx_data = {
         "tenant_id": current_user.tenant_id,
         "user_id": current_user.id,
@@ -811,10 +812,9 @@ async def create_manual_transaction(
         "source": "telegram_manual",
         "status": "confirmed",
         "date": trx_date,
-        "nama_toko": supplier_name,
-        "payment_method": payment_method,
-        "due_date": due_date,
-        "notes": notes,
+        # nama_toko & payment_method are NOT columns in the transactions table.
+        # Store them in notes for reference.
+        "notes": f"Toko: {supplier_name or '-'} | Bayar: {payment_method}" + (f" | {notes}" if notes else ""),
         "pph22_amount": "0.00",
         "ppn_amount": "0.00",
         "discount": "0.00",

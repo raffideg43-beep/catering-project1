@@ -48,14 +48,32 @@ class RateLimiter:
 
     def __call__(
         self,
-        request: Request,
-        current_user: UserInDB = Depends(get_current_user),
+        request: Request
     ) -> None:
         """
         Validate rate limit. Raise HTTP 429 jika limit terlampaui.
         """
         redis_client = get_redis_client()
-        key = f"rate:{current_user.id}:{self.action}"
+        
+        # Ambil IP jika belum ada user_id (rute public seperti login)
+        client_ip = request.client.host if request.client else "unknown"
+        identifier = f"ip:{client_ip}"
+        
+        # Coba ambil auth header tapi tidak memaksa 401
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                # JWT simple decode (tanpa memvalidasi ke DB) hanya untuk key
+                import jwt
+                payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+                user_id = payload.get("user_id")
+                if user_id:
+                    identifier = f"user:{user_id}"
+            except Exception:
+                pass
+
+        key = f"rate:{identifier}:{self.action}"
 
         try:
             count = int(redis_client.incr(key))

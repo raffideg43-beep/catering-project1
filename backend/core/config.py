@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # --- Auth / JWT ---
     secret_key: str = "dev-secret-key-ganti-di-production"
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 1296000
     algorithm: str = "HS256"
 
     # --- Telegram ---
@@ -89,3 +89,10 @@ def validate_config() -> None:
             f"❌ ENV vars wajib tidak ada: {', '.join(missing)}\n"
             "Periksa file .env Anda."
         )
+
+
+
+
+
+
+

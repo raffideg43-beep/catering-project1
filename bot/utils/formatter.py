@@ -66,3 +66,32 @@ def truncate(text: str, max_len: int = 50) -> str:
     if len(text) > max_len:
         return text[:max_len] + "..."
     return text
+
+
+async def safe_edit(query, text: str, parse_mode=None, reply_markup=None):
+    """
+    Safely edit a callback query message.
+    - Jika konten tidak berubah → abaikan (hindari BadRequest: Message is not modified)
+    - Jika MarkdownV2 gagal (BadRequest formatting) → retry sebagai plain text.
+    """
+    from telegram.error import BadRequest
+
+    try:
+        await query.edit_message_text(
+            text, parse_mode=parse_mode, reply_markup=reply_markup
+        )
+    except BadRequest as e:
+        # Jika error hanya karena pesan tidak berubah, abaikan saja
+        if "Message is not modified" in str(e):
+            return
+
+        # Strip markdown dan retry sebagai plain text untuk error formatting lain
+        import re
+
+        clean = re.sub(r"[\\*_\[\]()~`>#+=|{}.!-]", "", text)
+        try:
+            await query.edit_message_text(clean, reply_markup=reply_markup)
+        except Exception:
+            # Jika masih gagal, diamkan agar tidak mengganggu alur bot
+            pass
+

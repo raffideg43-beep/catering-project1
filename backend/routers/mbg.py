@@ -499,7 +499,7 @@ async def create_bulk_delivery(
     school_ids = [d.school_id for d in body.deliveries]
     schools_resp = (
         supabase.table("schools")
-        .select("id, name, daily_portions")
+        .select("id, name, default_portions")
         .eq("tenant_id", tenant_id)
         .in_("id", school_ids)
         .execute()
@@ -540,6 +540,7 @@ async def create_bulk_delivery(
     menu_rows = getattr(menu_resp, "data", None) or []
     menu_info = menu_rows[0] if menu_rows else None
     menu_id = (menu_info or {}).get("menu_id")
+    menu_name = (menu_info or {}).get("menu_name") or "Tanpa Jadwal"
     warning: str | None = None
     stok_dipotong = False
 
@@ -577,6 +578,8 @@ async def create_bulk_delivery(
                 "tenant_id": tenant_id,
                 "school_id": d.school_id,
                 "delivery_date": body.delivery_date,
+                "menu_id": menu_id,
+                "menu_name": menu_name,
                 "portions_sent": d.portions_sent,
                 "receiver_name": d.receiver_name,
                 "notes": d.notes,
@@ -671,11 +674,13 @@ async def create_bulk_delivery(
     due_date = (delivery_date + _td(days=30)).isoformat()
     recv_resp = supabase.table("receivables").insert({
         "tenant_id": tenant_id,
-        "debtor_name": "Pemerintah - MBG",
+        "transaction_id": None,  # bisa dihubungkan ke transaksi income MBG jika sudah ada
+        "party_name": "Pemerintah - MBG",
+        "party_type": "mbg_gov",
         "amount": str(total_revenue),
         "pph22_amount": "0.00",
+        "paid_amount": "0.00",
         "due_date": due_date,
-        "source": "mbg_delivery",
         "status": "unpaid",
     }).execute()
     receivable_id = ((getattr(recv_resp, "data", None) or [{}])[0]).get("id")

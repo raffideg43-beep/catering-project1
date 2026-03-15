@@ -106,7 +106,6 @@ def process_ocr_job(
         "total": str(total_ocr),
         "payment_method": ocr_result.get("payment_method"),
         "payment_status": ocr_result.get("payment_status"),
-        "due_date": ocr_result.get("due_date"),
         "ocr_confidence": ocr_result.get("ocr_confidence", 0.0),
         "is_pkp": ocr_result.get("is_pkp", False),
         "status": "processing",

@@ -9,13 +9,20 @@ from core.config import settings
 
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
-    """Create a signed JWT access token."""
+    """Buat JWT access token."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
-    )
+
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        # Defaults to exactly 30 days validation
+        expire = datetime.now(timezone.utc) + timedelta(days=30)
+    
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    encoded_jwt = jwt.encode(
+        to_encode, settings.secret_key, algorithm=settings.algorithm
+    )
+    return encoded_jwt
 
 
 def verify_token(token: str) -> Dict[str, Any]:
@@ -41,3 +48,10 @@ def verify_password(plain: str, hashed: str) -> bool:
         return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+
+
+
+
+
+
+

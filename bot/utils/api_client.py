@@ -10,20 +10,24 @@ logger = logging.getLogger(__name__)
 
 class APIError(Exception):
     """Error dari backend API dengan status_code dan pesan yang sudah diparsing."""
-    def __init__(self, message: str, status_code: int = 0):
+    def __init__(self, message: str, status_code: int = 0, raw_data: dict | None = None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+        self.raw_data = raw_data
 
     @classmethod
     def from_httpx(cls, exc: httpx.HTTPStatusError) -> "APIError":
         """Parse error message dari response JSON."""
+        raw = None
         try:
-            data = exc.response.json()
-            msg = data.get("error") or data.get("detail") or str(exc)
+            raw = exc.response.json()
+            msg = raw.get("error") or raw.get("detail") or str(exc)
+            if isinstance(msg, dict):
+                msg = str(msg)
         except Exception:
             msg = str(exc)
-        return cls(message=msg, status_code=exc.response.status_code)
+        return cls(message=str(msg), status_code=exc.response.status_code, raw_data=raw)
 
 
 
@@ -76,6 +80,7 @@ class APIClient:
         self,
         endpoint: str,
         data: dict | None = None,
+        json: dict | list | None = None,
         token: str | None = None,
         files: dict | None = None,
     ) -> dict:
@@ -94,7 +99,10 @@ class APIClient:
                         files=files,
                     )
                 else:
-                    response = await client.post(url, headers=headers, json=data)
+                    if json is not None:
+                        response = await client.post(url, headers=headers, data=data, json=json)
+                    else:
+                        response = await client.post(url, headers=headers, json=data)
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:
@@ -110,6 +118,7 @@ class APIClient:
         self,
         endpoint: str,
         data: dict | None = None,
+        json: dict | list | None = None,
         token: str | None = None,
     ) -> dict:
         """PUT request ke backend."""
@@ -118,7 +127,10 @@ class APIClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.put(url, headers=headers, json=data)
+                if json is not None:
+                    response = await client.put(url, headers=headers, data=data, json=json)
+                else:
+                    response = await client.put(url, headers=headers, json=data)
                 response.raise_for_status()
                 return response.json()
         except httpx.TimeoutException:

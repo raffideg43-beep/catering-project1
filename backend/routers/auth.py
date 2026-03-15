@@ -1,5 +1,6 @@
 from datetime import timedelta
 from typing import Any, Dict
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
@@ -114,10 +115,8 @@ def register_tenant(body: Dict[str, Any]):
     )
 
 
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
-        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id},
-        expires_delta=access_token_expires,
+        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id}
     )
     token_response = TokenResponse(access_token=token, user=user_resp)
 
@@ -151,23 +150,25 @@ def login(body: LoginRequest):
         tenant_id=user_row["tenant_id"],
     )
 
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
-        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id},
-        expires_delta=access_token_expires,
+        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id}
     )
     token_response = TokenResponse(access_token=token, user=user_resp)
 
     return _build_success(token_response.dict())
 
 
+class TelegramLoginRequest(BaseModel):
+    telegram_id: int
+    session_token: str
+
 @router.post("/telegram-login", response_model=Dict[str, Any])
-def telegram_login(body: Dict[str, Any]):
+def telegram_login(body: TelegramLoginRequest):
     """
     Login via Telegram: body harus berisi telegram_id (int) dan session_token (str).
     """
-    telegram_id = body.get("telegram_id")
-    session_token = body.get("session_token")
+    telegram_id = body.telegram_id
+    session_token = body.session_token
     if telegram_id is None or session_token is None:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -204,10 +205,8 @@ def telegram_login(body: Dict[str, Any]):
         tenant_id=user_row["tenant_id"],
     )
 
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
-        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id},
-        expires_delta=access_token_expires,
+        data={"user_id": user_resp.id, "tenant_id": user_resp.tenant_id}
     )
     token_response = TokenResponse(access_token=token, user=user_resp)
 
@@ -216,10 +215,8 @@ def telegram_login(body: Dict[str, Any]):
 
 @router.post("/refresh", response_model=Dict[str, Any])
 def refresh_token(current_user: UserInDB = Depends(get_current_user)):
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
-        data={"user_id": current_user.id, "tenant_id": current_user.tenant_id},
-        expires_delta=access_token_expires,
+        data={"user_id": current_user.id, "tenant_id": current_user.tenant_id}
     )
     user_resp = UserResponse(
         id=current_user.id,
@@ -265,6 +262,13 @@ def get_me(current_user: UserInDB = Depends(get_current_user)):
             "tenant": tenant,
         }
     )
+
+
+
+
+
+
+
 
 
 

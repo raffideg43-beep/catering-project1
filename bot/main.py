@@ -163,7 +163,8 @@ def main():
     from core.error_handler import error_handler as bot_error_handler
     from handlers.auth_handler import (
         buka_web, error_handler as auth_error_handler,
-        hubungkan_akun, logout, settings as settings_handler, start,
+        hubungkan_akun, logout, settings as settings_handler, 
+        settings_cb, start, global_main_menu,
     )
     from handlers.menu_handler import build_menu_conversation
     from handlers.belanja_handler import build_belanja_conversation
@@ -174,7 +175,7 @@ def main():
         laporan_hariini_cb, laporan_bulanan_cb, cek_stok_cb, download_excel_cb,
     )
     from handlers.nota_handler import (
-        cancel_nota, confirm_nota, edit_item, edit_nota,
+        catat_nota_cb, cancel_nota, confirm_nota, edit_item, edit_nota,
         handle_photo, handle_text_input, selesai_kirim,
         konfirmasi_semua, batal_semua, kirim_ulang,
     )
@@ -182,7 +183,7 @@ def main():
     from telegram import BotCommand
     from telegram.ext import (
         Application, CallbackQueryHandler, CommandHandler,
-        MessageHandler, filters,
+        MessageHandler, filters, PicklePersistence,
     )
 
     async def post_init(application: Application):
@@ -206,11 +207,14 @@ def main():
     from telegram.warnings import PTBUserWarning
     warnings.filterwarnings("ignore", category=PTBUserWarning)
 
+    persistence = PicklePersistence(filepath="bot_sessions.pickle")
+
     # Disable job_queue on Windows Python 3.13 to prevent weakref TypeError
     # Increase HTTP timeouts to prevent telegram.error.TimedOut on slow network
     app = (
         Application.builder()
         .token(_settings.telegram_bot_token)
+        .persistence(persistence)
         .job_queue(None)
         .connect_timeout(30.0)
         .read_timeout(30.0)
@@ -239,8 +243,11 @@ def main():
     app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
     app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
     app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
+    app.add_handler(CallbackQueryHandler(settings_cb,        pattern=r"^pengaturan$"))
+    app.add_handler(CallbackQueryHandler(global_main_menu,   pattern=r"^(main_menu_callback|main_menu|back_main)$"))
     app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
     app.add_handler(CallbackQueryHandler(download_excel_cb,  pattern=r"^download_excel_"))
+    app.add_handler(CallbackQueryHandler(catat_nota_cb,      pattern=r"^catat_belanja$"))
     app.add_handler(CallbackQueryHandler(confirm_nota, pattern=r"^confirm_[a-f0-9\-]{36}$"))
     app.add_handler(CallbackQueryHandler(edit_nota,    pattern=r"^edit_[a-f0-9\-]{36}$"))
     app.add_handler(CallbackQueryHandler(cancel_nota,  pattern=r"^cancel_[a-f0-9\-]{36}$"))

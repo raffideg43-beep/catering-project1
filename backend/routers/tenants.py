@@ -6,6 +6,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from typing import Any, Dict
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -125,11 +126,16 @@ def generate_telegram_link_code(current_user: UserInDB = Depends(get_current_use
     }
 
 
+class TelegramLinkRequest(BaseModel):
+    telegram_id: int
+    linking_code: str
+
+
 @router.post("/telegram-link", response_model=Dict[str, Any])
-def link_telegram_account(body: Dict[str, Any]):
+def link_telegram_account(body: TelegramLinkRequest):
     """Link Telegram account dengan kode yang digenerate."""
-    telegram_id = body.get("telegram_id")
-    linking_code = body.get("linking_code")
+    telegram_id = body.telegram_id
+    linking_code = body.linking_code
 
     if not telegram_id or not linking_code:
         return JSONResponse(
@@ -157,13 +163,11 @@ def link_telegram_account(body: Dict[str, Any]):
     ).eq("id", user_row["id"]).execute()
 
     # Generate token untuk bot
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     token = create_access_token(
         data={
             "user_id": user_row["id"],
             "tenant_id": user_row["tenant_id"],
-        },
-        expires_delta=access_token_expires,
+        }
     )
 
     user_resp = UserResponse(

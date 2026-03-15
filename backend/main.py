@@ -1,3 +1,11 @@
+import os
+import sys
+
+# ─── Ensure backend dir is in sys.path (fixes imports when CWD != backend/) ──
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 import logging
 from typing import Any, Dict
 
@@ -123,6 +131,13 @@ app.include_router(mbg_delivery_router, prefix="/mbg")
 app.include_router(transactions_router.router, prefix="/transactions")
 app.include_router(reports_router.router)
 app.include_router(payables_router.router)
+
+
+
+
+
+
+
 
 
 

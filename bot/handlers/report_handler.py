@@ -87,6 +87,8 @@ async def hariini_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         resp = await api.get("/reports/daily", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await msg.reply_text(format_error(f"Gagal ambil data: {e}"))
         return
 
@@ -108,8 +110,8 @@ async def hariini_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if mbg.get("has_delivery"):
         lines += [
-            f"Porsi     : {mbg.get('total_portions', 0)} porsi",
-            f"Sekolah   : {mbg.get('total_schools', 0)} sekolah",
+            f"Porsi     : {_esc(str(mbg.get('total_portions', 0)))} porsi",
+            f"Sekolah   : {_esc(str(mbg.get('total_schools', 0)))} sekolah",
             f"Menu      : {_esc(mbg.get('menu_name') or '—')}",
             f"Gross     : {_esc(_fmt_rp(mbg.get('revenue_gross')))}",
         ]
@@ -120,7 +122,7 @@ async def hariini_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if exp.get("count", 0) > 0:
         lines += [
             f"Total     : {_esc(_fmt_rp(exp.get('total')))}",
-            f"Transaksi : {exp.get('count')} nota",
+            f"Transaksi : {_esc(str(exp.get('count')))} nota",
         ]
     else:
         lines.append("⚪ Belum ada pengeluaran")
@@ -137,8 +139,8 @@ async def hariini_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         lines += ["", f"⚠️ *STOK MENIPIS \\({len(alerts)} item\\):*"]
         for a in alerts[:5]:
             lines.append(
-                f"• {_esc(a['product_name'])}: {a['stock_qty']}{_esc(a['unit'])} "
-                f"\\(min {a['stock_min']}{_esc(a['unit'])}\\)"
+                f"• {_esc(a['product_name'])}: {_esc(str(a['stock_qty']))}{_esc(a['unit'])} "
+                f"\\(min {_esc(str(a['stock_min']))}{_esc(a['unit'])}\\)"
             )
         if len(alerts) > 5:
             lines.append(f"  _\\+{len(alerts)-5} item lainnya_")
@@ -172,6 +174,8 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         resp = await api.get("/reports/monthly", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await loading.edit_text(format_error(f"Gagal: {e}"))
         return
 
@@ -275,6 +279,8 @@ async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         resp = await api.get("/reports/stock", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await msg.reply_text(format_error(f"Gagal: {e}"))
         return
 
@@ -296,7 +302,7 @@ async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append(f"\n⚠️ *MENIPIS \\({low_count} item\\):*")
         for p in low_items[:10]:
             lines.append(
-                f"• {_esc(p['name'])}: {p['stock_qty']}/{p['stock_min']} "
+                f"• {_esc(p['name'])}: {_esc(str(p['stock_qty']))}/{_esc(str(p['stock_min']))} "
                 f"{_esc(p['unit'])} ⚠️"
             )
 
@@ -304,7 +310,7 @@ async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append("\n✅ *STOK AMAN:*")
         show = safe_items[:20 - len(low_items)]
         for p in show:
-            lines.append(f"• {_esc(p['name'])}: {p['stock_qty']} {_esc(p['unit'])}")
+            lines.append(f"• {_esc(p['name'])}: {_esc(str(p['stock_qty']))} {_esc(p['unit'])}")
 
     if total > 20:
         shown = min(len(low_items), 10) + min(len(safe_items), 20 - len(low_items))
@@ -340,6 +346,8 @@ async def piutang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         resp = await api.get("/reports/receivables?status=unpaid", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await msg.reply_text(format_error(f"Gagal: {e}"))
         return
 
@@ -396,6 +404,8 @@ async def hutang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         resp = await api.get("/reports/payables?status=unpaid", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await msg.reply_text(format_error(f"Gagal: {e}"))
         return
 
@@ -455,6 +465,8 @@ async def lunas_hutang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         resp = await api.patch(f"/payables/{payable_id}/mark-paid", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal: {e}"))
         return
 
@@ -531,6 +543,8 @@ async def download_excel_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         resp = await api.get(f"/reports/excel/download{params}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(
             f"❌ Gagal generate Excel: {_esc(str(e))}",
             reply_markup=InlineKeyboardMarkup([[

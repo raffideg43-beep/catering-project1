@@ -56,6 +56,12 @@ INPUT_BOM_INLINE = 4
 HARI_ID = {1: "Senin", 2: "Selasa", 3: "Rabu", 4: "Kamis", 5: "Jumat", 6: "Sabtu"}
 
 
+def _esc(text: str) -> str:
+    import re
+    if not text: return ""
+    return re.sub(r"([_*\[\]()~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
 def _get_week_start(target: date) -> date:
     return target - timedelta(days=target.weekday())
 
@@ -72,7 +78,7 @@ def _format_week_text(week_data: list, week_start: str, week_end: str) -> str:
     except Exception:
         periode = f"{week_start} — {week_end}"
 
-    lines = ["📅 *MENU MINGGU INI*", f"Periode: {periode}", ""]
+    lines = ["📅 *MENU MINGGU INI*", f"Periode: {_esc(periode)}", ""]
 
     for entry in week_data:
         day = entry["day_name"]
@@ -84,14 +90,14 @@ def _format_week_text(week_data: list, week_start: str, week_end: str) -> str:
 
         if entry.get("is_filled") and entry.get("menu_name"):
             bom_icon = "✅" if entry.get("has_bom") else "⚠️"
-            lines.append(f"{day:<7} {tanggal}: {entry['menu_name']} {bom_icon}")
+            lines.append(_esc(f"{day:<7} {tanggal}: {entry['menu_name']} {bom_icon}"))
         elif day == "Sabtu":
-            lines.append(f"{day:<7} {tanggal}: \\[opsional\\] ⬜")
+            lines.append(_esc(f"{day:<7} {tanggal}: [opsional] ⬜"))
         else:
-            lines.append(f"{day:<7} {tanggal}: \\[belum diisi\\] ⬜")
+            lines.append(_esc(f"{day:<7} {tanggal}: [belum diisi] ⬜"))
 
     lines.append("")
-    lines.append("✅ = BOM tersedia  |  ⚠️ = tanpa BOM")
+    lines.append(_esc("✅ = BOM tersedia  |  ⚠️ = tanpa BOM"))
     return "\n".join(lines)
 
 
@@ -116,6 +122,8 @@ async def _show_week(
     try:
         resp = await api.get("/mbg/weekly-menus", token=token, params=params or None)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         msg = format_error(f"Tidak bisa load menu: {e}")
         if edit and update.callback_query:
             await update.callback_query.edit_message_text(msg)
@@ -156,7 +164,13 @@ async def menu_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 "❌ Silakan /start dulu untuk login.",
                 reply_markup=get_main_menu(),
             )
+        elif update.callback_query:
+            await update.callback_query.answer("❌ Silakan login dulu.", show_alert=True)
         return ConversationHandler.END
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        return await _show_week(update, context, edit=True)
 
     return await _show_week(update, context)
 
@@ -193,8 +207,8 @@ async def on_edit_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             bom_note = "\n⚠️ Belum ada BOM — stok tidak terpotong otomatis"
 
         await query.edit_message_text(
-            f"✏️ Menu *{label}* saat ini:\n"
-            f"*{entry['menu_name']}*{bom_note}\n\n"
+            f"✏️ Menu *{_esc(label)}* saat ini:\n"
+            f"*{_esc(entry['menu_name'])}*{_esc(bom_note)}\n\n"
             "Pilih aksi:",
             reply_markup=get_day_action_keyboard(date_str, entry["menu_name"]),
             parse_mode=ParseMode.MARKDOWN_V2,
@@ -214,7 +228,7 @@ async def _ask_menu_input(query_or_update, context: ContextTypes.DEFAULT_TYPE, d
         label = date_str
 
     text = (
-        f"📝 Menu untuk *{label}*:\n\n"
+        f"📝 Menu untuk *{_esc(label)}*:\n\n"
         "Ketik nama menu\\:"
     )
     if hasattr(query_or_update, "edit_message_text"):
@@ -258,6 +272,8 @@ async def on_delete_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     try:
         await api.delete(f"/mbg/weekly-menus/{date_str}", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await query.edit_message_text(format_error(f"Gagal hapus: {e}"))
         return SHOW_WEEK
 
@@ -319,6 +335,8 @@ async def on_menu_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         val = resp.get("data", {})
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         await update.message.reply_text(format_error(f"Tidak bisa validasi: {e}"))
         return WAITING_INPUT
 
@@ -405,6 +423,8 @@ async def _save_menu(
             token=token,
         )
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         if update.callback_query:
             await update.callback_query.answer(f"❌ Gagal simpan: {e}", show_alert=True)
         return CONFIRM_NO_BOM
@@ -608,6 +628,8 @@ async def _finalize_bom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 )
                 saved += 1
         except Exception as e:
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             errors.append(f"'{bom['name']}': {e}")
 
     # Beri tahu user hasil
@@ -679,7 +701,10 @@ def build_menu_conversation() -> ConversationHandler:
     Daftarkan di bot/main.py via app.add_handler().
     """
     return ConversationHandler(
-        entry_points=[CommandHandler("menu", menu_entry)],
+        entry_points=[
+            CommandHandler("menu", menu_entry),
+            CallbackQueryHandler(menu_entry, pattern="^menu_minggu$"),
+        ],
         states={
             SHOW_WEEK: [
                 CallbackQueryHandler(on_edit_day,    pattern=r"^edit_day_\d{4}-\d{2}-\d{2}$"),

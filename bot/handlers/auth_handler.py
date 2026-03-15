@@ -9,14 +9,14 @@ from typing import Callable
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from core.config import settings as app_settings
+from core.config import settings as app_settings  # type: ignore[assignment]
 from keyboards.main_menu import (
     get_login_menu,
     get_main_menu,
     get_open_web_button,
 )
 from utils.api_client import APIClient, get_api_client
-from utils.formatter import format_error, format_success
+from utils.formatter import format_error, format_success, safe_edit
 from utils.session import (
     clear_session,
     get_token,
@@ -42,6 +42,8 @@ def require_auth(func: Callable) -> Callable:
                     "❌ Silakan /start dulu untuk login.",
                     reply_markup=get_login_menu(),
                 )
+            elif update.callback_query:
+                await update.callback_query.answer("❌ Anda belum terhubung. Ketik /start.", show_alert=True)
             return ConversationHandler.END
         return await func(update, context)
 
@@ -57,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
 
-    api_client = get_api_client(app_settings.backend_url)  # type: ignore[attr-defined]
+    api_client = get_api_client(app_settings.backend_url)
 
     # Cek apakah sudah authenticated
     if is_authenticated(context):
@@ -75,9 +77,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         except Exception as e:
-            # Token expired, clear session
-            logger.warning(f"Token invalid: {e}")
-            await clear_session(context)
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403):
+                # ONLY clear session on genuine auth failure
+                logger.warning(f"Token expired/invalid (auth error): {e}")
+                await clear_session(context)
+            else:
+                # Non-auth errors (timeout, 500, network) — DON'T touch the session
+                logger.warning(f"Non-auth error checking /auth/me (session kept): {e}")
 
     # Cek apakah ada argumen (kode linking)
     if context.args and len(context.args) > 0 and update.effective_user:
@@ -118,6 +125,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 return
         except Exception as e:
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             logger.error(f"Linking error: {e}")
             await update.message.reply_text(
                 f"{format_error(str(e))}\n\n"
@@ -148,7 +157,8 @@ async def hubungkan_akun(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     await query.answer()
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "🔗 Cara Hubungkan Akun:\n\n"
         "1️⃣ Buka browser dan masuk ke:\n"
         f"   {app_settings.web_url}\n\n"  # type: ignore[attr-defined]
@@ -182,6 +192,8 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await api_client.post("/auth/logout", token=token)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.warning(f"Logout error (ignored): {e}")
 
     await clear_session(context)
@@ -225,10 +237,80 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=get_open_web_button(),
         )
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"Settings error: {e}")
         await update.message.reply_text(
             f"{format_error(f'Tidak bisa load settings: {str(e)}')}",
         )
+
+
+@require_auth
+async def settings_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler callback untuk tombol 'Pengaturan'.
+    Tampilkan informasi akun user.
+    """
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    api_client = get_api_client(app_settings.backend_url)  # type: ignore[attr-defined]
+    token = get_token(context)
+
+    try:
+        response = await api_client.get("/auth/me", token=token)
+        data = response.get("data", {})
+        user = data.get("user", {})
+        tenant = data.get("tenant", {})
+
+        message = (
+            "⚙️ Pengaturan Akun\n\n"
+            f"👤 Nama: {user.get('name', 'N/A')}\n"
+            f"📧 Email: {user.get('email', 'N/A')}\n"
+            f"🏢 SPPG: {tenant.get('name', 'N/A')}\n"
+            f"🔑 Role: {user.get('role', 'N/A')}\n\n"
+            "Untuk setup lengkap (sekolah, supplier, BOM):\n"
+            f"🌐 {app_settings.web_url}/settings"  # type: ignore[attr-defined]
+        )
+
+        await safe_edit(
+            query,
+            message,
+            reply_markup=get_open_web_button(),
+        )
+    except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
+        logger.error(f"Settings error: {e}")
+        await safe_edit(
+            query,
+            f"{format_error(f'Tidak bisa load settings: {str(e)}')}",
+        )
+
+
+@require_auth
+async def global_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler global untuk kembali ke menu utama dari callback apapun.
+    """
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    # Bersihkan state buffer (belanja manual, dsb) jika ada
+    context.user_data.clear()
+    
+    user_name = get_user_name(context) or "User"
+
+    await safe_edit(
+        query,
+        f"👋 Halo, {user_name}!\n\n"
+        "Apa yang ingin kamu lakukan?",
+        reply_markup=get_main_menu(),
+    )
 
 
 async def buka_web(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -240,7 +322,8 @@ async def buka_web(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await query.answer()
 
-    await query.edit_message_text(
+    await safe_edit(
+        query,
         "🌐 Buka dashboard di browser:\n\n"
         f"👉 {app_settings.web_url}\n\n"  # type: ignore[attr-defined]
         "💡 Simpan link ini di bookmark\n"
@@ -261,4 +344,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
                 "Coba lagi atau ketik /start untuk mulai ulang.",
             )
         except Exception as e:
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             logger.error(f"Error sending error message: {e}")

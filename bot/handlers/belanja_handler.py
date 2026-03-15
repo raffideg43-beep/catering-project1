@@ -143,16 +143,14 @@ async def input_supplier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         "📝 *Langkah 2/3: Daftar belanja*\n\n"
-        "Ketik satu item per baris:\n"
+        "Ketik semua item dalam satu pesan \\(satu item per baris\\):\n"
         "`Format: nama qty satuan harga`\n\n"
         "Contoh:\n"
         "`Beras 10 kg 12000`\n"
         "`Telur 30 pcs 2000`\n"
-        "`Minyak 2 liter 18000`\n\n"
-        "Ketik /selesai jika sudah",
+        "`Minyak 2 liter 18000`",
         parse_mode="MarkdownV2",
     )
-    context.user_data["manual_items_raw"] = []
     return INPUT_ITEMS
 
 
@@ -161,38 +159,33 @@ async def skip_supplier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data["manual_supplier"] = None
     await update.message.reply_text(
         "📝 *Langkah 2/3: Daftar belanja*\n\n"
-        "Ketik satu item per baris:\n"
+        "Ketik semua item dalam satu pesan \\(satu item per baris\\):\n"
         "`Format: nama qty satuan harga`\n\n"
         "Contoh:\n"
         "`Beras 10 kg 12000`\n"
-        "`Telur 30 pcs 2000`\n\n"
-        "Ketik /selesai jika sudah",
+        "`Telur 30 pcs 2000`",
         parse_mode="MarkdownV2",
     )
-    context.user_data["manual_items_raw"] = []
     return INPUT_ITEMS
 
 
 # ─── Langkah 2: Kumpulkan Item ────────────────────────────────────────────────
 
-async def collect_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Kumpulkan baris item. Terus di state ini sampai user ketik /selesai."""
+async def input_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Parse daftar item langsung dari pesan user."""
     if not update.message or not update.message.text:
         return INPUT_ITEMS
 
     text = update.message.text.strip()
-    raw_lines: list = context.user_data.setdefault("manual_items_raw", [])
-    raw_lines.append(text)
-    return INPUT_ITEMS
-
-
-async def selesai_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """/selesai — parse semua baris yang dikumpulkan."""
-    raw_lines: list = context.user_data.get("manual_items_raw", [])
+    raw_lines = text.split("\n")
+    
     items: List[dict] = []
     skipped = 0
 
     for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
         parsed = _parse_item_line(line)
         if parsed:
             items.append(parsed)
@@ -207,7 +200,6 @@ async def selesai_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "Contoh: `Beras 10 kg 12000`",
             parse_mode="MarkdownV2",
         )
-        context.user_data["manual_items_raw"] = []
         return INPUT_ITEMS
 
     context.user_data["manual_items"] = items
@@ -226,9 +218,9 @@ async def selesai_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         lines.append(
             f"\\- {_esc(i['nama_item'])} "
             f"{_esc(str(i['qty']))} {_esc(i['satuan'])} × "
-            f"{_fmt_rp(i['harga_satuan'])} \\= {sub}"
+            f"{_esc(_fmt_rp(i['harga_satuan']))} \\= {_esc(sub)}"
         )
-    lines.append(f"\n💰 *Total: {_fmt_rp(grand_total)}*")
+    lines.append(f"\n💰 *Total: {_esc(_fmt_rp(grand_total))}*")
 
     if skipped:
         lines.append(f"\n⚠️ {skipped} baris dilewati \\(format salah\\)")
@@ -335,6 +327,8 @@ async def _submit_manual(
     try:
         resp = await api.post("/transactions/manual", token=token, json=payload)
     except Exception as e:
+        from utils.api_client import APIError
+        if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"Submit manual gagal: {e}")
         resp = None
 
@@ -396,8 +390,7 @@ def build_belanja_conversation() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, input_supplier),
             ],
             INPUT_ITEMS: [
-                CommandHandler("selesai", selesai_items),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, collect_items),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_items),
             ],
             CONFIRM_BELANJA: [
                 CallbackQueryHandler(pilih_bayar, pattern=r"^bayar_"),
