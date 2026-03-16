@@ -350,6 +350,8 @@ def get_stock_report(
     )
     if category:
         q = q.eq("category", category)
+    else:
+        q = q.neq("category", "komponen").neq("category", "produk_jadi")
 
     resp = q.order("name").execute()
     rows = getattr(resp, "data", None) or []
