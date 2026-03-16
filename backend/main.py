@@ -30,6 +30,8 @@ from routers.mbg import delivery_router as mbg_delivery_router
 from routers import transactions as transactions_router
 from routers import reports as reports_router
 from routers import payables as payables_router
+from routers import price_tracking as price_tracking_router
+from routers import schedules as schedules_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -131,6 +133,8 @@ app.include_router(mbg_delivery_router, prefix="/mbg")
 app.include_router(transactions_router.router, prefix="/transactions")
 app.include_router(reports_router.router)
 app.include_router(payables_router.router)
+app.include_router(price_tracking_router.router)
+app.include_router(schedules_router.router)
 
 
 

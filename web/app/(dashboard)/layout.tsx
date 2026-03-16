@@ -17,6 +17,14 @@ const NAV_ITEMS = [
   },
   { href: "/piutang", icon: "💰", label: "Piutang" },
   { href: "/hutang", icon: "💸", label: "Hutang" },
+  {
+    href: "/harga", icon: "📈", label: "Track Harga",
+    children: [
+      { href: "/harga", label: "📊 Overview" },
+      { href: "/harga/insight", label: "🤖 AI Insight" },
+    ]
+  },
+  { href: "/jadwal", icon: "📅", label: "AI Jadwal" },
   { href: "/settings", icon: "⚙️", label: "Pengaturan" },
 ];
 

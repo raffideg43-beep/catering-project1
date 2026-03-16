@@ -1,10 +1,5 @@
 {
   "pages": {
-    "/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/layout.js"
-    ],
     "/(dashboard)/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -15,40 +10,55 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/layout.js"
     ],
-    "/(dashboard)/settings/page": [
+    "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/settings/page.js"
+      "static/chunks/app/layout.js"
     ],
     "/(dashboard)/stok/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/stok/page.js"
     ],
-    "/(dashboard)/piutang/page": [
+    "/(auth)/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/piutang/page.js"
+      "static/chunks/app/(auth)/login/page.js"
+    ],
+    "/(auth)/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(auth)/layout.js"
+    ],
+    "/(dashboard)/dashboard/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/dashboard/page.js"
     ],
     "/(dashboard)/hutang/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/hutang/page.js"
     ],
-    "/(dashboard)/mbg/page": [
+    "/(dashboard)/piutang/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/mbg/page.js"
+      "static/chunks/app/(dashboard)/piutang/page.js"
     ],
     "/(dashboard)/pembukuan/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/pembukuan/page.js"
     ],
-    "/(dashboard)/pembukuan/[id]/page": [
+    "/(dashboard)/settings/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/pembukuan/[id]/page.js"
+      "static/chunks/app/(dashboard)/settings/page.js"
+    ],
+    "/(dashboard)/mbg/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/mbg/page.js"
     ]
   }
 }
