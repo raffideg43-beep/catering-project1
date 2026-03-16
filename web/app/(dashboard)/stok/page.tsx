@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiGet, apiDelete, apiPut } from "@/lib/api";
+import { apiGet, apiDelete, apiPut, apiPost } from "@/lib/api";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/ui/stat-card";
+import Link from "next/link";
 
 function formatRp(val: string | number): string {
     const n = typeof val === "string" ? parseFloat(val) || 0 : val || 0;
@@ -31,11 +32,50 @@ interface HistoryRow {
     created_at: string;
 }
 
+interface ProjectionItem {
+    product_id: string;
+    name: string;
+    unit: string;
+    stock_qty: number;
+    stock_min: number;
+    daily_usage: number;
+    days_remaining: number;
+    needed_for_period: number;
+    sufficient: boolean;
+    shortage: number;
+    status: "aman" | "menipis" | "kritis" | "habis";
+}
+
+interface ProjectionData {
+    projection_days: number;
+    based_on_menu: boolean;
+    items: ProjectionItem[];
+    summary: {
+        total_items: number;
+        sufficient_count: number;
+        warning_count: number;
+        critical_count: number;
+    };
+}
+
+interface KoreksiModal {
+    product: Product;
+}
+
 function getStockStatus(qty: number, min: number): { label: string; className: string } {
     if (qty === 0) return { label: "⚫ Habis", className: "text-gray-700 bg-gray-100" };
     if (qty <= min) return { label: "🔴 Kritis", className: "text-red-700 bg-red-100" };
     if (qty <= min * 2) return { label: "⚠️ Menipis", className: "text-yellow-700 bg-yellow-100" };
     return { label: "✅ Aman", className: "text-green-700 bg-green-100" };
+}
+
+function DaysDisplay({ days, unit }: { days: number; unit: string }) {
+    if (days >= 999) return <span className="text-green-700 font-medium">30+ hari</span>;
+    if (days === 0) return <span className="font-bold text-gray-900 bg-gray-200 px-1.5 py-0.5 rounded text-xs">HABIS</span>;
+    if (days < 1) return <span className="text-red-600 font-bold text-xs">Hampir Habis</span>;
+    if (days <= 7) return <span className="text-orange-600 font-medium">{days.toFixed(1)} hari</span>;
+    if (days <= 30) return <span className="text-yellow-600 font-medium">{Math.round(days)} hari</span>;
+    return <span className="text-green-700 font-medium">30+ hari</span>;
 }
 
 export default function StokPage() {
@@ -51,6 +91,19 @@ export default function StokPage() {
     const [editingMinStockId, setEditingMinStockId] = useState<string | null>(null);
     const [editMinStockValue, setEditMinStockValue] = useState("");
 
+    // Proyeksi
+    const [projDays, setProjDays] = useState(7);
+    const [projection, setProjection] = useState<ProjectionData | null>(null);
+    const [projLoading, setProjLoading] = useState(true);
+
+    // Koreksi
+    const [koreksiModal, setKoreksiModal] = useState<KoreksiModal | null>(null);
+    const [koreksiNewQty, setKoreksiNewQty] = useState("");
+    const [koreksiReason, setKoreksiReason] = useState("");
+    const [koreksiNotes, setKoreksiNotes] = useState("");
+    const [koreksiSaving, setKoreksiSaving] = useState(false);
+    const [koreksiConfirm, setKoreksiConfirm] = useState(false);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -63,7 +116,17 @@ export default function StokPage() {
         setLoading(false);
     }, [category, search]);
 
+    const fetchProjection = useCallback(async (days: number) => {
+        setProjLoading(true);
+        try {
+            const r = await apiGet(`/products/projection?days=${days}`);
+            setProjection(r?.data ?? null);
+        } catch { }
+        setProjLoading(false);
+    }, []);
+
     useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { fetchProjection(projDays); }, [projDays, fetchProjection]);
 
     const openHistory = async (p: Product) => {
         setModalProduct(p);
@@ -74,6 +137,33 @@ export default function StokPage() {
             setHistory(r?.data?.history ?? []);
         } catch { }
         setHistLoading(false);
+    };
+
+    const openKoreksi = (p: Product) => {
+        setKoreksiModal({ product: p });
+        setKoreksiNewQty(String(p.stock_qty));
+        setKoreksiReason("");
+        setKoreksiNotes("");
+        setKoreksiConfirm(false);
+    };
+
+    const handleSaveKoreksi = async () => {
+        if (!koreksiModal || koreksiSaving) return;
+        setKoreksiSaving(true);
+        try {
+            await apiPost(`/products/${koreksiModal.product.id}/adjust-stock-manual`, {
+                new_qty: parseFloat(koreksiNewQty) || 0,
+                reason: koreksiReason,
+                notes: koreksiNotes || null,
+            });
+            setKoreksiModal(null);
+            setKoreksiConfirm(false);
+            fetchData();
+            fetchProjection(projDays);
+        } catch (err: any) {
+            alert(err?.response?.data?.detail || "Gagal menyimpan koreksi stok");
+        }
+        setKoreksiSaving(false);
     };
 
     // Sort + filter
@@ -143,16 +233,38 @@ export default function StokPage() {
         a.click();
     };
 
+    const statusColor: Record<string, string> = {
+        aman: "text-green-700 bg-green-50",
+        menipis: "text-yellow-700 bg-yellow-50",
+        kritis: "text-red-700 bg-red-50",
+        habis: "text-gray-700 bg-gray-100",
+    };
+    const statusLabel: Record<string, string> = {
+        aman: "✅ Aman",
+        menipis: "⚠️ Menipis",
+        kritis: "🔴 Kritis",
+        habis: "⚫ Habis",
+    };
+
+    const newQtyNum = parseFloat(koreksiNewQty) || 0;
+    const deltaNum = koreksiModal ? newQtyNum - koreksiModal.product.stock_qty : 0;
+
     return (
         <div className="space-y-5">
             <PageHeader
                 title="Stok Bahan"
                 subtitle={`${items.length} item total`}
                 actions={
-                    <button onClick={exportCsv}
-                        className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
-                        📥 Export CSV
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <Link href="/stok/riwayat"
+                            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
+                            📋 Riwayat Lengkap
+                        </Link>
+                        <button onClick={exportCsv}
+                            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+                            📥 Export CSV
+                        </button>
+                    </div>
                 }
             />
 
@@ -162,6 +274,111 @@ export default function StokPage() {
                 <StatCard title="Stok Menipis" value={`${lowCount} item`} icon="⚠️" />
                 <StatCard title="Nilai Total" value={formatRp(totalNilai)} icon="💰" />
                 <StatCard title="Item Aktif" value={`${items.filter(p => p.stock_qty > 0).length} item`} icon="✅" />
+            </div>
+
+            {/* ═══ PROYEKSI STOK ════════════════════════════════════════ */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 className="font-bold text-gray-900">📊 Proyeksi Stok</h3>
+                        {projection && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                Berdasarkan: {projection.based_on_menu
+                                    ? "Menu minggu ini + BOM"
+                                    : "Rata-rata pemakaian 7 hari terakhir"}
+                            </p>
+                        )}
+                    </div>
+                    <div className="flex gap-1">
+                        {[7, 14, 30].map(d => (
+                            <button key={d} onClick={() => setProjDays(d)}
+                                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${projDays === d ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                                {d} Hari
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {projLoading ? (
+                    <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                ) : projection ? (
+                    <>
+                        {/* Summary badges */}
+                        <div className="flex flex-wrap gap-3 mb-4">
+                            <span className="px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium">
+                                ✅ Aman: {projection.summary.sufficient_count}
+                            </span>
+                            <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-lg text-sm font-medium">
+                                ⚠️ Menipis: {projection.summary.warning_count}
+                            </span>
+                            <span className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-sm font-medium">
+                                🔴 Kritis/Habis: {projection.summary.critical_count}
+                            </span>
+                        </div>
+
+                        {/* Only show items with usage or low stock */}
+                        {(() => {
+                            const visibleItems = projection.items.filter(i =>
+                                i.daily_usage > 0 || i.status !== "aman"
+                            );
+                            return visibleItems.length === 0 ? (
+                                <p className="text-gray-400 text-sm text-center py-4">
+                                    Belum ada data pemakaian. Tambahkan resep BOM di Pengaturan.
+                                </p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                {["Bahan", "Stok Saat Ini", "Pemakaian/Hari", `Perlu (${projDays}h)`, "Cukup Untuk", "Status"].map(h => (
+                                                    <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {visibleItems.map((item, i) => (
+                                                <tr key={item.product_id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
+                                                    <td className="px-3 py-2 font-medium text-gray-800">{item.name}</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {item.stock_qty.toLocaleString("id-ID")} {item.unit}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-gray-500">
+                                                        {item.daily_usage > 0
+                                                            ? `${item.daily_usage.toLocaleString("id-ID", { maximumFractionDigits: 2 })} ${item.unit}`
+                                                            : <span className="text-gray-300">—</span>
+                                                        }
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {item.needed_for_period > 0
+                                                            ? <><span className={item.sufficient ? "text-green-700" : "text-red-600 font-semibold"}>
+                                                                {item.needed_for_period.toLocaleString("id-ID", { maximumFractionDigits: 1 })} {item.unit}
+                                                            </span>
+                                                                {!item.sufficient && <span className="ml-1 text-red-500 text-xs">(kurang {item.shortage.toFixed(1)})</span>}
+                                                            </>
+                                                            : <span className="text-gray-300">—</span>
+                                                        }
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <DaysDisplay days={item.days_remaining} unit={item.unit} />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor[item.status]}`}>
+                                                            {statusLabel[item.status]}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            );
+                        })()}
+                    </>
+                ) : (
+                    <p className="text-gray-400 text-sm text-center py-4">Gagal memuat data proyeksi</p>
+                )}
             </div>
 
             {/* Filter */}
@@ -188,7 +405,8 @@ export default function StokPage() {
             {/* Info Box */}
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700">
                 💡 Update stok via Telegram Bot <code className="bg-blue-100 px-1 rounded">/belanja</code>
-                , atau dikurangi otomatis saat konfirmasi <code className="bg-blue-100 px-1 rounded">/serah</code>
+                , atau dikurangi otomatis saat konfirmasi <code className="bg-blue-100 px-1 rounded">/serah</code>.
+                Gunakan tombol <strong>🔧 Koreksi</strong> untuk sinkronkan stok fisik.
             </div>
 
             {/* Tabel */}
@@ -261,8 +479,17 @@ export default function StokPage() {
                                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${st.className}`}>{st.label}</span>
                                             </td>
                                             <td className="px-4 py-2.5 text-right font-medium">{formatRp(nilai)}</td>
-                                            <td className="px-4 py-2.5 text-center">
-                                                <button onClick={() => handleDeleteProduct(p)} className="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 bg-red-50 rounded hover:bg-red-100 transition-colors">🗑️ Hapus</button>
+                                            <td className="px-4 py-2.5">
+                                                <div className="flex items-center gap-1.5 justify-center">
+                                                    <button onClick={() => openKoreksi(p)}
+                                                        className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 font-medium whitespace-nowrap">
+                                                        🔧 Koreksi
+                                                    </button>
+                                                    <button onClick={() => handleDeleteProduct(p)}
+                                                        className="text-red-500 hover:text-red-700 text-xs font-medium px-2 py-1 bg-red-50 rounded hover:bg-red-100 transition-colors">
+                                                        🗑️ Hapus
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -277,6 +504,14 @@ export default function StokPage() {
                         </table>
                     </div>
                 )}
+            </div>
+
+            {/* Link Riwayat */}
+            <div className="text-center">
+                <Link href="/stok/riwayat"
+                    className="text-blue-600 hover:underline text-sm font-medium">
+                    📋 Lihat Riwayat Pergerakan Stok Lengkap →
+                </Link>
             </div>
 
             {/* Modal History */}
@@ -331,6 +566,105 @@ export default function StokPage() {
                                 </table>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Koreksi Stok */}
+            {koreksiModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                    onClick={() => { setKoreksiModal(null); setKoreksiConfirm(false); }}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4"
+                        onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h2 className="font-bold text-gray-900">🔧 Koreksi Stok</h2>
+                                <p className="text-sm text-gray-500 mt-0.5">{koreksiModal.product.name}</p>
+                            </div>
+                            <button onClick={() => { setKoreksiModal(null); setKoreksiConfirm(false); }}
+                                className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
+                        </div>
+
+                        <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                            <span className="text-blue-700">Stok sistem saat ini: </span>
+                            <span className="font-bold text-blue-900">
+                                {koreksiModal.product.stock_qty.toLocaleString("id-ID")} {koreksiModal.product.unit}
+                            </span>
+                        </div>
+
+                        {!koreksiConfirm ? (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Stok fisik sebenarnya <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" min="0" step="0.1"
+                                            value={koreksiNewQty} onChange={e => setKoreksiNewQty(e.target.value)}
+                                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                                            placeholder="Masukkan stok aktual..."
+                                        />
+                                        <span className="text-gray-500 text-sm whitespace-nowrap">{koreksiModal.product.unit}</span>
+                                    </div>
+                                    {koreksiNewQty !== "" && (
+                                        <p className={`text-xs mt-1 ${deltaNum > 0 ? "text-green-600" : deltaNum < 0 ? "text-red-500" : "text-gray-400"}`}>
+                                            Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.unit}
+                                        </p>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Alasan koreksi <span className="text-red-500">*</span>
+                                    </label>
+                                    <input type="text" value={koreksiReason} onChange={e => setKoreksiReason(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                                        placeholder="mis: hasil opname fisik, bahan kadaluarsa..." />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Catatan (opsional)</label>
+                                    <input type="text" value={koreksiNotes} onChange={e => setKoreksiNotes(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                                        placeholder="Tambahan keterangan..." />
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => { setKoreksiModal(null); setKoreksiConfirm(false); }}
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
+                                        Batal
+                                    </button>
+                                    <button
+                                        onClick={() => setKoreksiConfirm(true)}
+                                        disabled={!koreksiReason.trim() || koreksiNewQty === ""}
+                                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
+                                        Lanjut →
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm space-y-1">
+                                    <p className="font-semibold text-yellow-900">Konfirmasi Perubahan</p>
+                                    <p className="text-yellow-800">
+                                        Stok <strong>{koreksiModal.product.name}</strong> akan diubah dari{" "}
+                                        <strong>{koreksiModal.product.stock_qty.toLocaleString("id-ID")}</strong> ke{" "}
+                                        <strong>{newQtyNum.toLocaleString("id-ID")}</strong> {koreksiModal.product.unit}
+                                    </p>
+                                    <p className={`font-bold ${deltaNum > 0 ? "text-green-700" : deltaNum < 0 ? "text-red-600" : "text-gray-600"}`}>
+                                        Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.unit}
+                                    </p>
+                                    <p className="text-yellow-700 text-xs">Alasan: {koreksiReason}</p>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setKoreksiConfirm(false)}
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
+                                        ← Ubah
+                                    </button>
+                                    <button onClick={handleSaveKoreksi} disabled={koreksiSaving}
+                                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-60">
+                                        {koreksiSaving ? "Menyimpan..." : "✅ Simpan Koreksi"}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

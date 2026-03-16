@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from core.database import get_supabase
 from core.dependencies import get_current_user, require_role
-from models.product import ProductCreate, ProductResponse, ProductUpdate, StockAdjustRequest
+from models.product import ProductCreate, ProductResponse, ProductUpdate, StockAdjustRequest, StockManualAdjustRequest
 from models.user import UserInDB
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -174,6 +174,192 @@ def delete_product(
     ).execute()
 
     return {"success": True, "message": "Product deleted"}
+
+
+# ─── GET /products/projection ────────────────────────────────────────────────
+
+@router.get("/projection", response_model=Dict[str, Any])
+def get_stock_projection(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Proyeksi stok {days} hari ke depan.
+    Sumber: menu minggu ini (via BOM) → fallback rata-rata 7 hari terakhir.
+    """
+    import math
+    from datetime import date, timedelta
+
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+
+    # ── Ambil semua produk aktif ──────────────────────────────────────────
+    prod_resp = (
+        supabase.table("products")
+        .select("id, name, unit, stock_qty, stock_min, hpp")
+        .eq("tenant_id", tid)
+        .eq("is_active", True)
+        .execute()
+    )
+    products = getattr(prod_resp, "data", None) or []
+    prod_map = {p["id"]: p for p in products}
+
+    # ── Coba dapatkan menu minggu ini + sekolah ───────────────────────────
+    menu_resp = (
+        supabase.table("mbg_weekly_menus")
+        .select("day_of_week, menu_id")
+        .eq("tenant_id", tid)
+        .eq("week_start", monday.isoformat())
+        .execute()
+    )
+    weekly = getattr(menu_resp, "data", None) or []
+
+    # Total porsi / hari dari sekolah
+    school_resp = (
+        supabase.table("schools")
+        .select("default_portions")
+        .eq("tenant_id", tid)
+        .eq("is_active", True)
+        .execute()
+    )
+    total_portions = sum(
+        int(s.get("default_portions") or 0)
+        for s in (getattr(school_resp, "data", None) or [])
+    )
+
+    # Kumpulkan kebutuhan bahan per hari dari BOM
+    daily_usage: Dict[str, float] = {}  # product_id → kebutuhan rata2/hari
+    based_on_menu = False
+
+    if weekly and total_portions > 0:
+        based_on_menu = True
+        menu_ids = list({m["menu_id"] for m in weekly if m.get("menu_id")})
+        active_days = min(len(weekly), days)
+
+        if menu_ids:
+            # Ambil resep (komponen + bahan langsung)
+            recipe_resp = (
+                supabase.table("recipes")
+                .select("menu_id, ingredient_id, component_id, qty_needed")
+                .in_("menu_id", menu_ids)
+                .execute()
+            )
+            recipes = getattr(recipe_resp, "data", None) or []
+
+            # Komponen → bahan
+            comp_ids = list({r["component_id"] for r in recipes if r.get("component_id")})
+            comp_items: list = []
+            if comp_ids:
+                ci_resp = (
+                    supabase.table("recipe_component_items")
+                    .select("component_id, ingredient_id, qty_needed")
+                    .in_("component_id", comp_ids)
+                    .execute()
+                )
+                comp_items = getattr(ci_resp, "data", None) or []
+
+            comp_ing_map: Dict[str, list] = {}
+            for ci in comp_items:
+                comp_ing_map.setdefault(ci["component_id"], []).append(ci)
+
+            # Akumulasi kebutuhan per hari
+            for menu_row in weekly:
+                menu_id = menu_row.get("menu_id")
+                if not menu_id:
+                    continue
+                for r in recipes:
+                    if r["menu_id"] != menu_id:
+                        continue
+                    needed = float(r.get("qty_needed") or 0) * total_portions
+                    if r.get("ingredient_id"):
+                        iid = r["ingredient_id"]
+                        daily_usage[iid] = daily_usage.get(iid, 0) + needed / max(active_days, 1)
+                    elif r.get("component_id"):
+                        for ci in comp_ing_map.get(r["component_id"], []):
+                            iid = ci["ingredient_id"]
+                            sub = float(ci.get("qty_needed") or 0) * total_portions
+                            daily_usage[iid] = daily_usage.get(iid, 0) + sub / max(active_days, 1)
+
+    if not based_on_menu:
+        # Fallback: rata-rata pemakaian 7 hari terakhir
+        start7 = (today - timedelta(days=7)).isoformat()
+        hist_resp = (
+            supabase.table("stock_history")
+            .select("product_id, change_qty, reason")
+            .eq("tenant_id", tid)
+            .gte("created_at", start7)
+            .execute()
+        )
+        for row in (getattr(hist_resp, "data", None) or []):
+            if row.get("reason") in ("production", "mbg_production", "serah"):
+                delta = abs(float(row.get("change_qty") or 0))
+                pid = row["product_id"]
+                daily_usage[pid] = daily_usage.get(pid, 0) + delta / 7
+
+    # ── Susun hasil proyeksi ──────────────────────────────────────────────
+    items_out = []
+    for p in products:
+        pid = p["id"]
+        stock = float(p.get("stock_qty") or 0)
+        stock_min = float(p.get("stock_min") or 0)
+        usage = daily_usage.get(pid, 0)
+        needed_period = usage * days
+
+        if usage > 0:
+            days_rem = stock / usage
+        else:
+            days_rem = 999  # tak terbatas
+
+        sufficient = stock >= needed_period
+        shortage = max(needed_period - stock, 0)
+
+        if stock <= 0:
+            stat = "habis"
+        elif days_rem < 1:
+            stat = "kritis"
+        elif days_rem <= 7:
+            stat = "menipis"
+        else:
+            stat = "aman"
+
+        items_out.append({
+            "product_id": pid,
+            "name": p["name"],
+            "unit": p["unit"],
+            "stock_qty": stock,
+            "stock_min": stock_min,
+            "daily_usage": round(usage, 4),
+            "days_remaining": round(min(days_rem, 999), 1),
+            "needed_for_period": round(needed_period, 3),
+            "sufficient": sufficient,
+            "shortage": round(shortage, 3),
+            "status": stat,
+            "hpp": p.get("hpp"),
+        })
+
+    # Sort: kritis/habis dulu
+    order = {"habis": 0, "kritis": 1, "menipis": 2, "aman": 3}
+    items_out.sort(key=lambda x: order.get(x["status"], 4))
+
+    summary = {
+        "total_items": len(items_out),
+        "sufficient_count": sum(1 for i in items_out if i["status"] == "aman"),
+        "warning_count": sum(1 for i in items_out if i["status"] == "menipis"),
+        "critical_count": sum(1 for i in items_out if i["status"] in ("kritis", "habis")),
+    }
+
+    return {
+        "success": True,
+        "data": {
+            "projection_days": days,
+            "based_on_menu": based_on_menu,
+            "items": items_out,
+            "summary": summary,
+        },
+    }
+
 
 
 @router.get("/low-stock", response_model=Dict[str, Any])
@@ -351,3 +537,78 @@ def get_product_history(
         },
     }
 
+
+# ─── POST /products/{product_id}/adjust-stock-manual ─────────────────────────
+
+@router.post(
+    "/{product_id}/adjust-stock-manual",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+def adjust_stock_manual(
+    product_id: str,
+    body: StockManualAdjustRequest,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Koreksi stok manual — menerima stok fisik aktual (new_qty), bukan delta.
+    Menghitung delta, update produk, insert stock_history & audit_log.
+    """
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+
+    # Ambil produk saat ini
+    prod_resp = (
+        supabase.table("products")
+        .select("id, name, stock_qty, unit")
+        .eq("id", product_id)
+        .eq("tenant_id", tid)
+        .single()
+        .execute()
+    )
+    prod = getattr(prod_resp, "data", None)
+    if not prod:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produk tidak ditemukan")
+
+    old_qty = Decimal(str(prod["stock_qty"] or 0))
+    new_qty = Decimal(str(body.new_qty))
+    delta = new_qty - old_qty
+
+    # Update stok produk
+    supabase.table("products").update({"stock_qty": float(new_qty)}).eq("id", product_id).execute()
+
+    # Insert stock_history
+    supabase.table("stock_history").insert({
+        "tenant_id": tid,
+        "product_id": product_id,
+        "change_qty": float(delta),
+        "balance_after": float(new_qty),
+        "reason": "adjustment",
+        "notes": f"Koreksi manual: {body.reason}" + (f". {body.notes}" if body.notes else ""),
+    }).execute()
+
+    # Insert audit_log
+    try:
+        supabase.table("audit_log").insert({
+            "tenant_id": tid,
+            "user_id": current_user.id,
+            "action": "stock_adjustment",
+            "resource": "products",
+            "resource_id": product_id,
+            "old_data": {"stock_qty": float(old_qty)},
+            "new_data": {"stock_qty": float(new_qty), "delta": float(delta), "reason": body.reason},
+        }).execute()
+    except Exception:
+        pass  # audit_log non-fatal
+
+    return {
+        "success": True,
+        "data": {
+            "product_id": product_id,
+            "name": prod["name"],
+            "unit": prod["unit"],
+            "old_qty": float(old_qty),
+            "new_qty": float(new_qty),
+            "delta": float(delta),
+        },
+    }

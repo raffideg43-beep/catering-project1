@@ -284,7 +284,9 @@ async def confirm_transaction(
                 "status": "unpaid",
             }).execute()
         except Exception as e:
-            pass  # non-fatal
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to insert payable during confirm: {e}")
 
     result = {"success": True, "transaction_id": trx_id, "status": "confirmed"}
     if stok_errors:
@@ -818,8 +820,9 @@ async def create_manual_transaction(
         "source": "telegram_manual",
         "status": "confirmed",
         "date": trx_date,
-        # nama_toko & payment_method are NOT columns in the transactions table.
-        # Store them in notes for reference.
+        "nama_toko": supplier_name,
+        "payment_method": payment_method,
+        "due_date": due_date,
         "notes": f"Toko: {supplier_name or '-'} | Bayar: {payment_method}" + (f" | {notes}" if notes else ""),
         "pph22_amount": "0.00",
         "ppn_amount": "0.00",
@@ -961,8 +964,10 @@ async def create_manual_transaction(
                 "due_date": due_date,
                 "status": "unpaid",
             }).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to insert payable for manual transaction: {e}")
 
     # ─── Trigger Excel regenerate ──────────────────────────────────────
     from services.export_service import ExportService

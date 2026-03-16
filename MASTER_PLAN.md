@@ -1573,7 +1573,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 ALGORITHM=HS256
 
 # Telegram
-TELEGRAM_BOT_TOKEN=token_botfather
+TELEGRAM_BOT_=token_botfather
 
 # AI
 GEMINI_API_KEY=gemini_key

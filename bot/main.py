@@ -13,6 +13,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
+    PicklePersistence,
     filters,
 )
 
@@ -65,7 +66,8 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Initialize dan start bot."""
-    app: Application = Application.builder().token(settings.telegram_bot_token).build()
+    persistence = PicklePersistence(filepath="bot_data.pickle")
+    app: Application = Application.builder().token(settings.telegram_bot_token).persistence(persistence).build()
 
     # ─── ConversationHandlers HARUS sebelum handler biasa ───────────
     app.add_handler(build_menu_conversation())

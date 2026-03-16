@@ -675,8 +675,7 @@ async def create_bulk_delivery(
     recv_resp = supabase.table("receivables").insert({
         "tenant_id": tenant_id,
         "transaction_id": None,  # bisa dihubungkan ke transaksi income MBG jika sudah ada
-        "party_name": "Pemerintah - MBG",
-        "party_type": "mbg_gov",
+        "debtor_name": "Pemerintah - MBG",
         "amount": str(total_revenue),
         "pph22_amount": "0.00",
         "paid_amount": "0.00",

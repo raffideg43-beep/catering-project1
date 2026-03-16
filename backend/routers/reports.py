@@ -413,7 +413,7 @@ def get_receivables_report(
     if month and year:
         first = date(year, month, 1)
         last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
-        q = q.gte("created_at", first.isoformat()).lte("created_at", last.isoformat())
+        q = q.gte("created_at", first.isoformat()).lte("created_at", (last + timedelta(days=1)).isoformat())
 
     resp = q.order("due_date").execute()
     rows = getattr(resp, "data", None) or []
@@ -496,7 +496,7 @@ def get_payables_report(
     if month and year:
         first = date(year, month, 1)
         last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
-        q = q.gte("created_at", first.isoformat()).lte("created_at", last.isoformat())
+        q = q.gte("created_at", first.isoformat()).lte("created_at", (last + timedelta(days=1)).isoformat())
 
     resp = q.order("due_date").execute()
     rows = getattr(resp, "data", None) or []

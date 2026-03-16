@@ -8,7 +8,13 @@ const NAV_ITEMS = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
   { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
   { href: "/mbg", icon: "🍱", label: "MBG" },
-  { href: "/stok", icon: "📦", label: "Stok" },
+  {
+    href: "/stok", icon: "📦", label: "Stok",
+    children: [
+      { href: "/stok", label: "📦 Stok Utama" },
+      { href: "/stok/riwayat", label: "📋 Riwayat" },
+    ]
+  },
   { href: "/piutang", icon: "💰", label: "Piutang" },
   { href: "/hutang", icon: "💸", label: "Hutang" },
   { href: "/settings", icon: "⚙️", label: "Pengaturan" },
@@ -83,20 +89,35 @@ export default function DashboardLayout({
       <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
         {NAV_ITEMS.map(item => {
           const active = isActive(item.href);
+          const hasChildren = (item as any).children && (!collapsed || mobile);
           return (
-            <a
-              key={item.href}
-              href={item.href}
-              className={`
-                flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                ${active
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-gray-800 hover:text-white"}
-              `}
-            >
-              <span className="text-base flex-shrink-0">{item.icon}</span>
-              {(!collapsed || mobile) && <span>{item.label}</span>}
-            </a>
+            <div key={item.href}>
+              <a
+                href={item.href}
+                className={`
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  ${active
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-300 hover:bg-gray-800 hover:text-white"}
+                `}
+              >
+                <span className="text-base flex-shrink-0">{item.icon}</span>
+                {(!collapsed || mobile) && <span>{item.label}</span>}
+              </a>
+              {hasChildren && active && (
+                <div className="ml-8 mt-0.5 space-y-0.5">
+                  {((item as any).children as { href: string; label: string }[]).map(child => (
+                    <a key={child.href} href={child.href}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                        ${pathname === child.href || pathname.startsWith(child.href + "/")
+                          ? "bg-blue-500 text-white"
+                          : "text-gray-400 hover:bg-gray-700 hover:text-white"}`}>
+                      {child.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>

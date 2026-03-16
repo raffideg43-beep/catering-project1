@@ -47,3 +47,10 @@ class StockAdjustRequest(BaseModel):
     change_qty: Decimal
     reason: str  # adjustment, spoilage, waste
     notes: Optional[str] = None
+
+
+class StockManualAdjustRequest(BaseModel):
+    """Koreksi stok manual — menerima stok fisik baru, bukan delta."""
+    new_qty: Decimal
+    reason: str  # deskripsi singkat alasan koreksi
+    notes: Optional[str] = None

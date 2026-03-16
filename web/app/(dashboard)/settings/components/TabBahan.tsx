@@ -61,6 +61,15 @@ export function TabBahan() {
   const [belanjaText, setBelanjaText] = useState("");
   const [parsedBelanja, setParsedBelanja] = useState<ParsedBelanja[]>([]);
   const [belanjaErrors, setBelanjaErrors] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState("tunai");
+  
+  // Set default due_date to 30 days from now
+  const defaultDueDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split("T")[0];
+  }, []);
+  const [dueDate, setDueDate] = useState(defaultDueDate);
 
   /* ─── Component form (with inline ingredient rows) ───────────────── */
   const [showCompModal, setShowCompModal] = useState(false);
@@ -194,12 +203,15 @@ export function TabBahan() {
       await apiPost("/transactions/manual", {
         supplier_name: "Input Manual Web",
         date: new Date().toISOString().split('T')[0],
-        payment_method: "tunai",
+        payment_method: paymentMethod,
+        due_date: paymentMethod === "hutang" ? dueDate : null,
         items: items
       });
 
       setBelanjaText("");
       setParsedBelanja([]);
+      setPaymentMethod("tunai");
+      setDueDate(defaultDueDate);
       alert("✅ Belanja berhasil disimpan! Stok bertambah dan bahan baru telah dibuat otomatis.");
       await fetchAll();
     } catch (err: any) {
@@ -435,11 +447,38 @@ export function TabBahan() {
                         <Rupiah amount={parsedBelanja.reduce((sum, p) => sum + p.subtotal, 0)} />
                       </td>
                     </tr>
-                  </tfoot>
-                </table>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* Payment Method Selector */}
+        <div className="mt-4 p-3 bg-white border rounded-lg shadow-sm">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
+            <select 
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="tunai">Tunai</option>
+              <option value="transfer">Transfer</option>
+              <option value="hutang">Hutang (Tempo)</option>
+            </select>
+            
+            {paymentMethod === "hutang" && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Jatuh Tempo</label>
+                <input 
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             )}
-            <button
+        </div>
+
+        <button
               disabled={parsedBelanja.length === 0 || saving}
               onClick={submitBelanja}
               className="w-full mt-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
