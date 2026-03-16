@@ -112,7 +112,7 @@ def generate_telegram_link_code(current_user: UserInDB = Depends(get_current_use
 
     # Generate kode unik 6 karakter
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    expires_at = datetime.utcnow() + timedelta(days=30)
 
     # Simpan ke session_token user
     supabase.table("users").update({"session_token": code}).eq("id", current_user.id).execute()

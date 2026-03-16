@@ -45,7 +45,7 @@ export function TabTelegram() {
                             {code}
                         </p>
                         <p className="text-xs text-gray-500 mt-4">
-                            Berlaku hingga: {new Date(expiry).toLocaleTimeString()}
+                            Berlaku hingga: {new Date(expiry).toLocaleDateString("id-ID", { day: 'numeric', month: 'long', year: 'numeric' })} pukul {new Date(expiry).toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' })}
                         </p>
                     </div>
                 ) : (
