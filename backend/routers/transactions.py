@@ -209,6 +209,12 @@ async def confirm_transaction(
         if qty <= 0:
             continue
         try:
+            # Update HPP
+            if item.get("price"):
+                supabase.table("products").update({
+                    "hpp": str(item.get("price"))
+                }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
+
             # Stok KELUAR (pembelian bahan = stok masuk) → delta positif
             supabase.rpc("increment_stock", {
                 "p_product_id": product_id,
@@ -893,6 +899,11 @@ async def create_manual_transaction(
         # Update stok jika ada product_id
         if product_id:
             try:
+                # Update HPP
+                supabase.table("products").update({
+                    "hpp": str(harga)
+                }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
+
                 supabase.rpc("increment_stock", {
                     "p_product_id": product_id,
                     "p_delta": float(qty),

@@ -25,21 +25,6 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/stok/page.js"
     ],
-    "/(dashboard)/pembukuan/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/pembukuan/page.js"
-    ],
-    "/(dashboard)/dashboard/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/dashboard/page.js"
-    ],
-    "/(dashboard)/hutang/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/hutang/page.js"
-    ],
     "/(dashboard)/piutang/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
