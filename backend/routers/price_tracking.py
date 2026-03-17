@@ -65,7 +65,7 @@ def _fetch_items(supabase, tid: str, product_id: Optional[str], since_date: str)
     # Ambil items
     items_q = (
         supabase.table("transaction_items")
-        .select("id, transaction_id, product_id, product_name, qty, unit, unit_price, subtotal")
+        .select("id, transaction_id, product_id, product_name, qty, unit, price, subtotal")
         .in_("transaction_id", trx_ids)
     )
     if product_id:
@@ -135,8 +135,8 @@ def get_price_overview(
         if prod_info.get("category") not in ("bahan_baku", "kemasan", None, ""):
             continue
 
-        prices_90 = [float(_d(i.get("unit_price"))) for i in items if _d(i.get("unit_price")) > 0]
-        prices_30 = [float(_d(i.get("unit_price"))) for i in prod_items_30.get(pid, []) if _d(i.get("unit_price")) > 0]
+        prices_90 = [float(_d(i.get("price"))) for i in items if _d(i.get("price")) > 0]
+        prices_30 = [float(_d(i.get("price"))) for i in prod_items_30.get(pid, []) if _d(i.get("price")) > 0]
 
         if not prices_90:
             continue
@@ -160,7 +160,7 @@ def get_price_overview(
             by_sup: Dict[str, list] = defaultdict(list)
             for i in items_30:
                 sid = i.get("supplier_id") or ""
-                by_sup[sid].append(float(_d(i.get("unit_price"))))
+                by_sup[sid].append(float(_d(i.get("price"))))
             sup_avg = {sid: sum(pr) / len(pr) for sid, pr in by_sup.items() if pr}
             if sup_avg:
                 cheapest_sid = min(sup_avg, key=sup_avg.get)
@@ -242,7 +242,7 @@ def get_ai_insights(
         prod_summary = defaultdict(lambda: {"prices": [], "name": ""})
         for item in items_90:
             pid = item.get("product_id") or item.get("product_name", "")
-            price = float(_d(item.get("unit_price")))
+            price = float(_d(item.get("price")))
             if price > 0 and pid:
                 prod_summary[pid]["prices"].append(price)
                 if item.get("product_name"):
@@ -394,7 +394,7 @@ def get_product_price_history(
     for item in items:
         d = item.get("date", "")[:10]
         sid = item.get("supplier_id") or "unknown"
-        price = float(_d(item.get("unit_price")))
+        price = float(_d(item.get("price")))
         qty = float(_d(item.get("qty")))
         if price > 0:
             by_date[d][sid].append({"price": price, "qty": qty})
@@ -425,7 +425,7 @@ def get_product_price_history(
     by_sup_all: Dict[str, list] = defaultdict(list)
     for item in items:
         sid = item.get("supplier_id") or "unknown"
-        price = float(_d(item.get("unit_price")))
+        price = float(_d(item.get("price")))
         if price > 0:
             by_sup_all[sid].append(price)
 
@@ -441,7 +441,7 @@ def get_product_price_history(
     suppliers_comparison.sort(key=lambda x: x["avg_price"])
 
     # Stats
-    all_prices = [float(_d(i.get("unit_price"))) for i in items if _d(i.get("unit_price")) > 0]
+    all_prices = [float(_d(i.get("price"))) for i in items if _d(i.get("price")) > 0]
     if all_prices:
         avg_all = sum(all_prices) / len(all_prices)
         variance = sum((p - avg_all) ** 2 for p in all_prices) / len(all_prices)
