@@ -561,6 +561,7 @@ def run_ocr_in_background(
     photo_url: str,
     tenant_id: str,
     telegram_id: int,
+    batch_id: Optional[str] = None,
 ) -> None:
     """
     Entry-point untuk FastAPI BackgroundTasks.
@@ -573,6 +574,7 @@ def run_ocr_in_background(
             photo_url=photo_url,
             tenant_id=tenant_id,
             telegram_id=telegram_id,
+            batch_id=batch_id,
         )
     except Exception as e:
         logger.error(f"Background OCR error [{trx_id}]: {e}")

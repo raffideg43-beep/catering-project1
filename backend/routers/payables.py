@@ -60,7 +60,6 @@ def mark_payable_paid(
             .update({
                 "status": "paid",
                 "paid_amount": payable.get("amount"),
-                "updated_at": "now()",
             })
             .eq("id", payable_id)
             .eq("tenant_id", tid)

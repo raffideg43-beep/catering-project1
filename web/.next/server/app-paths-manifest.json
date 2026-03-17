@@ -1,7 +1,4 @@
 {
   "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
-  "/(dashboard)/harga/page": "app/(dashboard)/harga/page.js",
-  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js",
-  "/(dashboard)/harga/[id]/page": "app/(dashboard)/harga/[id]/page.js"
+  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js"
 }
