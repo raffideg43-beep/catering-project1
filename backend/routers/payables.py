@@ -54,18 +54,22 @@ def mark_payable_paid(
         raise HTTPException(400, detail="Hutang ini sudah lunas")
 
     # Update
-    upd = (
-        supabase.table("payables")
-        .update({
-            "status": "paid",
-            "paid_amount": payable.get("amount"),
-            "paid_date": today.isoformat(),
-            "updated_at": "now()",
-        })
-        .eq("id", payable_id)
-        .eq("tenant_id", tid)
-        .execute()
-    )
+    try:
+        upd = (
+            supabase.table("payables")
+            .update({
+                "status": "paid",
+                "paid_amount": payable.get("amount"),
+                "updated_at": "now()",
+            })
+            .eq("id", payable_id)
+            .eq("tenant_id", tid)
+            .execute()
+        )
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to mark payable paid: {e}")
+        raise HTTPException(500, detail=str(e))
     updated = (getattr(upd, "data", None) or [{}])[0]
 
     # Cashflow log

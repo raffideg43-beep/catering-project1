@@ -118,7 +118,7 @@ export default function HutangPage() {
                         className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full" />
                 </div>
                 <div>
-                    <label className="block text-xs text-gray-500 mb-1">Bulan</label>
+                    <label className="block text-xs text-gray-500 mb-1">Bulan Transaksi</label>
                     <select value={bulan} onChange={e => setBulan(Number(e.target.value))}
                         className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
                         {MONTHS_FULL.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
@@ -148,7 +148,7 @@ export default function HutangPage() {
                         <table className="w-full text-sm">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    {["Tanggal", "Supplier", "Pokok", "PPh22", "PPN", "Total Bayar", "Jatuh Tempo", "Status", "Terlambat", "Aksi"].map(h => (
+                                    {["Tanggal", "Supplier", "Pokok", "Total Bayar", "Jatuh Tempo", "Status", "Terlambat", "Aksi"].map(h => (
                                         <th key={h} className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
                                     ))}
                                 </tr>
@@ -165,12 +165,6 @@ export default function HutangPage() {
                                             <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{p.created_at}</td>
                                             <td className="px-4 py-2.5 font-medium text-gray-800 max-w-[140px] truncate">{p.supplier_name}</td>
                                             <td className="px-4 py-2.5 text-right font-semibold">{formatRp(p.amount)}</td>
-                                            <td className="px-4 py-2.5 text-right" title={pph22 === 0 ? "Dihitung saat Excel" : ""}>
-                                                {pph22 > 0 ? <span className="text-red-500">{formatRp(pph22)}</span> : <span className="text-gray-300">—</span>}
-                                            </td>
-                                            <td className="px-4 py-2.5 text-right" title={ppn === 0 ? "Dihitung saat Excel" : ""}>
-                                                {ppn > 0 ? <span className="text-blue-600">{formatRp(ppn)}</span> : <span className="text-gray-300">—</span>}
-                                            </td>
                                             <td className="px-4 py-2.5 text-right font-bold">{formatRp(p.total_bayar)}</td>
                                             <td className="px-4 py-2.5 text-xs whitespace-nowrap">{due}</td>
                                             <td className="px-4 py-2.5"><StatusBadge status={p.status} /></td>
