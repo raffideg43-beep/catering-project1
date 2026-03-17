@@ -1,6 +1,3 @@
 {
-  "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/harga/page": "app/(dashboard)/harga/page.js",
-  "/(dashboard)/import/page": "app/(dashboard)/import/page.js",
-  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js"
+  "/(dashboard)/page": "app/(dashboard)/page.js"
 }

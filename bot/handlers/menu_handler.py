@@ -674,7 +674,10 @@ async def on_cancel_bom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Fallback /cancel — clear state, kembali ke main menu."""
-    context.user_data.clear()
+    _SESSION_KEYS = {"token", "tenant_id", "user_name", "user_role"}
+    keys_to_remove = [k for k in context.user_data if k not in _SESSION_KEYS]
+    for k in keys_to_remove:
+        del context.user_data[k]
     if update.message:
         await update.message.reply_text(
             "✅ Input menu dibatalkan.", reply_markup=get_main_menu()
@@ -689,7 +692,10 @@ async def on_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return ConversationHandler.END
     await query.answer()
     await query.edit_message_text("📋 Kembali ke menu utama.", reply_markup=get_main_menu())
-    context.user_data.clear()
+    _SESSION_KEYS = {"token", "tenant_id", "user_name", "user_role"}
+    keys_to_remove = [k for k in context.user_data if k not in _SESSION_KEYS]
+    for k in keys_to_remove:
+        del context.user_data[k]
     return ConversationHandler.END
 
 

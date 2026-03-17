@@ -11,6 +11,7 @@ Routes:
   DELETE /transactions/{id}         → soft delete (status=voided)
 """
 
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -38,6 +39,7 @@ from models.user import UserInDB
 from workers.ocr_worker import run_ocr_in_background
 
 router = APIRouter(tags=["transactions"])
+logger = logging.getLogger(__name__)
 
 # Safety net setelah kompresi di bot side — max 2MB
 MAX_PHOTO_BYTES = 2 * 1024 * 1024
@@ -960,14 +962,15 @@ async def create_manual_transaction(
                 "transaction_id": trx_id,
                 "supplier_name": supplier_name or "Supplier",
                 "amount": str(grand_total),
+                "pph22_amount": "0.00",
+                "ppn_amount": "0.00",
                 "paid_amount": "0.00",
                 "due_date": due_date,
                 "status": "unpaid",
             }).execute()
+            logger.info(f"Payable created for trx {trx_id}, amount={grand_total}, due={due_date}")
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to insert payable for manual transaction: {e}")
+            logger.error(f"Failed to insert payable for manual transaction {trx_id}: {e}")
 
     # ─── Trigger Excel regenerate ──────────────────────────────────────
     from services.export_service import ExportService

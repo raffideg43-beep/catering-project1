@@ -300,8 +300,11 @@ async def global_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     await query.answer()
 
-    # Bersihkan state buffer (belanja manual, dsb) jika ada
-    context.user_data.clear()
+    # Bersihkan state buffer (belanja manual, dsb) tapi JANGAN hapus auth keys
+    _SESSION_KEYS = {"token", "tenant_id", "user_name", "user_role"}
+    keys_to_remove = [k for k in context.user_data if k not in _SESSION_KEYS]
+    for k in keys_to_remove:
+        del context.user_data[k]
     
     user_name = get_user_name(context) or "User"
 
