@@ -580,17 +580,12 @@ async def upload_photo_batch(
             "status": "processing",
         })
 
-        # Enqueue OCR background task
-        background_tasks.add_task(
-            run_ocr_in_background,
-            trx_id,
-            photo_url,
-            current_user.tenant_id,
-            telegram_id,
-            batch_id,
-        )
+        # Simpan URL dan ID untuk background tasks nanti
+        if not hasattr(current_user, "_temp_tasks"):
+            current_user._temp_tasks = []
+        current_user._temp_tasks.append((trx_id, photo_url))
 
-    # ─── Insert photo_batches record ──────────────────────────────────
+    # ─── Insert photo_batches record SEBELUM background tasks ──────────
     from datetime import datetime, timedelta, timezone
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     total_valid = len(trx_ids)
@@ -612,6 +607,19 @@ async def upload_photo_batch(
     except Exception as e:
         # Batch record gagal — non-fatal, OCR tetap jalan
         pass
+
+    # ─── Enqueue OCR background tasks SETELAH batch ditulis ke DB ──────
+    if hasattr(current_user, "_temp_tasks"):
+        for t_id, p_url in current_user._temp_tasks:
+            background_tasks.add_task(
+                run_ocr_in_background,
+                t_id,
+                p_url,
+                current_user.tenant_id,
+                telegram_id,
+                batch_id,
+            )
+        del current_user._temp_tasks
 
     return {
         "success": True,
