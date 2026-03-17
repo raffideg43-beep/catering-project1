@@ -123,10 +123,23 @@ def get_price_overview(
 
     # Ambil product names
     all_prod_ids = list(prod_items_90.keys())
+    # Filter only valid UUIDs to avoid Supabase APIError
+    import uuid
+    valid_uuids = []
+    for pid in all_prod_ids:
+        try:
+            uuid.UUID(str(pid))
+            valid_uuids.append(pid)
+        except ValueError:
+            pass
+            
     prod_names: Dict[str, dict] = {}
-    if all_prod_ids:
-        pr = supabase.table("products").select("id, name, unit, category").in_("id", all_prod_ids).execute()
-        prod_names = {p["id"]: p for p in (getattr(pr, "data", None) or [])}
+    if valid_uuids:
+        try:
+            pr = supabase.table("products").select("id, name, unit, category").in_("id", valid_uuids).execute()
+            prod_names = {p["id"]: p for p in (getattr(pr, "data", None) or [])}
+        except Exception as e:
+            logger.error(f"Failed to fetch products for price tracking: {e}")
 
     result = []
     for pid, items in prod_items_90.items():
@@ -360,12 +373,31 @@ def get_product_price_history(
     since = (today - timedelta(days=period_days)).isoformat()
 
     # Cek produk ada
-    prod_resp = supabase.table("products").select("id, name, unit").eq("id", product_id).eq("tenant_id", tid).single().execute()
-    prod = getattr(prod_resp, "data", None)
+    import uuid
+    is_valid_uuid = False
+    try:
+        uuid.UUID(str(product_id))
+        is_valid_uuid = True
+    except ValueError:
+        pass
+
+    prod = None
+    if is_valid_uuid:
+        try:
+            prod_resp = supabase.table("products").select("id, name, unit").eq("id", product_id).eq("tenant_id", tid).single().execute()
+            prod = getattr(prod_resp, "data", None)
+        except Exception:
+            pass
+
     product_name = prod["name"] if prod else product_id
     product_unit = prod.get("unit", "") if prod else ""
 
-    items = _fetch_items(supabase, tid, product_id, since)
+    # UUID filtering is also needed for items query because product_id goes into items eq()
+    items = _fetch_items(supabase, tid, product_id if is_valid_uuid else None, since)
+    
+    # Filter items manual if non-UUID was passed (which means product_id is actually product_name)
+    if not is_valid_uuid:
+        items = [i for i in items if i.get("product_name") == product_id]
 
     if not items:
         return {

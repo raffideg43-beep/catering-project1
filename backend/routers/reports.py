@@ -486,7 +486,7 @@ def get_payables_report(
 
     q = (
         supabase.table("payables")
-        .select("id, supplier_name, amount, pph22_amount, ppn_amount, due_date, status, created_at")
+        .select("id, supplier_name, amount, due_date, status, created_at")
         .eq("tenant_id", tid)
     )
     if status != "all":
@@ -498,7 +498,13 @@ def get_payables_report(
         last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
         q = q.gte("created_at", first.isoformat()).lte("created_at", (last + timedelta(days=1)).isoformat())
 
-    resp = q.order("due_date").execute()
+    try:
+        resp = q.order("due_date").execute()
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to fetch payables: {e}")
+        resp = None
+    
     rows = getattr(resp, "data", None) or []
 
     total_all     = sum(_d(r.get("amount")) for r in rows)
@@ -524,8 +530,9 @@ def get_payables_report(
             except Exception:
                 pass
         amount = _d(r.get("amount"))
-        pph22  = _d(r.get("pph22_amount"))
-        ppn    = _d(r.get("ppn_amount"))
+        # Fields don't exist in DB schema
+        pph22  = Decimal("0")
+        ppn    = Decimal("0")
         payables.append({
             "id": r.get("id"),
             "supplier_name": r.get("supplier_name"),

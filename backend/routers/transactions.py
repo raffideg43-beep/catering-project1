@@ -962,8 +962,6 @@ async def create_manual_transaction(
                 "transaction_id": trx_id,
                 "supplier_name": supplier_name or "Supplier",
                 "amount": str(grand_total),
-                "pph22_amount": "0.00",
-                "ppn_amount": "0.00",
                 "paid_amount": "0.00",
                 "due_date": due_date,
                 "status": "unpaid",
