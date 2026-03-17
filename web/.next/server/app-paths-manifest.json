@@ -1,7 +1,0 @@
-{
-  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js",
-  "/(dashboard)/piutang/page": "app/(dashboard)/piutang/page.js",
-  "/(dashboard)/stok/page": "app/(dashboard)/stok/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
-  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js"
-}

@@ -285,14 +285,14 @@ def get_monthly_report(
     try:
         excel_resp = (
             supabase.table("excel_files")
-            .select("status")
+            .select("file_url")
             .eq("tenant_id", tid)
             .eq("period", period_key)
             .limit(1)
             .execute()
         )
         excel_rows = getattr(excel_resp, "data", None) or []
-        excel_status = (excel_rows[0] if excel_rows else {}).get("status", "not_generated")
+        excel_status = "generated" if excel_rows else "not_generated"
     except Exception as e:
         import logging
         logging.warning("Failed to fetch excel_files status: %s", e)

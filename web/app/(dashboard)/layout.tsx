@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   },
   { href: "/jadwal", icon: "📅", label: "AI Jadwal" },
   { href: "/settings", icon: "⚙️", label: "Pengaturan" },
+  { href: "/import", icon: "📥", label: "Import Data" },
 ];
 
 export default function DashboardLayout({

@@ -278,6 +278,8 @@ async def input_due_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Parse DD/MM/YYYY
         try:
             parts = text.split("/")
+            if len(parts) != 3:
+                raise ValueError
             d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
             due_date = date(y, m, d).isoformat()
         except Exception:
