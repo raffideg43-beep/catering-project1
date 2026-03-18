@@ -208,7 +208,7 @@ class ExportService:
         # Products + stock history
         prod_resp = (
             supabase.table("products")
-            .select("id, name, category, unit, hpp, stock_qty, stock_min")
+            .select("id, name, category, unit, display_unit, conversion_factor, hpp, stock_qty, stock_min")
             .eq("tenant_id", tenant_id)
             .eq("is_active", True)
             .order("category")
@@ -477,12 +477,39 @@ class ExportService:
         for trx in data["transactions"]:
             tid = trx["id"]
             del_date = trx.get("date", "")
-            supplier = trx.get("nama_toko") or "Tanpa Supplier"
+            # Fix: supplier name is from join (suppliers(name)) → nested dict
+            sup_data = trx.get("suppliers") or {}
+            supplier = sup_data.get("name") if isinstance(sup_data, dict) else None
+            supplier = supplier or trx.get("nama_toko") or "Tanpa Supplier"
             method = trx.get("payment_method", "tunai")
             sup_id = trx.get("supplier_id")
             is_pkp = data["supplier_pkp"].get(sup_id, False) if sup_id else False
 
-            for item in items_by_trx.get(tid, []):
+            trx_items = items_by_trx.get(tid, [])
+
+            if not trx_items:
+                # Transaksi tanpa item — tetap tampilkan sebagai 1 baris
+                n += 1
+                total_trx = float(_d(trx.get("total")))
+                ws.cell(row, 1, n)
+                ws.cell(row, 2, del_date).number_format = "DD/MM/YYYY"
+                ws.cell(row, 3, supplier)
+                ws.cell(row, 4, "(tanpa detail item)")
+                ws.cell(row, 5, "")
+                ws.cell(row, 6, "")
+                ws.cell(row, 7, "")
+                ws.cell(row, 8, total_trx).number_format = '"Rp "#,##0'
+                ws.cell(row, 9, 0)
+                ws.cell(row, 10, 0)
+                ws.cell(row, 11, total_trx).number_format = '"Rp "#,##0'
+                ws.cell(row, 12, method)
+                tot_sub += _d(trx.get("total"))
+                tot_pay += _d(trx.get("total"))
+                self._alt_row(ws, row, 2)
+                row += 1
+                continue
+
+            for item in trx_items:
                 n += 1
                 nama = item.get("product_name", "?")
                 qty  = float(_d(item.get("qty")))
@@ -553,12 +580,13 @@ class ExportService:
             ws.cell(row, 1, n)
             ws.cell(row, 2, p.get("name"))
             ws.cell(row, 3, p.get("category"))
-            ws.cell(row, 4, p.get("unit"))
+            ws.cell(row, 4, p.get("display_unit") or p.get("unit"))
             ws.cell(row, 5, float(hpp)).number_format = '"Rp "#,##0'
-            ws.cell(row, 6, float(stk_awal))
-            ws.cell(row, 7, float(masuk))
-            ws.cell(row, 8, float(keluar))
-            ws.cell(row, 9, float(stk_akhir))
+            factor = float(p.get("conversion_factor") or 1) or 1
+            ws.cell(row, 6, round(float(stk_awal) / factor, 3))
+            ws.cell(row, 7, round(float(masuk) / factor, 3))
+            ws.cell(row, 8, round(float(keluar) / factor, 3))
+            ws.cell(row, 9, round(float(stk_akhir) / factor, 3))
             ws.cell(row, 10, float(nilai)).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
             row += 1

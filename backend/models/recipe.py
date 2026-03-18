@@ -7,14 +7,18 @@ from pydantic import BaseModel
 class RecipeCreate(BaseModel):
     menu_id: str
     ingredient_id: str
-    qty_needed: Decimal
-    unit: str
+    qty_needed: Decimal            # in whatever unit user chose
+    unit: str                      # user-chosen unit (gram/kg/ml/liter/pcs)
+    usage_type: str = "per_porsi"  # per_porsi | per_hari
+    daily_qty: Optional[Decimal] = None  # for per_hari, in user-chosen unit
     notes: Optional[str] = None
 
 
 class RecipeUpdate(BaseModel):
     qty_needed: Optional[Decimal] = None
     unit: Optional[str] = None
+    usage_type: Optional[str] = None
+    daily_qty: Optional[Decimal] = None
     notes: Optional[str] = None
 
 
@@ -81,6 +85,8 @@ class ComponentItemCreate(BaseModel):
     ingredient_id: str
     qty_needed: Decimal
     unit: Optional[str] = None
+    usage_type: str = "per_porsi"
+    daily_qty: Optional[Decimal] = None
 
 
 class ComponentItemResponse(BaseModel):

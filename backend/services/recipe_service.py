@@ -4,12 +4,19 @@ Kalkulasi dan pemotongan stok BOM (Bill of Material) untuk produksi MBG — Modu
 
 calculate() → cek apakah stok cukup untuk produksi N porsi (expand komponen)
 deduct_stock() → potong stok secara atomik via increment_stock RPC (expand komponen)
+
+Supports:
+  - usage_type 'per_porsi': qty_needed × total_porsi
+  - usage_type 'per_hari': daily_qty (flat, tidak kali porsi)
+  - Unit conversion: semua qty dalam base unit (gram/ml/pcs)
 """
 
 import logging
 from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+
+from utils.unit_converter import to_display, format_display
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +31,20 @@ class RecipeService:
         supabase,
     ) -> Dict[str, Decimal]:
         """
-        Flatten recipe list into {ingredient_id: total_qty}.
+        Flatten recipe list into {ingredient_id: total_qty_base}.
         Expands components, deduplicates ingredients by summing quantities.
+        Handles usage_type: per_porsi vs per_hari.
         """
         flat: Dict[str, Decimal] = {}
 
         for r in recipes:
+            usage_type = r.get("usage_type", "per_porsi")
+
             if r.get("component_id"):
                 # ─── Expand component ────────────────────────────────
                 comp_items_resp = (
                     supabase.table("recipe_component_items")
-                    .select("ingredient_id, qty_needed")
+                    .select("ingredient_id, qty_needed, usage_type, daily_qty")
                     .eq("component_id", r["component_id"])
                     .execute()
                 )
@@ -43,15 +53,30 @@ class RecipeService:
                 recipe_qty = Decimal(str(r.get("qty_needed", 1)))
                 for item in comp_items:
                     ing_id = item["ingredient_id"]
-                    needed = Decimal(str(item["qty_needed"])) * recipe_qty * Decimal(str(qty))
+                    item_usage = item.get("usage_type", "per_porsi")
+
+                    if item_usage == "per_hari":
+                        # Flat daily qty — NOT multiplied by portions
+                        needed = Decimal(str(item.get("daily_qty", 0)))
+                    else:
+                        # per_porsi: qty × recipe_multiplier × total_portions
+                        needed = Decimal(str(item["qty_needed"])) * recipe_qty * Decimal(str(qty))
+
                     flat[ing_id] = flat.get(ing_id, Decimal("0")) + needed
             else:
                 # ─── Direct ingredient ───────────────────────────────
                 ing_id = r.get("ingredient_id") or r.get("product_id")
                 if not ing_id:
                     continue
-                qty_per_portion = Decimal(str(r.get("qty_needed") or r.get("qty", 0)))
-                needed = qty_per_portion * Decimal(str(qty))
+
+                if usage_type == "per_hari":
+                    # Flat daily qty — NOT multiplied by portions
+                    needed = Decimal(str(r.get("daily_qty", 0)))
+                else:
+                    # per_porsi: qty_needed × total_portions
+                    qty_per_portion = Decimal(str(r.get("qty_needed") or r.get("qty", 0)))
+                    needed = qty_per_portion * Decimal(str(qty))
+
                 flat[ing_id] = flat.get(ing_id, Decimal("0")) + needed
 
         return flat
@@ -66,6 +91,7 @@ class RecipeService:
         """
         Cek apakah stok bahan cukup untuk produksi qty porsi dari menu_id.
         Expands components → flattens → deduplicates → checks stock.
+        All quantities in BASE UNIT (gram/ml/pcs).
         Return: {can_produce, max_possible, has_bom, ingredients: [...]}
         """
         # Query recipes (BOM) untuk menu ini
@@ -105,7 +131,7 @@ class RecipeService:
             try:
                 product_resp = (
                     supabase.table("products")
-                    .select("id, name, stock_qty, unit")
+                    .select("id, name, stock_qty, unit, base_unit, display_unit, conversion_factor")
                     .eq("id", ing_id)
                     .single()
                     .execute()
@@ -118,6 +144,10 @@ class RecipeService:
             sufficient = available >= total_needed
             shortage = max(Decimal("0"), total_needed - available)
 
+            # Get display info
+            factor = float(product.get("conversion_factor") or 1)
+            disp_unit = product.get("display_unit") or product.get("unit", "kg")
+
             if not sufficient:
                 can_produce = False
                 qty_per_portion = total_needed / Decimal(str(qty)) if qty > 0 else Decimal("0")
@@ -128,12 +158,18 @@ class RecipeService:
             ingredients.append({
                 "ingredient_id": ing_id,
                 "name": product.get("name", "?"),
-                "unit": product.get("unit") or "kg",
+                "unit": disp_unit,
+                "base_unit": product.get("base_unit", "gram"),
+                "display_unit": disp_unit,
+                "conversion_factor": factor,
                 "qty_needed_per_portion": float(total_needed / Decimal(str(qty))) if qty > 0 else 0,
                 "total_needed": float(total_needed),
+                "total_needed_display": round(float(total_needed) / factor, 3) if factor else float(total_needed),
                 "available": float(available),
+                "available_display": round(float(available) / factor, 3) if factor else float(available),
                 "sufficient": sufficient,
                 "shortage": float(shortage),
+                "shortage_display": format_display(float(shortage), disp_unit, factor) if shortage > 0 else "0",
             })
 
         return {
@@ -153,9 +189,7 @@ class RecipeService:
     ) -> List[dict]:
         """
         Potong stok atomik via RPC increment_stock (delta negatif).
-        Expands components → flattens → deduplicates → deducts.
-        Insert stock_history per bahan.
-        Return: list stock_history records yang dibuat.
+        All deltas in BASE UNIT (gram/ml/pcs).
         """
         recipes_resp = (
             supabase.table("recipes")
@@ -174,7 +208,7 @@ class RecipeService:
             delta = float(-total_needed)
 
             try:
-                # Delta negatif = kurangi stok
+                # Delta negatif = kurangi stok (in base unit)
                 supabase.rpc("increment_stock", {
                     "p_product_id": product_id,
                     "p_delta": delta,

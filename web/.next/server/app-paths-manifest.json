@@ -1,8 +1,8 @@
 {
-  "/(dashboard)/jadwal/page": "app/(dashboard)/jadwal/page.js",
-  "/(dashboard)/piutang/page": "app/(dashboard)/piutang/page.js",
   "/(dashboard)/pembukuan/page": "app/(dashboard)/pembukuan/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
   "/(dashboard)/mbg/page": "app/(dashboard)/mbg/page.js",
-  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js"
+  "/(dashboard)/import/page": "app/(dashboard)/import/page.js",
+  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
+  "/(dashboard)/jadwal/page": "app/(dashboard)/jadwal/page.js",
+  "/(dashboard)/harga/page": "app/(dashboard)/harga/page.js"
 }

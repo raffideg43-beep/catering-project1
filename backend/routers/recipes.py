@@ -28,6 +28,7 @@ from models.recipe import (
 )
 from models.user import UserInDB
 from services.recipe_service import recipe_service
+from utils.unit_converter import get_base_unit, to_base
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -100,18 +101,27 @@ def create_recipe(
             detail="Resep ini sudah ada",
         )
 
+    # Convert qty from user-chosen unit to base unit
+    _, input_factor = get_base_unit(body.unit)
+    qty_in_base = float(body.qty_needed) * input_factor
+
+    insert_data = {
+        "tenant_id": current_user.tenant_id,
+        "menu_id": body.menu_id,
+        "ingredient_id": body.ingredient_id,
+        "qty_needed": qty_in_base,
+        "unit": body.unit,
+        "usage_type": body.usage_type,
+        "notes": body.notes,
+    }
+
+    # Handle per_hari daily_qty
+    if body.usage_type == "per_hari" and body.daily_qty is not None:
+        insert_data["daily_qty"] = float(body.daily_qty) * input_factor
+
     response = (
         supabase.table("recipes")
-        .insert(
-            {
-                "tenant_id": current_user.tenant_id,
-                "menu_id": body.menu_id,
-                "ingredient_id": body.ingredient_id,
-                "qty_needed": float(body.qty_needed),
-                "unit": body.unit,
-                "notes": body.notes,
-            }
-        )
+        .insert(insert_data)
         .execute()
     )
 
@@ -136,9 +146,21 @@ def update_recipe(
 
     update_data = {}
     if body.qty_needed is not None:
-        update_data["qty_needed"] = float(body.qty_needed)
+        if body.unit:
+            _, input_factor = get_base_unit(body.unit)
+            update_data["qty_needed"] = float(body.qty_needed) * input_factor
+        else:
+            update_data["qty_needed"] = float(body.qty_needed)
     if body.unit is not None:
         update_data["unit"] = body.unit
+    if body.usage_type is not None:
+        update_data["usage_type"] = body.usage_type
+    if body.daily_qty is not None:
+        if body.unit:
+            _, input_factor = get_base_unit(body.unit)
+            update_data["daily_qty"] = float(body.daily_qty) * input_factor
+        else:
+            update_data["daily_qty"] = float(body.daily_qty)
     if body.notes is not None:
         update_data["notes"] = body.notes
 
@@ -221,7 +243,7 @@ def get_menu_recipe(
             qty = Decimal(str(recipe["qty_needed"]))
             flat[ing_id] = flat.get(ing_id, Decimal("0")) + qty
 
-    # Build ingredient details
+    # Build ingredient details with display values
     ingredients = []
     for ing_id, total_qty in flat.items():
         try:
@@ -231,13 +253,20 @@ def get_menu_recipe(
             ing_data = {}
 
         available = Decimal(str(ing_data.get("stock_qty", 0)))
+        factor = float(ing_data.get("conversion_factor") or 1)
+        disp_unit = ing_data.get("display_unit") or ing_data.get("unit", "")
+
+        # Convert to display for showing to user
+        qty_display = round(float(total_qty) / factor, 4) if factor else float(total_qty)
+        avail_display = round(float(available) / factor, 4) if factor else float(available)
+
         ingredients.append(
             IngredientDetails(
                 ingredient_id=ing_id,
                 name=ing_data.get("name", "?"),
-                unit=ing_data.get("unit", ""),
-                qty_needed=total_qty,
-                current_stock=available,
+                unit=disp_unit,
+                qty_needed=Decimal(str(qty_display)),
+                current_stock=Decimal(str(avail_display)),
                 is_sufficient=available >= total_qty,
             )
         )
@@ -434,19 +463,28 @@ def add_component_item(
     # Auto-fill unit from product if not provided
     unit = body.unit
     if not unit:
-        prod_resp = supabase.table("products").select("unit").eq("id", body.ingredient_id).single().execute()
+        prod_resp = supabase.table("products").select("unit, display_unit, conversion_factor").eq("id", body.ingredient_id).single().execute()
         prod_data = getattr(prod_resp, "data", None) or {}
-        unit = prod_data.get("unit", "kg")
+        unit = prod_data.get("display_unit") or prod_data.get("unit", "kg")
+
+    # Convert qty from input unit to base unit
+    _, input_factor = get_base_unit(unit)
+    qty_in_base = float(body.qty_needed) * input_factor
+
+    insert_data = {
+        "tenant_id": current_user.tenant_id,
+        "component_id": component_id,
+        "ingredient_id": body.ingredient_id,
+        "qty_needed": qty_in_base,
+        "unit": unit,
+        "usage_type": body.usage_type,
+    }
+    if body.usage_type == "per_hari" and body.daily_qty is not None:
+        insert_data["daily_qty"] = float(body.daily_qty) * input_factor
 
     resp = (
         supabase.table("recipe_component_items")
-        .insert({
-            "tenant_id": current_user.tenant_id,
-            "component_id": component_id,
-            "ingredient_id": body.ingredient_id,
-            "qty_needed": float(body.qty_needed),
-            "unit": unit,
-        })
+        .insert(insert_data)
         .execute()
     )
     data = getattr(resp, "data", None) or []

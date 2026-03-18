@@ -68,6 +68,22 @@ def truncate(text: str, max_len: int = 50) -> str:
     return text
 
 
+def format_stok(base_qty: float, display_unit: str, conversion_factor: float) -> str:
+    """
+    Format stok untuk pesan bot (base → display).
+    format_stok(50000, 'kg', 1000) → '50 kg'
+    format_stok(200, 'pcs', 1)     → '200 pcs'
+    """
+    if not conversion_factor or conversion_factor == 0:
+        display = base_qty
+    else:
+        display = base_qty / conversion_factor
+
+    if display == int(display):
+        return f"{int(display)} {display_unit}"
+    return f"{display:.2f} {display_unit}"
+
+
 async def safe_edit(query, text: str, parse_mode=None, reply_markup=None):
     """
     Safely edit a callback query message.

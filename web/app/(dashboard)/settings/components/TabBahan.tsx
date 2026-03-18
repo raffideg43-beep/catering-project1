@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { Rupiah } from "@/components/ui/rupiah";
+import { UNIT_GROUPS, formatStok } from "@/lib/utils";
 
 /* ═══ Types ════════════════════════════════════════════════════════════════ */
 
 interface Product {
   id: string; name: string; category: string; unit: string;
-  stock_qty: number; stock_min: number; hpp: number; sell_price: number;
+  base_unit?: string; display_unit?: string; conversion_factor?: number;
+  stock_qty: number; stock_qty_display?: number; stock_min: number; stock_min_display?: number;
+  hpp: number; sell_price: number;
 }
 
 interface ComponentItem {
@@ -139,7 +142,7 @@ export function TabBahan() {
     const existing = findProductByName(name);
     if (existing) return existing.id;
     // Create new
-    const payload = { name: name.trim(), category: "bahan_baku", unit: unit || "kg", hpp: 0, sell_price: 0, stock_min: 0, stock_qty: 0 };
+    const payload = { name: name.trim(), category: "bahan_baku", display_unit: unit || "kg", unit: unit || "kg", hpp: 0, sell_price: 0, stock_min: 0, stock_qty: 0 };
     const res = await apiPost("/products", payload);
     return res?.data?.id;
   };

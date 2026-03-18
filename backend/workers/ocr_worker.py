@@ -142,12 +142,20 @@ def process_ocr_job(
         product_name = alias_result.get("product_name") or nama_asli
         needs_confirm = alias_result.get("needs_confirmation", False)
 
+        # ─── Konversi qty dari satuan nota ke base unit ─────────────
+        try:
+            from utils.unit_converter import get_base_unit as _get_base_unit
+            _, nota_factor = _get_base_unit(satuan)
+            qty_base = _to_decimal3(float(qty) * nota_factor)
+        except Exception:
+            qty_base = qty
+
         item_data = {
             "transaction_id": trx_id,
             "tenant_id": tenant_id,
             "product_id": product_id,
             "product_name": product_name,
-            "qty": str(qty),
+            "qty": str(qty_base),
             "unit": satuan,
             "price": str(harga),
             "hpp_snapshot": str(harga),

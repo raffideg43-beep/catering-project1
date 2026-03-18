@@ -8,11 +8,12 @@ class ProductCreate(BaseModel):
     name: str
     sku: Optional[str] = None
     category: str
-    unit: str = "pcs"
+    unit: str = "pcs"                        # kept for backward compat
+    display_unit: Optional[str] = None       # user-chosen display unit (kg, liter, pcs…)
     hpp: Decimal = Decimal("0.00")
     sell_price: Decimal = Decimal("0.00")
-    stock_qty: Decimal = Decimal("0.000")
-    stock_min: Decimal = Decimal("0.000")
+    stock_qty: Decimal = Decimal("0.000")    # in DISPLAY unit from user
+    stock_min: Decimal = Decimal("0.000")    # in DISPLAY unit from user
     notes: Optional[str] = None
 
 
@@ -21,9 +22,10 @@ class ProductUpdate(BaseModel):
     sku: Optional[str] = None
     category: Optional[str] = None
     unit: Optional[str] = None
+    display_unit: Optional[str] = None
     hpp: Optional[Decimal] = None
     sell_price: Optional[Decimal] = None
-    stock_min: Optional[Decimal] = None
+    stock_min: Optional[Decimal] = None       # in DISPLAY unit
     notes: Optional[str] = None
 
 
@@ -34,10 +36,15 @@ class ProductResponse(BaseModel):
     sku: Optional[str] = None
     category: str
     unit: str
+    base_unit: Optional[str] = "gram"
+    display_unit: Optional[str] = "kg"
+    conversion_factor: Optional[Decimal] = Decimal("1000")
     hpp: Decimal
     sell_price: Decimal
-    stock_qty: Decimal
+    stock_qty: Decimal                        # base unit (gram/ml/pcs) from DB
+    stock_qty_display: Optional[Decimal] = None  # computed: stock_qty / factor
     stock_min: Decimal
+    stock_min_display: Optional[Decimal] = None  # computed: stock_min / factor
     is_active: bool
     notes: Optional[str] = None
     created_at: str
@@ -50,7 +57,8 @@ class StockAdjustRequest(BaseModel):
 
 
 class StockManualAdjustRequest(BaseModel):
-    """Koreksi stok manual — menerima stok fisik baru, bukan delta."""
-    new_qty: Decimal
-    reason: str  # deskripsi singkat alasan koreksi
+    """Koreksi stok manual — menerima stok fisik baru dalam DISPLAY unit."""
+    new_qty: Decimal       # in display unit
+    reason: str
     notes: Optional[str] = None
+

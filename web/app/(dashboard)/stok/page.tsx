@@ -17,9 +17,14 @@ interface Product {
     name: string;
     category?: string;
     unit: string;
+    display_unit?: string;
+    base_unit?: string;
+    conversion_factor?: number;
     hpp: string;
     stock_qty: number;
+    stock_qty_display?: number;
     stock_min: number;
+    stock_min_display?: number;
     is_low_stock: boolean;
 }
 
@@ -342,7 +347,7 @@ export default function StokPage() {
                                                 <tr key={item.product_id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                                     <td className="px-3 py-2 font-medium text-gray-800">{item.name}</td>
                                                     <td className="px-3 py-2 text-right">
-                                                        {item.stock_qty.toLocaleString("id-ID")} {item.unit}
+                                                        {(item.stock_qty_display ?? item.stock_qty).toLocaleString("id-ID")} {item.display_unit || item.unit}
                                                     </td>
                                                     <td className="px-3 py-2 text-right text-gray-500">
                                                         {item.daily_usage > 0

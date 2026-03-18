@@ -11,8 +11,26 @@ from core.database import get_supabase
 from core.dependencies import get_current_user, require_role
 from models.product import ProductCreate, ProductResponse, ProductUpdate, StockAdjustRequest, StockManualAdjustRequest
 from models.user import UserInDB
+from utils.unit_converter import get_base_unit, to_base, to_display
 
 router = APIRouter(prefix="/products", tags=["products"])
+
+
+def _enrich_product(p: dict) -> dict:
+    """Add computed display fields to a product dict."""
+    factor = float(p.get("conversion_factor") or 1)
+    stock_qty = float(p.get("stock_qty") or 0)
+    stock_min = float(p.get("stock_min") or 0)
+    p["stock_qty_display"] = round(stock_qty / factor, 3) if factor else stock_qty
+    p["stock_min_display"] = round(stock_min / factor, 3) if factor else stock_min
+    # Ensure defaults
+    if not p.get("base_unit"):
+        p["base_unit"] = "gram"
+    if not p.get("display_unit"):
+        p["display_unit"] = p.get("unit", "pcs")
+    if not p.get("conversion_factor"):
+        p["conversion_factor"] = 1
+    return p
 
 
 @router.get("", response_model=Dict[str, Any])
@@ -38,10 +56,12 @@ def list_products(
     if search:
         data = [p for p in data if search.lower() in p.get("name", "").lower()]
 
+    enriched = [_enrich_product(p) for p in data]
+
     return {
         "success": True,
-        "data": [ProductResponse(**p) for p in data],
-        "total": len(data),
+        "data": [ProductResponse(**p) for p in enriched],
+        "total": len(enriched),
     }
 
 
@@ -53,6 +73,14 @@ def create_product(
     """Create new product."""
     supabase = get_supabase()
 
+    # Determine display/base unit and conversion factor
+    disp_unit = body.display_unit or body.unit or "pcs"
+    base, factor = get_base_unit(disp_unit)
+
+    # Convert user input (display) to base unit
+    stock_qty_base = to_base(float(body.stock_qty), disp_unit, factor)
+    stock_min_base = to_base(float(body.stock_min), disp_unit, factor)
+
     response = (
         supabase.table("products")
         .insert(
@@ -61,11 +89,14 @@ def create_product(
                 "name": body.name,
                 "sku": body.sku,
                 "category": body.category,
-                "unit": body.unit,
+                "unit": disp_unit,
+                "base_unit": base,
+                "display_unit": disp_unit,
+                "conversion_factor": factor,
                 "hpp": float(body.hpp),
                 "sell_price": float(body.sell_price),
-                "stock_qty": float(body.stock_qty),
-                "stock_min": float(body.stock_min),
+                "stock_qty": stock_qty_base,
+                "stock_min": stock_min_base,
                 "is_active": True,
             }
         )
