@@ -823,6 +823,7 @@ def get_delivery_summary(
         "success": True,
         "data": {
             "date": target_date.isoformat(),
+            "has_delivery": len(deliveries_raw) > 0,
             "total_portions": total_portions,
             "total_schools": len(deliveries_clean),
             "menu_name": menu_name,
