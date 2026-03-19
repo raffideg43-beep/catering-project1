@@ -553,10 +553,10 @@ async def create_bulk_delivery(
             shortage_details = [
                 {
                     "ingredient": ing["name"],
-                    "needed": ing["total_needed"],
-                    "available": ing["available"],
-                    "shortage": ing["shortage"],
-                    "unit": ing["unit"],
+                    "needed": ing.get("total_needed_display", ing["total_needed"]),
+                    "available": ing.get("available_display", ing["available"]),
+                    "shortage": ing.get("shortage_display", ing["shortage"]),
+                    "unit": ing.get("display_unit", ing.get("unit", "")),
                 }
                 for ing in stock_check.get("ingredients", [])
                 if not ing["sufficient"]
