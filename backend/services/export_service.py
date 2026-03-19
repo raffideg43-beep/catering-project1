@@ -172,7 +172,6 @@ class ExportService:
             supabase.table("transactions")
             .select("id, date, suppliers(name), supplier_id, total, payment_method, status")
             .eq("tenant_id", tenant_id)
-            .eq("type", "expense")
             .eq("status", "confirmed")
             .gte("date", first.isoformat())
             .lte("date", last.isoformat())
@@ -334,6 +333,7 @@ class ExportService:
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
+        print(f"Fill ringkasan: transactions={len(data.get('transactions', []))}, deliveries={len(data.get('deliveries', []))}")
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         pph22_rate = Decimal("0.015")
 
@@ -396,6 +396,10 @@ class ExportService:
     # ─── Sheet 2: Penyerahan MBG ──────────────────────────────────────────────
 
     def _fill_penyerahan(self, ws, data: dict, year: int) -> None:
+        print(f"Fill penyerahan: {len(data.get('deliveries', []))} rows")
+        if not data.get("deliveries"):
+            print("WARNING: No delivery data to fill in Penyerahan MBG!")
+            # Still format headers or return? Better format headers so it's not completely blank
         pph22_rate = Decimal("0.015")
         ws.delete_rows(1, ws.max_row)
 
@@ -455,6 +459,9 @@ class ExportService:
     # ─── Sheet 3: Pembelian Bahan ─────────────────────────────────────────────
 
     def _fill_pembelian(self, ws, data: dict) -> None:
+        print(f"Fill pembelian: {len(data.get('transactions', []))} rows")
+        if not data.get("transactions"):
+            print("WARNING: No transaction data to fill in Pembelian Bahan!")
         pph22_rate = Decimal("0.015")
         ppn_rate   = Decimal("0.11")
         ws.delete_rows(1, ws.max_row)
@@ -550,6 +557,9 @@ class ExportService:
     # ─── Sheet 4: Stok Bahan ──────────────────────────────────────────────────
 
     def _fill_stok(self, ws, data: dict) -> None:
+        print(f"Fill stok: {len(data.get('products', []))} products, {len(data.get('stock_history', []))} history records")
+        if not data.get("products"):
+            print("WARNING: No product data to fill in Stok Bahan!")
         ws.delete_rows(1, ws.max_row)
         headers = ["No", "Nama Bahan", "Kategori", "Satuan",
                    "HPP", "Stok Awal Bulan", "Masuk", "Keluar",
@@ -597,6 +607,9 @@ class ExportService:
     # ─── Sheet 5: Piutang ─────────────────────────────────────────────────────
 
     def _fill_piutang(self, ws, data: dict) -> None:
+        print(f"Fill piutang: {len(data.get('receivables', []))} rows")
+        if not data.get("receivables"):
+            print("WARNING: No receivable data to fill in Piutang!")
         pph22_rate = Decimal("0.015")
         ws.delete_rows(1, ws.max_row)
         headers = ["No", "Debitur", "Tanggal", "Jatuh Tempo",
@@ -643,6 +656,9 @@ class ExportService:
     # ─── Sheet 6: Hutang ──────────────────────────────────────────────────────
 
     def _fill_hutang(self, ws, data: dict) -> None:
+        print(f"Fill hutang: {len(data.get('payables', []))} rows")
+        if not data.get("payables"):
+            print("WARNING: No payable data to fill in Hutang!")
         ws.delete_rows(1, ws.max_row)
         headers = ["No", "Supplier", "Tanggal", "Jatuh Tempo",
                    "Pokok", "PPh22", "PPN", "Total Bayar", "Status", "Terlambat (Hari)"]

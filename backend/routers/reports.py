@@ -586,24 +586,13 @@ async def download_excel(
     m = month or today.month
     period_key = f"{y:04d}-{m:02d}"
 
-    excel_resp = (
-        supabase.table("excel_files")
-        .select("status, file_url")
-        .eq("tenant_id", tid)
-        .eq("period", period_key)
-        .limit(1)
-        .execute()
-    )
-    excel_rows = getattr(excel_resp, "data", None) or []
-    excel_row = excel_rows[0] if excel_rows else {}
-    status = excel_row.get("status", "not_generated")
-    file_url = excel_row.get("file_url")
-
-    if status == "ready" and file_url:
-        import time
-        buster = int(time.time())
-        file_url = f"{file_url}?t={buster}" if "?" not in file_url else f"{file_url}&t={buster}"
-        return {"success": True, "data": {"file_url": file_url, "status": "ready"}}
+    # Hapus logika return cached file URL sesuai instruksi user
+    # file_url = excel_row.get("file_url")
+    # if status == "ready" and file_url:
+    #     import time
+    #     buster = int(time.time())
+    #     file_url = f"{file_url}?t={buster}" if "?" not in file_url else f"{file_url}&t={buster}"
+    #     return {"success": True, "data": {"file_url": file_url, "status": "ready"}}
 
     # Generate (sync — user menunggu)
     svc = ExportService()

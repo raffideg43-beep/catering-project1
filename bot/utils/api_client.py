@@ -10,24 +10,27 @@ logger = logging.getLogger(__name__)
 
 class APIError(Exception):
     """Error dari backend API dengan status_code dan pesan yang sudah diparsing."""
-    def __init__(self, message: str, status_code: int = 0, raw_data: dict | None = None):
+    def __init__(self, message: str, status_code: int = 0, raw_data: dict | None = None, response_json: dict | None = None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
         self.raw_data = raw_data
+        self.response_json = response_json or {}
 
     @classmethod
     def from_httpx(cls, exc: httpx.HTTPStatusError) -> "APIError":
         """Parse error message dari response JSON."""
         raw = None
+        resp_json = {}
         try:
-            raw = exc.response.json()
-            msg = raw.get("error") or raw.get("detail") or str(exc)
+            resp_json = exc.response.json()
+            raw = resp_json
+            msg = resp_json.get("error") or resp_json.get("detail") or str(exc)
             if isinstance(msg, dict):
                 msg = str(msg)
         except Exception:
             msg = str(exc)
-        return cls(message=str(msg), status_code=exc.response.status_code, raw_data=raw)
+        return cls(message=str(msg), status_code=exc.response.status_code, raw_data=raw, response_json=resp_json)
 
 
 
