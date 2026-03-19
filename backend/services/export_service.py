@@ -314,9 +314,15 @@ class ExportService:
                      ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
                       "Stok Bahan", "Piutang", "Hutang"]}
 
+        # Hapus sheet bawaan template yang salah/kosong
+        allowed = ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
+                   "Stok Bahan", "Piutang", "Hutang"]
+        for s in wb.sheetnames:
+            if s not in allowed:
+                del wb[s]
+
         # Pastikan semua sheet ada
-        for name in ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
-                     "Stok Bahan", "Piutang", "Hutang"]:
+        for name in allowed:
             if name not in sheet_map:
                 ws = wb.create_sheet(name)
                 sheet_map[name] = ws

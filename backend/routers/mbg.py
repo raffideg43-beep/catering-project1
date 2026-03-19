@@ -563,11 +563,15 @@ async def create_bulk_delivery(
                 for ing in stock_check.get("ingredients", [])
                 if not ing["sufficient"]
             ]
-            raise HTTPException(status_code=400, detail={
-                "success": False,
-                "error": "Stok tidak cukup",
-                "details": shortage_details,
-            })
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Stok tidak cukup",
+                    "details": shortage_details,
+                }
+            )
     else:
         warning = "Tidak ada menu/BOM hari ini, stok tidak dipotong"
 
