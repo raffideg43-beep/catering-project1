@@ -1,15 +1,22 @@
 """
 backend/routers/schedules.py
-AI Jadwal Pengiriman MBG (Modul 17)
+AI Jadwal Operasional MBG — Redesign
 
-GET  /schedules/ai-draft     → draft jadwal dari Gemini (belum tersimpan)
-POST /schedules/approve-draft → simpan draft ke DB
-GET  /schedules/week         → ambil jadwal dari DB per minggu
+Jadwal = timeline harian (prep, masak, berangkat, tiba)
+BUKAN jadwal porsi — porsi otomatis dari schools.default_portions.
+
+Endpoints:
+  GET  /schedules/master        → master schedule + school timings
+  POST /schedules/master        → upsert master schedule
+  GET  /schedules/ai-draft      → draft timeline dari Gemini
+  POST /schedules/load-master   → timeline dari master (no AI)
+  POST /schedules/approve-draft → simpan ke schedules table
+  GET  /schedules/week          → timeline minggu tersimpan
 """
 
 import json
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -23,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
-# Hari libur nasional 2025-2026 (hardcoded)
+DAY_NAMES = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+
 NATIONAL_HOLIDAYS = {
     "2025-01-01": "Tahun Baru",
     "2025-01-27": "Isra Mikraj",
@@ -32,7 +40,6 @@ NATIONAL_HOLIDAYS = {
     "2025-03-31": "Idul Fitri",
     "2025-04-01": "Idul Fitri",
     "2025-04-18": "Wafat Isa Almasih",
-    "2025-04-20": "Paskah",
     "2025-05-01": "Hari Buruh",
     "2025-05-12": "Hari Raya Waisak",
     "2025-05-29": "Kenaikan Isa Almasih",
@@ -56,60 +63,301 @@ NATIONAL_HOLIDAYS = {
     "2026-12-25": "Natal",
 }
 
-DAY_NAMES = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _time_str(t) -> str:
+    """Convert time/str to HH:MM string."""
+    if isinstance(t, time):
+        return t.strftime("%H:%M")
+    if isinstance(t, str):
+        return t[:5] if len(t) >= 5 else t
+    return "00:00"
 
 
-# ─── GET /schedules/week ──────────────────────────────────────────────────────
+def _time_sub(t_str: str, minutes: int) -> str:
+    """Subtract minutes from HH:MM string."""
+    parts = t_str.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    total = h * 60 + m - minutes
+    if total < 0:
+        total = 0
+    return f"{total // 60:02d}:{total % 60:02d}"
 
-@router.get("/week", response_model=Dict[str, Any])
-def get_week_schedule(
-    week_start: Optional[str] = Query(default=None),
-    current_user: UserInDB = Depends(get_current_user),
-):
-    """Ambil jadwal minggu ini dari DB schedules."""
-    supabase = get_supabase()
-    tid = current_user.tenant_id
+
+def _time_add(t_str: str, minutes: int) -> str:
+    """Add minutes to HH:MM string."""
+    parts = t_str.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    total = h * 60 + m + minutes
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _get_monday(week_start: Optional[str], default_next: bool = False) -> date:
+    """Parse week_start or compute current/next Monday."""
     today = date.today()
-
     if week_start:
         try:
-            monday = date.fromisoformat(week_start)
+            return date.fromisoformat(week_start)
         except ValueError:
             raise HTTPException(422, "Format week_start harus YYYY-MM-DD")
-    else:
-        monday = today - timedelta(days=today.weekday())
+    if default_next:
+        days_ahead = (7 - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        return today + timedelta(days=days_ahead)
+    return today - timedelta(days=today.weekday())
 
-    sunday = monday + timedelta(days=6)
 
-    resp = (
-        supabase.table("schedules")
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /schedules/master — Master Schedule + School Timings
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/master", response_model=Dict[str, Any])
+def get_master_schedule(
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Return master schedule + school timings."""
+    data = _fetch_master_data(current_user.tenant_id)
+    return {"success": True, "data": data}
+
+
+def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
+    """Internal: fetch master schedule data (reusable)."""
+    supabase = get_supabase()
+    tid = tenant_id
+
+    # Get master schedule
+    ms_resp = (
+        supabase.table("master_schedules")
         .select("*")
         .eq("tenant_id", tid)
-        .eq("type", "mbg_daily")
-        .gte("scheduled_date", monday.isoformat())
-        .lte("scheduled_date", sunday.isoformat())
-        .order("scheduled_date")
+        .eq("is_active", True)
+        .limit(1)
         .execute()
     )
-    rows = getattr(resp, "data", None) or []
+    ms_rows = getattr(ms_resp, "data", None) or []
 
-    # Group by day
-    by_day: Dict[str, list] = {}
-    for row in rows:
-        d = row["scheduled_date"]
-        by_day.setdefault(d, []).append(row)
+    if not ms_rows:
+        return None
+
+    master = ms_rows[0]
+    master_id = master["id"]
+
+    # Get school timings
+    mss_resp = (
+        supabase.table("master_schedule_schools")
+        .select("*, schools(id, name, default_portions)")
+        .eq("master_id", master_id)
+        .eq("is_active", True)
+        .order("target_arrival")
+        .execute()
+    )
+    school_timings = getattr(mss_resp, "data", None) or []
+
+    schools = []
+    for st in school_timings:
+        school_data = st.get("schools") or {}
+        target = _time_str(st.get("target_arrival", "10:30"))
+        travel = st.get("travel_minutes", 30)
+        depart = _time_sub(target, travel)
+
+        schools.append({
+            "school_id": st["school_id"],
+            "school_name": school_data.get("name", "?"),
+            "default_portions": school_data.get("default_portions", 0),
+            "target_arrival": target,
+            "travel_minutes": travel,
+            "depart_time": depart,
+            "day_of_week": st.get("day_of_week", 0),
+        })
+
+    return {
+        "id": master_id,
+        "name": master.get("name", "Jadwal Utama"),
+        "prep_start_time": _time_str(master.get("prep_start_time", "06:30")),
+        "cook_start_time": _time_str(master.get("cook_start_time", "07:00")),
+        "cook_minutes_per_100": master.get("cook_minutes_per_100", 30),
+        "schools": schools,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /schedules/master — Upsert Master Schedule
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/master",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+def upsert_master_schedule(
+    body: Dict[str, Any] = Body(...),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Upsert master schedule + school timings."""
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+
+    # Upsert master_schedules
+    master_data = {
+        "tenant_id": tid,
+        "name": body.get("name", "Jadwal Utama"),
+        "prep_start_time": body.get("prep_start_time", "06:30"),
+        "cook_start_time": body.get("cook_start_time", "07:00"),
+        "cook_minutes_per_100": body.get("cook_minutes_per_100", 30),
+        "is_active": True,
+    }
+
+    ms_resp = (
+        supabase.table("master_schedules")
+        .upsert(master_data, on_conflict="tenant_id")
+        .execute()
+    )
+    ms_rows = getattr(ms_resp, "data", None) or []
+    if not ms_rows:
+        raise HTTPException(500, "Gagal simpan master schedule")
+    master_id = ms_rows[0]["id"]
+
+    # Upsert school timings
+    schools_input = body.get("schools", [])
+    saved_schools = []
+
+    for s in schools_input:
+        school_data = {
+            "tenant_id": tid,
+            "master_id": master_id,
+            "school_id": s["school_id"],
+            "target_arrival": s.get("target_arrival", "10:30"),
+            "travel_minutes": s.get("travel_minutes", 30),
+            "day_of_week": s.get("day_of_week", 0),
+            "is_active": True,
+        }
+        try:
+            resp = (
+                supabase.table("master_schedule_schools")
+                .upsert(school_data, on_conflict="master_id,school_id,day_of_week")
+                .execute()
+            )
+            saved = (getattr(resp, "data", None) or [{}])[0]
+            saved_schools.append(saved)
+        except Exception as e:
+            logger.warning(f"Upsert school timing gagal: {e}")
+
+    return {
+        "success": True,
+        "data": {
+            "master_id": master_id,
+            "schools_saved": len(saved_schools),
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /schedules/load-master — Generate timeline from master (no AI)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/load-master",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+def load_master_timeline(
+    body: Dict[str, Any] = Body(...),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Generate timeline dari master schedule tanpa Gemini."""
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    monday = _get_monday(body.get("week_start"))
+
+    # Get master
+    master = _fetch_master_data(current_user.tenant_id)
+    if not master:
+        raise HTTPException(404, "Master schedule belum di-setup. Silakan setup dulu.")
+
+    prep_start = master["prep_start_time"]
+    cook_start = master["cook_start_time"]
+    cook_per_100 = master["cook_minutes_per_100"]
+    schools = master["schools"]
 
     days = []
-    for i in range(7):
+    for i in range(5):  # Senin-Jumat
         d = monday + timedelta(days=i)
         d_str = d.isoformat()
         holiday = NATIONAL_HOLIDAYS.get(d_str)
+
+        if holiday:
+            days.append({
+                "date": d_str,
+                "day_name": DAY_NAMES[i],
+                "is_holiday": True,
+                "holiday_name": holiday,
+                "timeline": [],
+                "total_portions": 0,
+                "cook_duration_minutes": 0,
+                "ai_notes": f"Libur: {holiday}",
+            })
+            continue
+
+        # Calculate timeline
+        total_portions = sum(s["default_portions"] for s in schools)
+        cook_duration = max(30, int((total_portions / 100) * cook_per_100))
+        cook_end = _time_add(cook_start, cook_duration)
+
+        timeline = [
+            {
+                "time": prep_start,
+                "activity": "Persiapan bahan",
+                "school_id": None,
+                "school_name": None,
+                "type": "prep",
+            },
+            {
+                "time": cook_start,
+                "activity": f"Mulai masak ({total_portions:,} porsi)",
+                "school_id": None,
+                "school_name": None,
+                "type": "cook",
+            },
+            {
+                "time": cook_end,
+                "activity": "Selesai masak",
+                "school_id": None,
+                "school_name": None,
+                "type": "cook_done",
+            },
+        ]
+
+        # Per school: depart + arrive
+        for s in sorted(schools, key=lambda x: x["depart_time"]):
+            timeline.append({
+                "time": s["depart_time"],
+                "activity": f"Berangkat → {s['school_name']}",
+                "school_id": s["school_id"],
+                "school_name": s["school_name"],
+                "type": "depart",
+            })
+            timeline.append({
+                "time": s["target_arrival"],
+                "activity": f"Tiba di {s['school_name']}",
+                "school_id": s["school_id"],
+                "school_name": s["school_name"],
+                "type": "arrive",
+            })
+
+        # Sort timeline by time
+        timeline.sort(key=lambda x: x["time"])
+
         days.append({
             "date": d_str,
             "day_name": DAY_NAMES[i],
-            "is_holiday": bool(holiday),
-            "holiday_name": holiday,
-            "deliveries": by_day.get(d_str, []),
+            "is_holiday": False,
+            "holiday_name": None,
+            "timeline": timeline,
+            "total_portions": total_portions,
+            "cook_duration_minutes": cook_duration,
+            "ai_notes": None,
         })
 
     return {
@@ -117,11 +365,15 @@ def get_week_schedule(
         "data": {
             "week_start": monday.isoformat(),
             "days": days,
+            "source": "master",
+            "from_ai": False,
         },
     }
 
 
-# ─── GET /schedules/ai-draft ──────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /schedules/ai-draft — Draft timeline from Gemini
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get(
     "/ai-draft",
@@ -132,28 +384,20 @@ def get_ai_draft_schedule(
     week_start: Optional[str] = Query(default=None),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Generate draft jadwal pengiriman minggu depan pakai Gemini."""
+    """Generate draft timeline operasional dari Gemini berdasarkan historis."""
     supabase = get_supabase()
     tid = current_user.tenant_id
-    today = date.today()
+    monday = _get_monday(week_start, default_next=True)
 
-    if week_start:
-        try:
-            monday = date.fromisoformat(week_start)
-        except ValueError:
-            raise HTTPException(422, "Format week_start harus YYYY-MM-DD (Senin)")
-    else:
-        # Default: Senin minggu depan
-        days_ahead = (7 - today.weekday()) % 7
-        if days_ahead == 0:
-            days_ahead = 7
-        monday = today + timedelta(days=days_ahead)
-
+    # Fallback if no API key
     if not settings.gemini_api_key:
-        return _build_fallback_draft(supabase, tid, monday)
+        return _load_master_fallback(current_user, monday)
 
     try:
-        # Ambil data untuk Gemini
+        # ─── 1. Get master schedule ──────────────────────────────────
+        master = _fetch_master_data(current_user.tenant_id)
+
+        # ─── 2. Get schools ──────────────────────────────────────────
         schools_resp = (
             supabase.table("schools")
             .select("id, name, default_portions, address")
@@ -164,13 +408,13 @@ def get_ai_draft_schedule(
         schools = getattr(schools_resp, "data", None) or []
 
         if not schools:
-            return _build_fallback_draft(supabase, tid, monday)
+            return _load_master_fallback(current_user, monday)
 
-        # Ambil delivery 4 minggu terakhir
-        four_weeks_ago = (today - timedelta(weeks=4)).isoformat()
+        # ─── 3. Get 4-week delivery history ──────────────────────────
+        four_weeks_ago = (date.today() - timedelta(weeks=4)).isoformat()
         del_resp = (
             supabase.table("mbg_deliveries")
-            .select("delivery_date, school_id, portions_sent")
+            .select("delivery_date, school_id, portions_sent, sent_time, arrival_time")
             .eq("tenant_id", tid)
             .gte("delivery_date", four_weeks_ago)
             .order("delivery_date", desc=True)
@@ -178,18 +422,7 @@ def get_ai_draft_schedule(
         )
         deliveries = getattr(del_resp, "data", None) or []
 
-        # Ambil menu minggu ini sebagai referensi
-        this_monday = today - timedelta(days=today.weekday())
-        menu_resp = (
-            supabase.table("mbg_weekly_menus")
-            .select("day_of_week, menu_name")
-            .eq("tenant_id", tid)
-            .eq("week_start", this_monday.isoformat())
-            .execute()
-        )
-        menus = getattr(menu_resp, "data", None) or []
-
-        # Hari libur untuk minggu depan
+        # ─── 4. Week holidays ────────────────────────────────────────
         week_holidays = {}
         for i in range(7):
             d = (monday + timedelta(days=i)).isoformat()
@@ -197,46 +430,55 @@ def get_ai_draft_schedule(
             if h:
                 week_holidays[d] = h
 
-        # Build prompt
-        schools_json = json.dumps([{
-            "id": s["id"], "name": s["name"], "default_portions": s.get("default_portions", 0)
-        } for s in schools], ensure_ascii=False)
+        # ─── 5. Build prompt ─────────────────────────────────────────
+        total_portions = sum(s.get("default_portions", 0) for s in schools)
 
-        data_json = json.dumps({
-            "minggu_target": monday.isoformat(),
-            "hari_libur": week_holidays,
-            "sekolah": json.loads(schools_json),
-            "menu_referensi": menus,
-            "delivery_historis_ringkasan": f"{len(deliveries)} pengiriman dalam 4 minggu terakhir",
-        }, ensure_ascii=False)
+        master_json = json.dumps(master, ensure_ascii=False, default=str) if master else "null"
+        historis_json = json.dumps(deliveries[:50], ensure_ascii=False, default=str)
 
-        prompt = f"""Buat draft jadwal pengiriman MBG minggu {monday.isoformat()}.
-Data: {data_json}
+        prompt = f"""Analisis jadwal pengiriman MBG berdasarkan data:
 
-Return HANYA JSON valid (tanpa teks lain):
+Data historis pengiriman (4 minggu terakhir):
+{historis_json}
+
+Master schedule:
+{master_json}
+
+Daftar sekolah:
+{json.dumps([{{"id": s["id"], "name": s["name"], "portions": s.get("default_portions", 0)}} for s in schools], ensure_ascii=False)}
+
+Hari libur minggu {monday.isoformat()}:
+{json.dumps(week_holidays, ensure_ascii=False)}
+
+Total porsi minggu depan: {total_portions}
+
+Buat timeline operasional harian Senin-Jumat dalam JSON:
 {{
-  "week_start": "{monday.isoformat()}",
   "days": [
     {{
       "date": "YYYY-MM-DD",
       "day_name": "Senin",
       "is_holiday": false,
       "holiday_name": null,
-      "deliveries": [
+      "timeline": [
         {{
-          "school_id": "uuid",
-          "school_name": "nama sekolah",
-          "portions": 100,
-          "suggested_depart": "06:00",
-          "suggested_arrive": "07:00",
-          "notes": null
+          "time": "HH:MM",
+          "activity": "deskripsi kegiatan",
+          "school_id": "uuid atau null",
+          "school_name": "nama atau null",
+          "type": "prep|cook|cook_done|depart|arrive"
         }}
       ],
-      "total_portions": 100
+      "total_portions": {total_portions},
+      "cook_duration_minutes": 150,
+      "ai_notes": "catatan"
     }}
-  ],
-  "ai_notes": "catatan singkat tentang draft jadwal ini"
-}}"""
+  ]
+}}
+
+Jika historis menunjukkan keterlambatan konsisten di sekolah tertentu, sesuaikan jam berangkat lebih awal.
+Hari libur tidak perlu timeline.
+Return HANYA JSON valid."""
 
         import google.generativeai as genai
         genai.configure(api_key=settings.gemini_api_key)
@@ -244,6 +486,7 @@ Return HANYA JSON valid (tanpa teks lain):
         response = model.generate_content(prompt)
         raw = response.text.strip()
 
+        # Parse JSON (handle markdown code blocks)
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -252,63 +495,107 @@ Return HANYA JSON valid (tanpa teks lain):
             raw = raw[:-3]
 
         draft = json.loads(raw.strip())
-        draft["from_ai"] = True
-        return {"success": True, "data": draft}
+
+        return {
+            "success": True,
+            "data": {
+                "week_start": monday.isoformat(),
+                "days": draft.get("days", []),
+                "source": "ai",
+                "from_ai": True,
+                "ai_notes": draft.get("ai_notes"),
+            },
+        }
 
     except Exception as e:
         logger.error("AI draft schedule error: %s", e)
-        return _build_fallback_draft(supabase, tid, monday)
+        return _load_master_fallback(current_user, monday)
 
 
-def _build_fallback_draft(supabase, tid: str, monday: date) -> Dict[str, Any]:
-    """Fallback: draft dari data historis tanpa AI."""
-    schools_resp = (
-        supabase.table("schools")
-        .select("id, name, default_portions")
-        .eq("tenant_id", tid)
-        .eq("is_active", True)
-        .execute()
-    )
-    schools = getattr(schools_resp, "data", None) or []
-
-    days = []
-    for i in range(5):  # Senin-Jumat
-        d = monday + timedelta(days=i)
-        d_str = d.isoformat()
-        holiday = NATIONAL_HOLIDAYS.get(d_str)
-        deliveries = [] if holiday else [
-            {
-                "school_id": s["id"],
-                "school_name": s["name"],
-                "portions": s.get("default_portions", 0),
-                "suggested_depart": "06:00",
-                "suggested_arrive": "07:00",
-                "notes": None,
+def _load_master_fallback(current_user, monday: date) -> Dict[str, Any]:
+    """Fallback: load from master schedule without AI."""
+    try:
+        master = _fetch_master_data(current_user.tenant_id)
+        if not master:
+            return {
+                "success": True,
+                "data": {
+                    "week_start": monday.isoformat(),
+                    "days": [],
+                    "source": "empty",
+                    "from_ai": False,
+                    "ai_notes": "Master schedule belum di-setup dan AI tidak tersedia.",
+                },
             }
-            for s in schools
-        ]
-        total = sum(d["portions"] for d in deliveries)
-        days.append({
-            "date": d_str,
-            "day_name": DAY_NAMES[i],
-            "is_holiday": bool(holiday),
-            "holiday_name": holiday,
-            "deliveries": deliveries,
-            "total_portions": total,
-        })
 
-    return {
-        "success": True,
-        "data": {
-            "week_start": monday.isoformat(),
-            "days": days,
-            "ai_notes": "Draft dibuat otomatis dari data sekolah. AI tidak tersedia.",
-            "from_ai": False,
-        },
-    }
+        # Build timeline from master
+        prep_start = master["prep_start_time"]
+        cook_start = master["cook_start_time"]
+        cook_per_100 = master["cook_minutes_per_100"]
+        schools = master["schools"]
+
+        days = []
+        for i in range(5):
+            d = monday + timedelta(days=i)
+            d_str = d.isoformat()
+            holiday = NATIONAL_HOLIDAYS.get(d_str)
+
+            if holiday:
+                days.append({
+                    "date": d_str, "day_name": DAY_NAMES[i],
+                    "is_holiday": True, "holiday_name": holiday,
+                    "timeline": [], "total_portions": 0,
+                    "cook_duration_minutes": 0, "ai_notes": f"Libur: {holiday}",
+                })
+                continue
+
+            total_portions = sum(s["default_portions"] for s in schools)
+            cook_duration = max(30, int((total_portions / 100) * cook_per_100))
+            cook_end = _time_add(cook_start, cook_duration)
+
+            timeline = [
+                {"time": prep_start, "activity": "Persiapan bahan", "school_id": None, "school_name": None, "type": "prep"},
+                {"time": cook_start, "activity": f"Mulai masak ({total_portions:,} porsi)", "school_id": None, "school_name": None, "type": "cook"},
+                {"time": cook_end, "activity": "Selesai masak", "school_id": None, "school_name": None, "type": "cook_done"},
+            ]
+            for s in sorted(schools, key=lambda x: x["depart_time"]):
+                timeline.append({"time": s["depart_time"], "activity": f"Berangkat → {s['school_name']}", "school_id": s["school_id"], "school_name": s["school_name"], "type": "depart"})
+                timeline.append({"time": s["target_arrival"], "activity": f"Tiba di {s['school_name']}", "school_id": s["school_id"], "school_name": s["school_name"], "type": "arrive"})
+            timeline.sort(key=lambda x: x["time"])
+
+            days.append({
+                "date": d_str, "day_name": DAY_NAMES[i],
+                "is_holiday": False, "holiday_name": None,
+                "timeline": timeline, "total_portions": total_portions,
+                "cook_duration_minutes": cook_duration, "ai_notes": None,
+            })
+
+        return {
+            "success": True,
+            "data": {
+                "week_start": monday.isoformat(),
+                "days": days,
+                "source": "master_fallback",
+                "from_ai": False,
+                "ai_notes": "AI tidak tersedia. Timeline dari master schedule.",
+            },
+        }
+    except Exception:
+        return {
+            "success": True,
+            "data": {
+                "week_start": monday.isoformat(),
+                "days": [],
+                "source": "empty",
+                "from_ai": False,
+                "ai_notes": "Master schedule belum di-setup dan AI tidak tersedia.",
+            },
+        }
 
 
-# ─── POST /schedules/approve-draft ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /schedules/approve-draft — Save approved timeline
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post(
     "/approve-draft",
@@ -319,7 +606,7 @@ def approve_draft_schedule(
     body: Dict[str, Any] = Body(...),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Simpan draft jadwal yang sudah disetujui ke tabel schedules."""
+    """Simpan draft timeline ke tabel schedules."""
     supabase = get_supabase()
     tid = current_user.tenant_id
     uid = current_user.id
@@ -328,13 +615,18 @@ def approve_draft_schedule(
     if not days:
         raise HTTPException(400, "Tidak ada data hari dalam draft")
 
-    # Hapus jadwal minggu yang sama dulu untuk idempotency
     week_start = body.get("week_start")
     if week_start:
         try:
             monday = date.fromisoformat(week_start)
             sunday = monday + timedelta(days=6)
-            supabase.table("schedules").delete().eq("tenant_id", tid).eq("type", "mbg_daily").gte("scheduled_date", monday.isoformat()).lte("scheduled_date", sunday.isoformat()).execute()
+            # Delete existing for idempotency
+            supabase.table("schedules").delete() \
+                .eq("tenant_id", tid) \
+                .eq("type", "mbg_daily") \
+                .gte("scheduled_date", monday.isoformat()) \
+                .lte("scheduled_date", sunday.isoformat()) \
+                .execute()
         except Exception as e:
             logger.warning("Delete existing schedule error: %s", e)
 
@@ -344,24 +636,35 @@ def approve_draft_schedule(
             continue
         day_date = day.get("date")
         day_name = day.get("day_name", "")
-        for delivery in day.get("deliveries", []):
-            if not delivery.get("school_id"):
-                continue
-            depart = delivery.get("suggested_depart") or delivery.get("depart")
-            title = f"MBG {day_name} - {delivery.get('school_name', '')}"
-            rows_to_insert.append({
+        total_portions = day.get("total_portions", 0)
+
+        for event in day.get("timeline", []):
+            evt_type = event.get("type", "")
+            school_id = event.get("school_id")
+            school_name = event.get("school_name", "")
+
+            title = f"MBG {day_name}"
+            if school_name:
+                title += f" - {school_name}"
+            title += f" ({event.get('activity', '')})"
+
+            row = {
                 "tenant_id": tid,
                 "user_id": uid,
                 "type": "mbg_daily",
                 "title": title,
-                "customer_name": delivery.get("school_name"),
-                "description": delivery.get("notes"),
+                "customer_name": school_name if school_id else None,
+                "description": event.get("activity"),
                 "scheduled_date": day_date,
-                "scheduled_time": depart,
-                "qty": delivery.get("portions", 0),
+                "scheduled_time": event.get("time"),
+                "qty": total_portions if evt_type == "cook" else 0,
                 "status": "scheduled",
-                "notes": delivery.get("notes"),
-            })
+                "notes": json.dumps({
+                    "event_type": evt_type,
+                    "school_id": school_id,
+                }),
+            }
+            rows_to_insert.append(row)
 
     saved_count = 0
     if rows_to_insert:
@@ -374,5 +677,89 @@ def approve_draft_schedule(
         "data": {
             "saved_count": saved_count,
             "week_start": week_start,
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /schedules/week — Saved timeline for display
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/week", response_model=Dict[str, Any])
+def get_week_schedule(
+    week_start: Optional[str] = Query(default=None),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Ambil jadwal timeline minggu ini dari DB schedules."""
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    monday = _get_monday(week_start)
+    sunday = monday + timedelta(days=6)
+
+    resp = (
+        supabase.table("schedules")
+        .select("*")
+        .eq("tenant_id", tid)
+        .eq("type", "mbg_daily")
+        .gte("scheduled_date", monday.isoformat())
+        .lte("scheduled_date", sunday.isoformat())
+        .order("scheduled_date")
+        .order("scheduled_time")
+        .execute()
+    )
+    rows = getattr(resp, "data", None) or []
+
+    # Group by day → rebuild timeline
+    by_day: Dict[str, list] = {}
+    for row in rows:
+        d = row["scheduled_date"]
+        notes_raw = row.get("notes") or "{}"
+        try:
+            notes = json.loads(notes_raw) if isinstance(notes_raw, str) else (notes_raw or {})
+        except Exception:
+            notes = {}
+
+        by_day.setdefault(d, []).append({
+            "time": _time_str(row.get("scheduled_time", "")),
+            "activity": row.get("description", ""),
+            "school_id": notes.get("school_id"),
+            "school_name": row.get("customer_name"),
+            "type": notes.get("event_type", ""),
+        })
+
+    has_data = bool(rows)
+    days = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        d_str = d.isoformat()
+        holiday = NATIONAL_HOLIDAYS.get(d_str)
+        timeline = by_day.get(d_str, [])
+
+        # Extract total_portions from cook events
+        total = 0
+        for evt in timeline:
+            if evt.get("type") == "cook":
+                # Try to get portions from activity text
+                act = evt.get("activity", "")
+                import re
+                m = re.search(r"([\d.,]+)\s*porsi", act)
+                if m:
+                    total = int(m.group(1).replace(".", "").replace(",", ""))
+
+        days.append({
+            "date": d_str,
+            "day_name": DAY_NAMES[i],
+            "is_holiday": bool(holiday),
+            "holiday_name": holiday,
+            "timeline": timeline,
+            "total_portions": total,
+        })
+
+    return {
+        "success": True,
+        "data": {
+            "week_start": monday.isoformat(),
+            "has_schedule": has_data,
+            "days": days,
         },
     }

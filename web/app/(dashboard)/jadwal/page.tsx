@@ -1,332 +1,379 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPost } from "@/lib/api";
-import { PageHeader } from "@/components/layout/page-header";
+import Link from "next/link";
 
-type State = "empty" | "loading" | "draft" | "saving" | "saved";
+/* ═══ Types ════════════════════════════════════════════════════════════════ */
 
-interface DeliveryItem {
-    school_id: string;
-    school_name: string;
-    portions: number;
-    suggested_depart: string;
-    suggested_arrive: string;
-    notes: string | null;
+interface TimelineEvent {
+    time: string;
+    activity: string;
+    school_id: string | null;
+    school_name: string | null;
+    type: "prep" | "cook" | "cook_done" | "depart" | "arrive" | string;
 }
 
-interface DraftDay {
+interface DaySchedule {
     date: string;
     day_name: string;
     is_holiday: boolean;
     holiday_name: string | null;
-    deliveries: DeliveryItem[];
+    timeline: TimelineEvent[];
     total_portions: number;
-    is_active?: boolean;
+    cook_duration_minutes?: number;
+    ai_notes?: string | null;
 }
 
-interface Draft {
+interface MasterSchool {
+    school_id: string;
+    school_name: string;
+    default_portions: number;
+    target_arrival: string;
+    travel_minutes: number;
+    depart_time: string;
+}
+
+interface MasterData {
+    id: string;
+    name: string;
+    prep_start_time: string;
+    cook_start_time: string;
+    cook_minutes_per_100: number;
+    schools: MasterSchool[];
+}
+
+interface WeekData {
     week_start: string;
-    days: DraftDay[];
-    ai_notes: string;
-    from_ai: boolean;
+    days: DaySchedule[];
+    has_schedule?: boolean;
+    source?: string;
+    from_ai?: boolean;
+    ai_notes?: string;
 }
 
-function formatWeekLabel(weekStart: string) {
-    const d = new Date(weekStart + "T00:00:00");
-    const end = new Date(d);
-    end.setDate(d.getDate() + 4);
-    return `${d.toLocaleDateString("id-ID", { day: "numeric", month: "short" })} – ${end.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`;
-}
+/* ═══ Event icon helper ═══════════════════════════════════════════════════ */
 
-function getNextMonday(offset = 0) {
-    const today = new Date();
-    const day = today.getDay(); // 0=Sun
-    const diff = day === 0 ? 1 : (8 - day); // days to next monday
-    const next = new Date(today);
-    next.setDate(today.getDate() + diff + (offset * 7));
-    return next.toISOString().split("T")[0];
-}
+const eventIcon = (type: string) => {
+    switch (type) {
+        case "prep": return "🥬";
+        case "cook": return "🍳";
+        case "cook_done": return "✅";
+        case "depart": return "🚗";
+        case "arrive": return "📍";
+        default: return "📋";
+    }
+};
+
+const eventColor = (type: string) => {
+    switch (type) {
+        case "prep": return "bg-green-50 border-green-200";
+        case "cook": return "bg-orange-50 border-orange-200";
+        case "cook_done": return "bg-emerald-50 border-emerald-200";
+        case "depart": return "bg-blue-50 border-blue-200";
+        case "arrive": return "bg-purple-50 border-purple-200";
+        default: return "bg-gray-50 border-gray-200";
+    }
+};
+
+/* ═══ Main Page ═══════════════════════════════════════════════════════════ */
 
 export default function JadwalPage() {
-    const [weekOffset, setWeekOffset] = useState(0); // 0 = minggu depan, 1 = 2 minggu lagi
-    const [state, setState] = useState<State>("empty");
-    const [draft, setDraft] = useState<Draft | null>(null);
-    const [savedWeek, setSavedWeek] = useState<Draft | null>(null);
-    const [resultMsg, setResultMsg] = useState("");
+    const [master, setMaster] = useState<MasterData | null>(null);
+    const [weekData, setWeekData] = useState<WeekData | null>(null);
+    const [draftData, setDraftData] = useState<WeekData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [generating, setGenerating] = useState(false);
+    const [approving, setApproving] = useState(false);
+    const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, 1 = next week
+    const [toast, setToast] = useState("");
+    const [editDay, setEditDay] = useState<DaySchedule | null>(null);
 
-    const weekStart = getNextMonday(weekOffset);
+    const getMonday = (offset: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() - d.getDay() + 1 + offset * 7);
+        return d.toISOString().split("T")[0];
+    };
 
-    // Check if week already has schedule
+    const fetchMaster = useCallback(async () => {
+        try {
+            const res = await apiGet("/schedules/master");
+            setMaster(res?.data || null);
+        } catch (e) { console.error(e); }
+    }, []);
+
+    const fetchWeek = useCallback(async (ws: string) => {
+        try {
+            const res = await apiGet(`/schedules/week?week_start=${ws}`);
+            setWeekData(res?.data || null);
+        } catch (e) { console.error(e); }
+    }, []);
+
     useEffect(() => {
-        apiGet(`/schedules/week?week_start=${weekStart}`).then(r => {
-            const days: any[] = r?.data?.days ?? [];
-            const hasSaved = days.some(d => d.deliveries && d.deliveries.length > 0);
-            if (hasSaved) {
-                setSavedWeek({ week_start: weekStart, days, ai_notes: "", from_ai: false });
-                setState("saved");
-            } else {
-                setSavedWeek(null);
-                setState("empty");
-                setDraft(null);
-            }
-        }).catch(() => setState("empty"));
-    }, [weekStart]);
+        setLoading(true);
+        const ws = getMonday(weekOffset);
+        Promise.all([fetchMaster(), fetchWeek(ws)]).finally(() => setLoading(false));
+    }, [weekOffset, fetchMaster, fetchWeek]);
 
-    const generateDraft = async () => {
-        setState("loading");
+    const handleLoadMaster = async () => {
+        setGenerating(true);
         try {
-            const r = await apiGet(`/schedules/ai-draft?week_start=${weekStart}`);
-            const d = r?.data as Draft;
-            // Init is_active for all days
-            d.days = d.days.map(day => ({ ...day, is_active: !day.is_holiday }));
-            setDraft(d);
-            setState("draft");
-        } catch {
-            setState("empty");
+            const ws = getMonday(weekOffset);
+            const res = await apiPost("/schedules/load-master", { week_start: ws });
+            setDraftData(res?.data || null);
+            setToast("✅ Timeline dari master schedule berhasil dimuat");
+        } catch (e: any) {
+            setToast("❌ " + (e?.message || "Gagal load master"));
         }
+        setGenerating(false);
     };
 
-    const updateDelivery = (dayIdx: number, delIdx: number, field: keyof DeliveryItem, value: any) => {
-        if (!draft) return;
-        const newDays = draft.days.map((day, di) => {
-            if (di !== dayIdx) return day;
-            const newDeliveries = day.deliveries.map((del, deli) => {
-                if (deli !== delIdx) return del;
-                return { ...del, [field]: value };
+    const handleAiDraft = async () => {
+        setGenerating(true);
+        try {
+            const ws = getMonday(weekOffset);
+            const res = await apiGet(`/schedules/ai-draft?week_start=${ws}`);
+            setDraftData(res?.data || null);
+            setToast(res?.data?.from_ai ? "🤖 AI draft berhasil digenerate" : "📋 Menggunakan master schedule (AI tidak tersedia)");
+        } catch (e: any) {
+            setToast("❌ " + (e?.message || "Gagal generate AI draft"));
+        }
+        setGenerating(false);
+    };
+
+    const handleApprove = async () => {
+        if (!draftData) return;
+        setApproving(true);
+        try {
+            await apiPost("/schedules/approve-draft", {
+                week_start: draftData.week_start,
+                days: draftData.days,
             });
-            return { ...day, deliveries: newDeliveries };
-        });
-        setDraft({ ...draft, days: newDays });
-    };
-
-    const toggleDay = (dayIdx: number) => {
-        if (!draft) return;
-        const newDays = draft.days.map((day, di) =>
-            di === dayIdx ? { ...day, is_active: !day.is_active } : day
-        );
-        setDraft({ ...draft, days: newDays });
-    };
-
-    const approveDraft = async () => {
-        if (!draft) return;
-        setState("saving");
-        try {
-            // Only send active days
-            const payload = {
-                ...draft,
-                days: draft.days.filter(d => d.is_active !== false),
-            };
-            const r = await apiPost("/schedules/approve-draft", payload);
-            const count = r?.data?.saved_count ?? 0;
-            setResultMsg(`✅ ${count} jadwal pengiriman tersimpan untuk minggu ${formatWeekLabel(weekStart)}!`);
-            // Reload saved
-            const weekResp = await apiGet(`/schedules/week?week_start=${weekStart}`);
-            const days = weekResp?.data?.days ?? [];
-            setSavedWeek({ week_start: weekStart, days, ai_notes: draft.ai_notes, from_ai: draft.from_ai });
-            setDraft(null);
-            setState("saved");
-        } catch {
-            setState("draft");
+            setToast("✅ Jadwal berhasil di-approve dan tersimpan!");
+            setDraftData(null);
+            fetchWeek(getMonday(weekOffset));
+        } catch (e: any) {
+            setToast("❌ " + (e?.message || "Gagal approve"));
         }
+        setApproving(false);
     };
+
+    const currentWeekLabel = weekOffset === 0 ? "Minggu Ini" : "Minggu Depan";
+    const displayData = draftData || weekData;
+    const isDraft = !!draftData;
+    const hasSchedule = weekData?.has_schedule;
+
+    if (loading) {
+        return (
+            <div className="p-6 flex justify-center items-center min-h-[50vh]">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+            </div>
+        );
+    }
 
     return (
-        <div className="space-y-5">
-            <PageHeader
-                title="📅 AI Jadwal Pengiriman"
-                subtitle="Generate draft jadwal MBG mingguan dengan bantuan AI"
-            />
-
-            {/* Week selector */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
-                <span className="text-sm text-gray-600 font-medium">Pilih Minggu:</span>
-                <div className="flex gap-2">
-                    {[0, 1, 2].map(offset => (
-                        <button key={offset} onClick={() => setWeekOffset(offset)}
-                            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${weekOffset === offset ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                            {offset === 0 ? "Minggu Depan" : offset === 1 ? "2 Minggu Lagi" : "3 Minggu Lagi"}
-                        </button>
-                    ))}
+        <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6">
+            {/* ─── Toast ─────────────────────────────────────────── */}
+            {toast && (
+                <div className="fixed top-4 right-4 z-50 bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 max-w-sm animate-[fadeIn_0.3s]">
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm">{toast}</span>
+                        <button onClick={() => setToast("")} className="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
                 </div>
-                <span className="text-sm text-gray-500">{formatWeekLabel(weekStart)}</span>
+            )}
+
+            {/* ─── Header ────────────────────────────────────────── */}
+            <div>
+                <h1 className="text-2xl font-bold text-gray-800">📅 AI Jadwal Operasional</h1>
+                <p className="text-gray-500 text-sm mt-1">Timeline harian: persiapan, masak, pengiriman</p>
             </div>
 
-            {/* State: empty */}
-            {state === "empty" && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-center space-y-4">
-                    <p className="text-4xl">📅</p>
-                    <div>
-                        <p className="font-bold text-gray-900 text-lg">Belum ada jadwal untuk minggu ini</p>
-                        <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
-                            AI akan membuat draft berdasarkan pola pengiriman historis, kuota porsi per sekolah, dan hari libur nasional.
-                        </p>
+            {/* ─── Section 1: Master Schedule Status ─────────────── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                {!master ? (
+                    <div className="text-center py-4">
+                        <p className="text-amber-600 font-semibold text-lg mb-2">⚠️ Master Schedule Belum Di-setup</p>
+                        <p className="text-gray-500 text-sm mb-4">Setup jadwal waktu operasional sekali, dipakai otomatis tiap minggu</p>
+                        <Link href="/jadwal/master"
+                            className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition">
+                            ⚙️ Setup Master Schedule
+                        </Link>
                     </div>
-                    <button onClick={generateDraft}
-                        className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl">
-                        🤖 Generate Draft Jadwal
+                ) : (
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
+                                ✅ Jadwal Master Aktif
+                            </h2>
+                            <Link href="/jadwal/master"
+                                className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                ✏️ Edit Master
+                            </Link>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                            <div className="bg-orange-50 rounded-xl p-3">
+                                <span className="text-gray-500">🥬 Persiapan</span>
+                                <p className="font-bold text-lg">{master.prep_start_time}</p>
+                            </div>
+                            <div className="bg-orange-50 rounded-xl p-3">
+                                <span className="text-gray-500">🍳 Mulai Masak</span>
+                                <p className="font-bold text-lg">{master.cook_start_time}</p>
+                            </div>
+                            <div className="bg-orange-50 rounded-xl p-3">
+                                <span className="text-gray-500">⏱ Per 100 Porsi</span>
+                                <p className="font-bold text-lg">{master.cook_minutes_per_100} mnt</p>
+                            </div>
+                        </div>
+                        {master.schools.length > 0 && (
+                            <div className="mt-3 space-y-1.5">
+                                {master.schools.map(s => (
+                                    <div key={s.school_id} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-1.5">
+                                        <span>🚗</span>
+                                        <span className="font-medium">{s.school_name}</span>
+                                        <span className="text-gray-400">|</span>
+                                        <span className="text-gray-600">berangkat {s.depart_time}</span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-gray-600">tiba {s.target_arrival}</span>
+                                        <span className="text-xs text-gray-400">({s.default_portions} porsi)</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* ─── Section 2: Week Picker ─────────────────────────── */}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={() => { setWeekOffset(0); setDraftData(null); }}
+                    className={`px-4 py-2 rounded-xl font-medium text-sm transition ${weekOffset === 0 ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                >
+                    Minggu Ini
+                </button>
+                <button
+                    onClick={() => { setWeekOffset(1); setDraftData(null); }}
+                    className={`px-4 py-2 rounded-xl font-medium text-sm transition ${weekOffset === 1 ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                >
+                    Minggu Depan
+                </button>
+                <span className="text-sm text-gray-400 ml-auto">
+                    {getMonday(weekOffset)} — {(() => {
+                        const d = new Date(getMonday(weekOffset));
+                        d.setDate(d.getDate() + 4);
+                        return d.toISOString().split("T")[0];
+                    })()}
+                </span>
+            </div>
+
+            {/* ─── Section 3: Timeline ────────────────────────────── */}
+            {isDraft && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">
+                    <span className="text-amber-800 text-sm font-medium">
+                        📝 Draft belum disimpan — {draftData?.source === "ai" ? "dari AI" : "dari Master"}
+                    </span>
+                    <button onClick={handleApprove} disabled={approving}
+                        className="bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                        {approving ? "Menyimpan..." : "✅ Approve Jadwal"}
                     </button>
                 </div>
             )}
 
-            {/* State: loading AI */}
-            {state === "loading" && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12 flex flex-col items-center gap-4">
-                    <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-gray-600 font-medium">⏳ AI sedang membuat jadwal pengiriman...</p>
+            {!hasSchedule && !isDraft && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
+                    <p className="text-gray-500 mb-4">Belum ada jadwal untuk {currentWeekLabel.toLowerCase()}</p>
+                    <div className="flex justify-center gap-3">
+                        <button onClick={handleLoadMaster} disabled={generating || !master}
+                            className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 transition">
+                            {generating ? "⏳ Loading..." : "📋 Load dari Master"}
+                        </button>
+                        <button onClick={handleAiDraft} disabled={generating}
+                            className="bg-purple-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-purple-700 disabled:opacity-50 transition">
+                            {generating ? "⏳ Loading..." : "🤖 Generate AI Draft"}
+                        </button>
+                    </div>
                 </div>
             )}
 
-            {/* State: draft */}
-            {state === "draft" && draft && (
-                <>
-                    {draft.ai_notes && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700">
-                            <span className="font-medium text-gray-900">💬 AI: </span>{draft.ai_notes}
-                            {!draft.from_ai && <span className="ml-2 text-xs text-gray-400">(Dibuat dari data historis)</span>}
-                        </div>
-                    )}
-
-                    <div className="space-y-4">
-                        {draft.days.map((day, dayIdx) => {
-                            const isActive = day.is_active !== false;
-                            const total = day.deliveries.reduce((s, d) => s + (Number(d.portions) || 0), 0);
-                            return (
-                                <div key={day.date} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${!isActive ? "opacity-60" : ""}`}>
-                                    <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-gray-900">{day.day_name}, {new Date(day.date + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long" })}</span>
-                                            {day.is_holiday && (
-                                                <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">🏖️ {day.holiday_name}</span>
-                                            )}
-                                            {!day.is_holiday && (
-                                                <span className="text-xs text-gray-500">{total} porsi total</span>
-                                            )}
-                                        </div>
-                                        {!day.is_holiday && (
-                                            <button onClick={() => toggleDay(dayIdx)}
-                                                className={`text-xs px-3 py-1 rounded-lg font-medium ${isActive ? "text-gray-600 hover:bg-red-50 hover:text-red-600" : "text-green-600 bg-green-50 hover:bg-green-100"}`}>
-                                                {isActive ? "⏭️ Skip" : "✅ Aktifkan"}
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {!day.is_holiday && isActive && day.deliveries.length > 0 && (
-                                        <div className="divide-y divide-gray-50">
-                                            {day.deliveries.map((del, delIdx) => (
-                                                <div key={del.school_id} className="p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 mb-0.5">Sekolah</p>
-                                                        <p className="font-medium text-sm text-gray-900">🏫 {del.school_name}</p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500 block mb-0.5">Porsi</label>
-                                                        <input type="number" min="0"
-                                                            value={del.portions}
-                                                            onChange={e => updateDelivery(dayIdx, delIdx, "portions", parseInt(e.target.value) || 0)}
-                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        <div className="flex-1">
-                                                            <label className="text-xs text-gray-500 block mb-0.5">Berangkat</label>
-                                                            <input type="time"
-                                                                value={del.suggested_depart || ""}
-                                                                onChange={e => updateDelivery(dayIdx, delIdx, "suggested_depart", e.target.value)}
-                                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <label className="text-xs text-gray-500 block mb-0.5">Tiba</label>
-                                                            <input type="time"
-                                                                value={del.suggested_arrive || ""}
-                                                                onChange={e => updateDelivery(dayIdx, delIdx, "suggested_arrive", e.target.value)}
-                                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500 block mb-0.5">Catatan</label>
-                                                        <input type="text"
-                                                            value={del.notes || ""}
-                                                            onChange={e => updateDelivery(dayIdx, delIdx, "notes", e.target.value)}
-                                                            placeholder="opsional..."
-                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {day.is_holiday && (
-                                        <div className="p-4 text-center text-gray-400 text-sm">Tidak ada pengiriman pada hari libur</div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex gap-3 justify-end">
-                        <button onClick={generateDraft}
-                            className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200">
-                            🔄 Generate Ulang
-                        </button>
-                        <button onClick={approveDraft}
-                            className="px-6 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 shadow-md">
-                            ✅ Approve & Simpan Jadwal
-                        </button>
-                    </div>
-                </>
-            )}
-
-            {/* State: saving */}
-            {state === "saving" && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12 flex flex-col items-center gap-3">
-                    <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-gray-600 font-medium">⏳ Menyimpan jadwal...</p>
-                </div>
-            )}
-
-            {/* State: saved */}
-            {state === "saved" && savedWeek && (
+            {displayData && displayData.days && displayData.days.length > 0 && (
                 <div className="space-y-4">
-                    {resultMsg && (
-                        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800 font-medium">
-                            {resultMsg}
-                        </div>
-                    )}
-
-                    <div className="flex justify-end">
-                        <button onClick={() => { setState("empty"); setResultMsg(""); }}
-                            className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-                            🔄 Buat Jadwal Baru
-                        </button>
-                    </div>
-
-                    {savedWeek.days.map(day => {
-                        const total = day.deliveries?.reduce((s: number, d: any) => s + (Number(d.qty) || Number(d.portions) || 0), 0) ?? 0;
-                        return (
-                            <div key={day.date} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
-                                    <span className="font-bold text-gray-900">{day.day_name}</span>
-                                    <span className="text-sm text-gray-500">{new Date(day.date + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long" })}</span>
-                                    {day.is_holiday && <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">🏖️ {day.holiday_name}</span>}
-                                    {!day.is_holiday && <span className="text-xs text-gray-500">{total} porsi</span>}
+                    {displayData.days.map(day => (
+                        <div key={day.date} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${day.is_holiday ? "border-red-200" : "border-gray-100"}`}>
+                            {/* Day header */}
+                            <div className={`px-5 py-3 flex items-center justify-between ${day.is_holiday ? "bg-red-50" : "bg-gradient-to-r from-blue-50 to-blue-100/30"}`}>
+                                <div>
+                                    <span className="font-bold text-gray-800">{day.day_name}</span>
+                                    <span className="text-gray-500 text-sm ml-2">{day.date}</span>
+                                    {day.is_holiday && <span className="ml-2 text-red-600 text-sm font-medium">🎌 {day.holiday_name}</span>}
                                 </div>
-                                {(day.deliveries?.length ?? 0) > 0 ? (
-                                    <div className="divide-y divide-gray-50">
-                                        {day.deliveries.map((del: any, i: number) => (
-                                            <div key={i} className="px-5 py-3 flex flex-wrap gap-4 items-center text-sm">
-                                                <span className="font-medium text-gray-800">🏫 {del.customer_name || del.school_name}</span>
-                                                <span className="text-gray-500">{del.qty || del.portions} porsi</span>
-                                                {del.scheduled_time && <span className="text-gray-400 text-xs">⏰ {del.scheduled_time}</span>}
-                                                {del.notes && <span className="text-gray-400 text-xs">{del.notes}</span>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-center text-gray-400 text-sm py-3">Tidak ada pengiriman</p>
+                                {!day.is_holiday && day.total_portions > 0 && (
+                                    <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full text-sm">
+                                        {day.total_portions.toLocaleString("id-ID")} porsi
+                                    </span>
                                 )}
                             </div>
-                        );
-                    })}
+
+                            {/* Timeline */}
+                            {day.is_holiday ? (
+                                <div className="px-5 py-4 text-center text-gray-400 text-sm">
+                                    Libur — tidak ada jadwal
+                                </div>
+                            ) : day.timeline.length === 0 ? (
+                                <div className="px-5 py-4 text-center text-gray-400 text-sm">
+                                    Tidak ada kegiatan
+                                </div>
+                            ) : (
+                                <div className="px-5 py-3 space-y-2">
+                                    {day.timeline.map((evt, idx) => (
+                                        <div key={idx} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${eventColor(evt.type)}`}>
+                                            <span className="text-lg">{eventIcon(evt.type)}</span>
+                                            <span className="font-mono font-bold text-gray-700 w-14 text-sm">{evt.time}</span>
+                                            <span className="text-sm text-gray-800 flex-1">{evt.activity}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* AI notes */}
+                            {day.ai_notes && (
+                                <div className="px-5 py-2 bg-yellow-50 border-t border-yellow-100 text-xs text-yellow-700">
+                                    🤖 {day.ai_notes}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+
+                    {/* Bottom approve button for draft */}
+                    {isDraft && (
+                        <div className="text-center pt-2">
+                            <button onClick={handleApprove} disabled={approving}
+                                className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-green-700 disabled:opacity-50 shadow-lg transition">
+                                {approving ? "⏳ Menyimpan..." : "✅ Approve Jadwal Minggu Ini"}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Regenerate buttons if viewing saved schedule */}
+                    {hasSchedule && !isDraft && (
+                        <div className="flex justify-center gap-3 pt-2">
+                            <button onClick={handleLoadMaster} disabled={generating || !master}
+                                className="text-blue-600 border border-blue-200 px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-50">
+                                🔄 Regenerate dari Master
+                            </button>
+                            <button onClick={handleAiDraft} disabled={generating}
+                                className="text-purple-600 border border-purple-200 px-4 py-2 rounded-xl text-sm font-medium hover:bg-purple-50 disabled:opacity-50">
+                                🤖 Regenerate AI Draft
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ─── AI notes banner ────────────────────────────────── */}
+            {displayData?.ai_notes && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-800">
+                    🤖 <strong>Catatan AI:</strong> {displayData.ai_notes}
                 </div>
             )}
         </div>
