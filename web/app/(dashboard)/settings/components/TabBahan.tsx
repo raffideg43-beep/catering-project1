@@ -32,7 +32,10 @@ interface Recipe {
 
 interface SimIngredient {
   ingredient_id: string; name: string; unit: string;
-  total_needed: number; available: number; sufficient: boolean; shortage: number;
+  display_unit?: string; base_unit?: string; conversion_factor?: number;
+  total_needed: number; total_needed_display?: number;
+  available: number; available_display?: number;
+  sufficient: boolean; shortage: number; shortage_display?: string;
 }
 
 interface FormRowItem {
@@ -623,11 +626,11 @@ export function TabBahan() {
                                   <tbody>{preview.map((ing, i) => (
                                     <tr key={i} className="border-b border-blue-100">
                                       <td className="py-1.5 pr-4 font-medium text-gray-800">{ing.name}</td>
-                                      <td className="py-1.5 pr-4 text-gray-600">{ing.total_needed} {ing.unit}</td>
-                                      <td className="py-1.5 pr-4 text-gray-600">{ing.available} {ing.unit}</td>
+                                      <td className="py-1.5 pr-4 text-gray-600">{ing.total_needed_display ?? ing.total_needed} {ing.display_unit || ing.unit}</td>
+                                      <td className="py-1.5 pr-4 text-gray-600">{ing.available_display ?? ing.available} {ing.display_unit || ing.unit}</td>
                                       <td className="py-1.5">{ing.sufficient
                                         ? <span className="text-green-600 font-medium">✅ Aman</span>
-                                        : <span className="text-red-600 font-medium">❌ Kurang {ing.shortage}</span>}</td>
+                                        : <span className="text-red-600 font-medium">❌ Kurang {ing.shortage_display ?? ing.shortage}</span>}</td>
                                     </tr>
                                   ))}</tbody>
                                 </table>}
