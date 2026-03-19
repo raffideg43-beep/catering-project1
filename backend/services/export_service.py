@@ -1,11 +1,11 @@
 """
 backend/services/export_service.py
-Export Excel Pembukuan MBG — Modul 12 (implementasi penuh)
+Export Excel Pembukuan MBG — Fixed version
 
-Menggantikan placeholder Modul 9.
-6 sheet: Ringkasan | Penyerahan MBG | Pembelian Bahan |
-         Stok Bahan | Piutang | Hutang
-PPh22 & PPN dihitung HANYA di sini.
+Template sheets: Harian | Mingguan | Bulanan | Stok | Laporan Pemerintah | Riwayat Nota
+Per user request: merge Harian+Mingguan+Bulanan → satu sheet "Bulanan"
+Hasil akhir: Ringkasan | Bulanan | Stok | Laporan Pemerintah | Riwayat Nota
+
 Upload ke Supabase Storage, upsert excel_files.
 """
 
@@ -54,7 +54,7 @@ class ExportService:
         supabase=None,
     ) -> Optional[str]:
         """
-        Buat Excel 6 sheet untuk bulan year/month, upload ke Storage.
+        Buat Excel untuk bulan year/month, upload ke Storage.
         Return: file_url (str) atau None jika gagal.
         """
         if supabase is None:
@@ -70,24 +70,29 @@ class ExportService:
         try:
             # 1. Ambil semua data
             data = self._fetch_all(supabase, tenant_id, year, month, cfg)
+            logger.info(
+                f"=== GENERATE EXCEL {year}/{month} tenant={tenant_id} === "
+                f"deliveries={len(data['deliveries'])}, "
+                f"transactions={len(data['transactions'])}, "
+                f"products={len(data['products'])}, "
+                f"receivables={len(data['receivables'])}, "
+                f"payables={len(data['payables'])}"
+            )
 
-            # 2. Hitung PPh22 & PPN, update payables
-            self._calculate_and_update_taxes(supabase, tenant_id, data, cfg)
-
-            # 3. Buat workbook
+            # 2. Buat workbook (BUKAN dari template — buat dari scratch agar pasti benar)
             wb = self._build_workbook(data, year, month)
 
-            # 4. Save ke buffer
+            # 3. Save ke buffer
             buffer = io.BytesIO()
             wb.save(buffer)
             buffer.seek(0)
 
-            # 5. Upload ke Storage
+            # 4. Upload ke Storage
             file_url = self._upload_to_storage(
                 supabase, tenant_id, year, month, buffer.getvalue()
             )
 
-            # 6. Upsert excel_files
+            # 5. Upsert excel_files
             self._upsert_excel_files(
                 supabase, tenant_id, period_key,
                 status="ready", file_url=file_url
@@ -97,7 +102,7 @@ class ExportService:
             return file_url
 
         except Exception as e:
-            logger.error(f"regenerate_monthly_excel GAGAL: {e}")
+            logger.error(f"regenerate_monthly_excel GAGAL: {e}", exc_info=True)
             self._upsert_excel_files(
                 supabase, tenant_id, period_key,
                 status="error", error_message=str(e)[:500]
@@ -134,7 +139,7 @@ class ExportService:
         alloc_cfg = (getattr(alloc_resp, "data", None) or [{}])[0]
         price_per_portion = float(alloc_cfg.get("price_per_portion") or 15000)
 
-        # MBG deliveries + allocations
+        # MBG deliveries + schools
         del_resp = (
             supabase.table("mbg_deliveries")
             .select("*, schools(name)")
@@ -145,16 +150,6 @@ class ExportService:
             .execute()
         )
         deliveries = getattr(del_resp, "data", None) or []
-
-        ba_resp = (
-            supabase.table("mbg_budget_allocations")
-            .select("*")
-            .eq("tenant_id", tenant_id)
-            .gte("date", first.isoformat())
-            .lte("date", last.isoformat())
-            .execute()
-        )
-        allocations = {r.get("date"): r for r in (getattr(ba_resp, "data", None) or [])}
 
         # Weekly menus (for menu names)
         wm_resp = (
@@ -167,10 +162,10 @@ class ExportService:
         )
         weekly_menus = getattr(wm_resp, "data", None) or []
 
-        # Transactions + items + suppliers
+        # Transactions (ALL confirmed, no type filter)
         trx_resp = (
             supabase.table("transactions")
-            .select("id, date, suppliers(name), supplier_id, total, payment_method, status")
+            .select("id, date, suppliers(name), supplier_id, total, payment_method, status, nama_toko")
             .eq("tenant_id", tenant_id)
             .eq("status", "confirmed")
             .gte("date", first.isoformat())
@@ -184,13 +179,16 @@ class ExportService:
         trx_ids = [t["id"] for t in transactions]
         items_all: List[dict] = []
         if trx_ids:
-            items_resp = (
-                supabase.table("transaction_items")
-                .select("*")
-                .in_("transaction_id", trx_ids)
-                .execute()
-            )
-            items_all = getattr(items_resp, "data", None) or []
+            # Fetch in batches of 50 to avoid URL length issues
+            for i in range(0, len(trx_ids), 50):
+                batch = trx_ids[i:i+50]
+                items_resp = (
+                    supabase.table("transaction_items")
+                    .select("*")
+                    .in_("transaction_id", batch)
+                    .execute()
+                )
+                items_all.extend(getattr(items_resp, "data", None) or [])
 
         # Supplier is_pkp status
         sup_ids = list({t.get("supplier_id") for t in transactions if t.get("supplier_id")})
@@ -256,7 +254,6 @@ class ExportService:
             "last": last,
             "price_per_portion": price_per_portion,
             "deliveries": deliveries,
-            "allocations": allocations,
             "weekly_menus": weekly_menus,
             "transactions": transactions,
             "items_all": items_all,
@@ -267,84 +264,45 @@ class ExportService:
             "payables": payables,
         }
 
-    # ─── Tax calculation ──────────────────────────────────────────────────────
-
-    def _calculate_and_update_taxes(self, supabase, tenant_id: str, data: dict, cfg) -> None:
-        """Hitung PPh22 & PPN untuk payables yang belum dihitung, lalu update DB."""
-        pph22_rate = float(getattr(cfg, "mbg_pph22_rate", 0.015))
-        ppn_rate   = float(getattr(cfg, "mbg_ppn_rate", 0.11))
-
-        for pay in data["payables"]:
-            if _d(pay.get("pph22_amount")) == 0:
-                amount = _d(pay.get("amount"))
-                # Cek is_pkp dari supplier
-                sup_id = pay.get("supplier_id")
-                is_pkp = data["supplier_pkp"].get(sup_id, False) if sup_id else False
-                pph22 = (amount * Decimal(str(pph22_rate))).quantize(Decimal("0.01"), ROUND_HALF_UP) if is_pkp else Decimal("0")
-                ppn   = (amount * Decimal(str(ppn_rate))).quantize(Decimal("0.01"), ROUND_HALF_UP) if is_pkp else Decimal("0")
-                if pph22 > 0 or ppn > 0:
-                    try:
-                        supabase.table("payables").update({
-                            "pph22_amount": str(pph22),
-                            "ppn_amount": str(ppn),
-                        }).eq("id", pay["id"]).execute()
-                        pay["pph22_amount"] = str(pph22)
-                        pay["ppn_amount"]   = str(ppn)
-                    except Exception as e:
-                        logger.warning(f"update payable tax gagal: {e}")
-
     # ─── Workbook builder ─────────────────────────────────────────────────────
 
     def _build_workbook(self, data: dict, year: int, month: int):
-        try:
-            from openpyxl import load_workbook
-            wb = load_workbook(str(TEMPLATE_PATH))
-        except Exception:
-            from openpyxl import Workbook
-            wb = Workbook()
-            # Buat 6 sheet jika template tidak ada
-            for name in ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
-                         "Stok Bahan", "Piutang", "Hutang"]:
-                if name not in wb.sheetnames:
-                    wb.create_sheet(name)
-            if "Sheet" in wb.sheetnames:
-                del wb["Sheet"]
+        from openpyxl import Workbook
+        wb = Workbook()
 
-        sheet_map = {s: wb[s] for s in wb.sheetnames if s in
-                     ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
-                      "Stok Bahan", "Piutang", "Hutang"]}
+        # Sheet 1: Ringkasan (summary)
+        ws_ringkasan = wb.active
+        ws_ringkasan.title = "Ringkasan"
 
-        # Hapus sheet bawaan template yang salah/kosong
-        allowed = ["Ringkasan", "Penyerahan MBG", "Pembelian Bahan",
-                   "Stok Bahan", "Piutang", "Hutang"]
-        for s in wb.sheetnames:
-            if s not in allowed:
-                del wb[s]
+        # Sheet 2: Bulanan (merged harian+mingguan+bulanan — all transactions)
+        ws_bulanan = wb.create_sheet("Bulanan")
 
-        # Pastikan semua sheet ada
-        for name in allowed:
-            if name not in sheet_map:
-                ws = wb.create_sheet(name)
-                sheet_map[name] = ws
+        # Sheet 3: Stok
+        ws_stok = wb.create_sheet("Stok")
 
-        self._fill_ringkasan(sheet_map["Ringkasan"], data, year, month)
-        self._fill_penyerahan(sheet_map["Penyerahan MBG"], data, year)
-        self._fill_pembelian(sheet_map["Pembelian Bahan"], data)
-        self._fill_stok(sheet_map["Stok Bahan"], data)
-        self._fill_piutang(sheet_map["Piutang"], data)
-        self._fill_hutang(sheet_map["Hutang"], data)
+        # Sheet 4: Laporan Pemerintah
+        ws_pemerintah = wb.create_sheet("Laporan Pemerintah")
+
+        # Sheet 5: Riwayat Nota
+        ws_nota = wb.create_sheet("Riwayat Nota")
+
+        logger.info(f"Building workbook with sheets: {wb.sheetnames}")
+
+        self._fill_ringkasan(ws_ringkasan, data, year, month)
+        self._fill_bulanan(ws_bulanan, data, year, month)
+        self._fill_stok(ws_stok, data)
+        self._fill_laporan_pemerintah(ws_pemerintah, data, year, month)
+        self._fill_riwayat_nota(ws_nota, data)
 
         return wb
 
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
-        print(f"Fill ringkasan: transactions={len(data.get('transactions', []))}, deliveries={len(data.get('deliveries', []))}")
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.styles import Font, PatternFill, Alignment
+        logger.info(f"Fill ringkasan: transactions={len(data.get('transactions', []))}, deliveries={len(data.get('deliveries', []))}")
+
         pph22_rate = Decimal("0.015")
-
-        ws.delete_rows(1, ws.max_row)
-
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
 
@@ -361,6 +319,7 @@ class ExportService:
 
         # Kalkulasi ringkasan
         deliveries = data["deliveries"]
+        transactions = data["transactions"]
         total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
         total_days = len({d["delivery_date"] for d in deliveries})
         price_pp = Decimal(str(data["price_per_portion"]))
@@ -368,13 +327,13 @@ class ExportService:
         pph22 = (revenue_gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
         revenue_net = revenue_gross - pph22
 
-        transactions = data["transactions"]
         total_exp = sum(_d(t.get("total")) for t in transactions)
         gross_profit = revenue_net - total_exp
 
         rows = [
             ("Total Porsi MBG",   f"{total_portions:,} porsi"),
             ("Total Hari Kirim",  f"{total_days} hari"),
+            ("Total Transaksi",   f"{len(transactions)} nota"),
             ("Pendapatan Kotor",  float(revenue_gross)),
             ("PPh 22 (1,5%)",    float(pph22)),
             ("Pendapatan Bersih", float(revenue_net)),
@@ -391,7 +350,22 @@ class ExportService:
             if isinstance(val, float):
                 ws[f"B{i}"].number_format = '"Rp "#,##0'
 
+        # Piutang & Hutang summary
+        receivables = data.get("receivables", [])
+        payables = data.get("payables", [])
+        total_piutang = sum(_d(r.get("amount")) for r in receivables)
+        total_hutang = sum(_d(p.get("amount")) for p in payables)
+
         last_row = 6 + len(rows)
+        ws[f"A{last_row}"] = "Total Piutang"
+        ws[f"B{last_row}"] = float(total_piutang)
+        ws[f"B{last_row}"].number_format = '"Rp "#,##0'
+        last_row += 1
+        ws[f"A{last_row}"] = "Total Hutang"
+        ws[f"B{last_row}"] = float(total_hutang)
+        ws[f"B{last_row}"].number_format = '"Rp "#,##0'
+
+        last_row += 2
         ws[f"A{last_row}"] = "Catatan:"
         ws[f"B{last_row}"] = "PPh 22 dipotong langsung oleh pemerintah"
         ws[f"B{last_row}"].font = Font(italic=True, color="FF0000")
@@ -399,23 +373,34 @@ class ExportService:
         self._set_column_widths(ws)
         ws.freeze_panes = "A6"
 
-    # ─── Sheet 2: Penyerahan MBG ──────────────────────────────────────────────
+    # ─── Sheet 2: Bulanan (gabungan semua transaksi + penyerahan) ─────────────
 
-    def _fill_penyerahan(self, ws, data: dict, year: int) -> None:
-        print(f"Fill penyerahan: {len(data.get('deliveries', []))} rows")
-        if not data.get("deliveries"):
-            print("WARNING: No delivery data to fill in Penyerahan MBG!")
-            # Still format headers or return? Better format headers so it's not completely blank
+    def _fill_bulanan(self, ws, data: dict, year: int, month: int) -> None:
+        from openpyxl.styles import Font, PatternFill, Alignment
         pph22_rate = Decimal("0.015")
-        ws.delete_rows(1, ws.max_row)
+        ppn_rate   = Decimal("0.11")
+        logger.info(
+            f"Fill bulanan: {len(data.get('deliveries', []))} deliveries, "
+            f"{len(data.get('transactions', []))} transactions, "
+            f"{len(data.get('items_all', []))} items"
+        )
 
-        headers = ["No", "Tanggal", "Sekolah", "Menu", "Porsi",
-                   "Harga/Porsi", "Gross", "PPh22 (1,5%)", "Bersih"]
-        self._write_headers(ws, 1, headers)
+        bulan_str = BULAN[month]
 
-        # Build menu lookup: delivery_date → menu_name via weekly_menus
+        # ── Section A: PENYERAHAN MBG ──
+        ws.merge_cells("A1:I1")
+        ws["A1"] = f"PENYERAHAN MBG — {bulan_str} {year}"
+        ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        penyerahan_headers = ["No", "Tanggal", "Sekolah", "Menu", "Porsi",
+                              "Harga/Porsi", "Gross", "PPh22 (1,5%)", "Bersih"]
+        self._write_headers(ws, 2, penyerahan_headers)
+
+        # Build menu lookup
         menu_by_date: Dict[str, str] = {}
-        for wm in data["weekly_menus"]:
+        for wm in data.get("weekly_menus", []):
             try:
                 ws_date = date.fromisoformat(wm["week_start"])
                 d = ws_date + timedelta(days=wm["day_of_week"] - 1)
@@ -423,18 +408,15 @@ class ExportService:
             except Exception:
                 pass
 
-        # Group by delivery_date + school
-        row = 2
-        total_gross = Decimal("0")
-        total_pph22 = Decimal("0")
-        total_bersih = Decimal("0")
+        row = 3
+        total_gross = total_pph22 = total_bersih = Decimal("0")
         price_pp = Decimal(str(data["price_per_portion"]))
 
-        for n, d in enumerate(data["deliveries"], 1):
+        for n, d in enumerate(data.get("deliveries", []), 1):
             portions = d.get("portions_sent", 0)
             school_name = (d.get("schools") or {}).get("name", "?")
             del_date = d.get("delivery_date", "")
-            menu_name = menu_by_date.get(del_date, "—")
+            menu_name = menu_by_date.get(del_date, d.get("menu_name", "—"))
             gross = price_pp * portions
             pph22 = (gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
             bersih = gross - pph22
@@ -444,7 +426,7 @@ class ExportService:
             total_bersih += bersih
 
             ws.cell(row, 1, n)
-            ws.cell(row, 2, del_date).number_format = "DD/MM/YYYY"
+            ws.cell(row, 2, del_date)
             ws.cell(row, 3, school_name)
             ws.cell(row, 4, menu_name)
             ws.cell(row, 5, portions)
@@ -455,57 +437,60 @@ class ExportService:
             self._alt_row(ws, row, 2)
             row += 1
 
-        # Total row
+        if not data.get("deliveries"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada penyerahan MBG bulan ini")
+            row += 1
+
+        # Total penyerahan
         self._write_total_row(ws, row, {
-            5: None, 7: float(total_gross), 8: float(total_pph22), 9: float(total_bersih)
+            5: sum(d.get("portions_sent", 0) for d in data.get("deliveries", [])),
+            7: float(total_gross), 8: float(total_pph22), 9: float(total_bersih)
         })
-        self._set_column_widths(ws)
-        ws.freeze_panes = "A2"
+        row += 2
 
-    # ─── Sheet 3: Pembelian Bahan ─────────────────────────────────────────────
+        # ── Section B: PEMBELIAN / PENGELUARAN ──
+        section_b_start = row
+        ws.merge_cells(f"A{row}:L{row}")
+        ws[f"A{row}"] = f"PEMBELIAN & PENGELUARAN — {bulan_str} {year}"
+        ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws[f"A{row}"].alignment = Alignment(horizontal="center")
+        row += 1
 
-    def _fill_pembelian(self, ws, data: dict) -> None:
-        print(f"Fill pembelian: {len(data.get('transactions', []))} rows")
-        if not data.get("transactions"):
-            print("WARNING: No transaction data to fill in Pembelian Bahan!")
-        pph22_rate = Decimal("0.015")
-        ppn_rate   = Decimal("0.11")
-        ws.delete_rows(1, ws.max_row)
-
-        headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
-                   "Harga Satuan", "Subtotal", "PPh22", "PPN",
-                   "Total Bayar", "Metode Bayar"]
-        self._write_headers(ws, 1, headers)
+        pembelian_headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
+                             "Harga Satuan", "Subtotal", "PPh22", "PPN",
+                             "Total Bayar", "Metode Bayar"]
+        self._write_headers(ws, row, pembelian_headers)
+        row += 1
 
         # Index items by transaction_id
         items_by_trx: Dict[str, List[dict]] = {}
-        for item in data["items_all"]:
+        for item in data.get("items_all", []):
             tid = item.get("transaction_id", "")
             items_by_trx.setdefault(tid, []).append(item)
 
-        row = 2
         n = 0
         tot_sub = tot_pph = tot_ppn = tot_pay = Decimal("0")
 
-        for trx in data["transactions"]:
+        for trx in data.get("transactions", []):
             tid = trx["id"]
             del_date = trx.get("date", "")
-            # Fix: supplier name is from join (suppliers(name)) → nested dict
             sup_data = trx.get("suppliers") or {}
             supplier = sup_data.get("name") if isinstance(sup_data, dict) else None
             supplier = supplier or trx.get("nama_toko") or "Tanpa Supplier"
-            method = trx.get("payment_method", "tunai")
+            method = trx.get("payment_method", "tunai") or "tunai"
             sup_id = trx.get("supplier_id")
             is_pkp = data["supplier_pkp"].get(sup_id, False) if sup_id else False
 
             trx_items = items_by_trx.get(tid, [])
 
             if not trx_items:
-                # Transaksi tanpa item — tetap tampilkan sebagai 1 baris
+                # Transaksi tanpa item — tampilkan 1 baris
                 n += 1
                 total_trx = float(_d(trx.get("total")))
                 ws.cell(row, 1, n)
-                ws.cell(row, 2, del_date).number_format = "DD/MM/YYYY"
+                ws.cell(row, 2, del_date)
                 ws.cell(row, 3, supplier)
                 ws.cell(row, 4, "(tanpa detail item)")
                 ws.cell(row, 5, "")
@@ -539,7 +524,7 @@ class ExportService:
                 tot_pay += bayar
 
                 ws.cell(row, 1, n)
-                ws.cell(row, 2, del_date).number_format = "DD/MM/YYYY"
+                ws.cell(row, 2, del_date)
                 ws.cell(row, 3, supplier)
                 ws.cell(row, 4, nama)
                 ws.cell(row, 5, qty)
@@ -553,20 +538,23 @@ class ExportService:
                 self._alt_row(ws, row, 2)
                 row += 1
 
+        if not data.get("transactions"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada transaksi bulan ini")
+            row += 1
+
         self._write_total_row(ws, row, {
             8: float(tot_sub), 9: float(tot_pph),
             10: float(tot_ppn), 11: float(tot_pay),
         })
-        self._set_column_widths(ws)
-        ws.freeze_panes = "A2"
 
-    # ─── Sheet 4: Stok Bahan ──────────────────────────────────────────────────
+        self._set_column_widths(ws)
+        ws.freeze_panes = "A3"
+
+    # ─── Sheet 3: Stok ────────────────────────────────────────────────────────
 
     def _fill_stok(self, ws, data: dict) -> None:
-        print(f"Fill stok: {len(data.get('products', []))} products, {len(data.get('stock_history', []))} history records")
-        if not data.get("products"):
-            print("WARNING: No product data to fill in Stok Bahan!")
-        ws.delete_rows(1, ws.max_row)
+        logger.info(f"Fill stok: {len(data.get('products', []))} products, {len(data.get('stock_history', []))} history records")
         headers = ["No", "Nama Bahan", "Kategori", "Satuan",
                    "HPP", "Stok Awal Bulan", "Masuk", "Keluar",
                    "Stok Akhir", "Nilai Stok"]
@@ -575,7 +563,7 @@ class ExportService:
         # Build net change per product
         in_by_prod:  Dict[str, Decimal] = {}
         out_by_prod: Dict[str, Decimal] = {}
-        for h in data["stock_history"]:
+        for h in data.get("stock_history", []):
             pid = h.get("product_id", "")
             delta = _d(h.get("change_qty"))
             if delta >= 0:
@@ -584,7 +572,7 @@ class ExportService:
                 out_by_prod[pid] = out_by_prod.get(pid, Decimal("0")) + abs(delta)
 
         row = 2
-        for n, p in enumerate(data["products"], 1):
+        for n, p in enumerate(data.get("products", []), 1):
             pid = p.get("id", "")
             hpp = _d(p.get("hpp"))
             stk_akhir = _d(p.get("stock_qty"))
@@ -592,13 +580,13 @@ class ExportService:
             keluar = out_by_prod.get(pid, Decimal("0"))
             stk_awal = stk_akhir - masuk + keluar
             nilai = stk_akhir * hpp
+            factor = float(p.get("conversion_factor") or 1) or 1
 
             ws.cell(row, 1, n)
             ws.cell(row, 2, p.get("name"))
             ws.cell(row, 3, p.get("category"))
             ws.cell(row, 4, p.get("display_unit") or p.get("unit"))
             ws.cell(row, 5, float(hpp)).number_format = '"Rp "#,##0'
-            factor = float(p.get("conversion_factor") or 1) or 1
             ws.cell(row, 6, round(float(stk_awal) / factor, 3))
             ws.cell(row, 7, round(float(masuk) / factor, 3))
             ws.cell(row, 8, round(float(keluar) / factor, 3))
@@ -607,140 +595,190 @@ class ExportService:
             self._alt_row(ws, row, 2)
             row += 1
 
+        if not data.get("products"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada data produk/bahan")
+
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
 
-    # ─── Sheet 5: Piutang ─────────────────────────────────────────────────────
+    # ─── Sheet 4: Laporan Pemerintah ──────────────────────────────────────────
 
-    def _fill_piutang(self, ws, data: dict) -> None:
-        print(f"Fill piutang: {len(data.get('receivables', []))} rows")
-        if not data.get("receivables"):
-            print("WARNING: No receivable data to fill in Piutang!")
+    def _fill_laporan_pemerintah(self, ws, data: dict, year: int, month: int) -> None:
+        from openpyxl.styles import Font, PatternFill, Alignment
+        logger.info(f"Fill laporan pemerintah")
         pph22_rate = Decimal("0.015")
-        ws.delete_rows(1, ws.max_row)
-        headers = ["No", "Debitur", "Tanggal", "Jatuh Tempo",
-                   "Gross", "PPh22 (1,5%)", "Bersih", "Status", "Terlambat (Hari)"]
+        bulan_str = BULAN[month]
+        tenant_name = data["tenant"].get("name", "SPPG")
+
+        # Section A: Identitas
+        ws.merge_cells("A1:E1")
+        ws["A1"] = f"LAPORAN PEMERINTAH MBG — {bulan_str} {year}"
+        ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        ws["A3"] = "Identitas SPPG"
+        ws["A3"].font = Font(bold=True, size=11)
+        ws["A4"] = "Nama SPPG"; ws["B4"] = tenant_name
+        ws["A5"] = "Periode"; ws["B5"] = f"{bulan_str} {year}"
+
+        # Section B: Logistik & Distribusi
+        deliveries = data.get("deliveries", [])
+        total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
+        total_days = len({d["delivery_date"] for d in deliveries})
+        price_pp = Decimal(str(data["price_per_portion"]))
+        revenue_gross = price_pp * total_portions
+        pph22 = (revenue_gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+        ws["A7"] = "Logistik & Distribusi"
+        ws["A7"].font = Font(bold=True, size=11)
+        ws["A8"] = "Total Porsi"; ws["B8"] = total_portions
+        ws["A9"] = "Total Hari Kirim"; ws["B9"] = total_days
+        ws["A10"] = "Rata-rata Porsi/Hari"; ws["B10"] = round(total_portions / max(total_days, 1))
+        ws["A11"] = "Jumlah Sekolah"; ws["B11"] = len({d.get("school_id") for d in deliveries})
+
+        # Section C: Komposisi Biaya 80:15:5
+        transactions = data.get("transactions", [])
+        total_exp = sum(_d(t.get("total")) for t in transactions)
+        bahan_pct = float(total_exp / revenue_gross * 100) if revenue_gross > 0 else 0
+        target_bahan = float(revenue_gross) * 0.80
+        target_upah = float(revenue_gross) * 0.15
+        target_ops = float(revenue_gross) * 0.05
+
+        ws["A13"] = "Komposisi Biaya 80:15:5"
+        ws["A13"].font = Font(bold=True, size=11)
+        headers_biaya = ["Kategori", "Target (%)", "Target (Rp)", "Realisasi (Rp)", "Selisih"]
+        for i, h in enumerate(headers_biaya, 1):
+            ws.cell(14, i, h).font = Font(bold=True)
+
+        # Bahan (80%)
+        ws.cell(15, 1, "Bahan Baku (80%)")
+        ws.cell(15, 2, "80%")
+        ws.cell(15, 3, target_bahan).number_format = '"Rp "#,##0'
+        ws.cell(15, 4, float(total_exp)).number_format = '"Rp "#,##0'
+        ws.cell(15, 5, target_bahan - float(total_exp)).number_format = '"Rp "#,##0'
+
+        # Upah (15%)
+        ws.cell(16, 1, "Upah Pekerja (15%)")
+        ws.cell(16, 2, "15%")
+        ws.cell(16, 3, target_upah).number_format = '"Rp "#,##0'
+        ws.cell(16, 4, "Belum tercatat")
+        ws.cell(16, 5, "—")
+
+        # Operasional (5%)
+        ws.cell(17, 1, "Operasional (5%)")
+        ws.cell(17, 2, "5%")
+        ws.cell(17, 3, target_ops).number_format = '"Rp "#,##0'
+        ws.cell(17, 4, "Belum tercatat")
+        ws.cell(17, 5, "—")
+
+        # Section D: Detail Pajak
+        ws["A19"] = "Detail Pajak"
+        ws["A19"].font = Font(bold=True, size=11)
+        ws["A20"] = "Pendapatan Bruto"; ws["B20"] = float(revenue_gross); ws["B20"].number_format = '"Rp "#,##0'
+        ws["A21"] = "PPh 22 (1,5%)"; ws["B21"] = float(pph22); ws["B21"].number_format = '"Rp "#,##0'
+        ws["A22"] = "Pendapatan Netto"; ws["B22"] = float(revenue_gross - pph22); ws["B22"].number_format = '"Rp "#,##0'
+
+        self._set_column_widths(ws)
+
+    # ─── Sheet 5: Riwayat Nota ────────────────────────────────────────────────
+
+    def _fill_riwayat_nota(self, ws, data: dict) -> None:
+        logger.info(f"Fill riwayat nota: {len(data.get('transactions', []))} transactions, {len(data.get('items_all', []))} items")
+        headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
+                   "Harga", "PPN", "Subtotal", "Total Nota", "Metode Bayar"]
         self._write_headers(ws, 1, headers)
 
-        today = date.today()
+        items_by_trx: Dict[str, List[dict]] = {}
+        for item in data.get("items_all", []):
+            tid = item.get("transaction_id", "")
+            items_by_trx.setdefault(tid, []).append(item)
+
         row = 2
-        tot_gross = tot_pph = tot_bersih = Decimal("0")
-        for n, r in enumerate(data["receivables"], 1):
-            amount = _d(r.get("amount"))
-            pph22  = (amount * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            bersih = amount - pph22
-            due_str = r.get("due_date", "")
-            terlambat = 0
-            if due_str and r.get("status") != "paid":
-                try:
-                    terlambat = max(0, (today - date.fromisoformat(due_str)).days)
-                except Exception:
-                    pass
+        n = 0
+        for trx in data.get("transactions", []):
+            tid = trx["id"]
+            del_date = trx.get("date", "")
+            sup_data = trx.get("suppliers") or {}
+            supplier = sup_data.get("name") if isinstance(sup_data, dict) else None
+            supplier = supplier or trx.get("nama_toko") or "Tanpa Supplier"
+            method = trx.get("payment_method", "tunai") or "tunai"
+            total_nota = float(_d(trx.get("total")))
 
-            tot_gross  += amount
-            tot_pph    += pph22
-            tot_bersih += bersih
+            trx_items = items_by_trx.get(tid, [])
 
-            ws.cell(row, 1, n)
-            ws.cell(row, 2, r.get("debtor_name", "?"))
-            ws.cell(row, 3, r.get("created_at", "")[:10]).number_format = "DD/MM/YYYY"
-            ws.cell(row, 4, due_str).number_format = "DD/MM/YYYY"
-            ws.cell(row, 5, float(amount)).number_format = '"Rp "#,##0'
-            ws.cell(row, 6, float(pph22)).number_format = '"Rp "#,##0'
-            ws.cell(row, 7, float(bersih)).number_format = '"Rp "#,##0'
-            ws.cell(row, 8, r.get("status", ""))
-            ws.cell(row, 9, terlambat)
-            self._alt_row(ws, row, 2)
-            row += 1
+            if not trx_items:
+                n += 1
+                ws.cell(row, 1, n)
+                ws.cell(row, 2, del_date)
+                ws.cell(row, 3, supplier)
+                ws.cell(row, 4, "(tanpa detail)")
+                ws.cell(row, 10, total_nota).number_format = '"Rp "#,##0'
+                ws.cell(row, 11, method)
+                self._alt_row(ws, row, 2)
+                row += 1
+                continue
 
-        self._write_total_row(ws, row, {
-            5: float(tot_gross), 6: float(tot_pph), 7: float(tot_bersih)
-        })
+            for item in trx_items:
+                n += 1
+                nama = item.get("product_name", "?")
+                qty = float(_d(item.get("qty")))
+                sat = item.get("unit", "pcs")
+                harga = float(_d(item.get("price")))
+                subtotal = float(_d(item.get("subtotal")) or (_d(item.get("qty")) * _d(item.get("price"))))
+                ppn = 0  # PPN dihitung hanya untuk PKP
+
+                ws.cell(row, 1, n)
+                ws.cell(row, 2, del_date)
+                ws.cell(row, 3, supplier)
+                ws.cell(row, 4, nama)
+                ws.cell(row, 5, qty)
+                ws.cell(row, 6, sat)
+                ws.cell(row, 7, harga).number_format = '"Rp "#,##0'
+                ws.cell(row, 8, ppn)
+                ws.cell(row, 9, subtotal).number_format = '"Rp "#,##0'
+                ws.cell(row, 10, total_nota).number_format = '"Rp "#,##0'
+                ws.cell(row, 11, method)
+                self._alt_row(ws, row, 2)
+                row += 1
+
+        if not data.get("transactions"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada riwayat nota bulan ini")
+
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
 
-    # ─── Sheet 6: Hutang ──────────────────────────────────────────────────────
+    # ─── Helpers ──────────────────────────────────────────────────────────────
 
-    def _fill_hutang(self, ws, data: dict) -> None:
-        print(f"Fill hutang: {len(data.get('payables', []))} rows")
-        if not data.get("payables"):
-            print("WARNING: No payable data to fill in Hutang!")
-        ws.delete_rows(1, ws.max_row)
-        headers = ["No", "Supplier", "Tanggal", "Jatuh Tempo",
-                   "Pokok", "PPh22", "PPN", "Total Bayar", "Status", "Terlambat (Hari)"]
-        self._write_headers(ws, 1, headers)
-
-        today = date.today()
-        row = 2
-        tot_pokok = tot_pph = tot_ppn = tot_bayar = Decimal("0")
-        for n, p in enumerate(data["payables"], 1):
-            amount = _d(p.get("amount"))
-            pph22  = _d(p.get("pph22_amount"))
-            ppn    = _d(p.get("ppn_amount"))
-            bayar  = amount + ppn - pph22
-            due_str = p.get("due_date", "")
-            terlambat = 0
-            if due_str and p.get("status") != "paid":
-                try:
-                    terlambat = max(0, (today - date.fromisoformat(due_str)).days)
-                except Exception:
-                    pass
-
-            tot_pokok  += amount
-            tot_pph    += pph22
-            tot_ppn    += ppn
-            tot_bayar  += bayar
-
-            ws.cell(row, 1, n)
-            ws.cell(row, 2, p.get("supplier_name", "?"))
-            ws.cell(row, 3, p.get("created_at", "")[:10]).number_format = "DD/MM/YYYY"
-            ws.cell(row, 4, due_str).number_format = "DD/MM/YYYY"
-            ws.cell(row, 5, float(amount)).number_format = '"Rp "#,##0'
-            ws.cell(row, 6, float(pph22)).number_format = '"Rp "#,##0'
-            ws.cell(row, 7, float(ppn)).number_format = '"Rp "#,##0'
-            ws.cell(row, 8, float(bayar)).number_format = '"Rp "#,##0'
-            ws.cell(row, 9, p.get("status", ""))
-            ws.cell(row, 10, terlambat)
-            self._alt_row(ws, row, 2)
-            row += 1
-
-        self._write_total_row(ws, row, {
-            5: float(tot_pokok), 6: float(tot_pph),
-            7: float(tot_ppn), 8: float(tot_bayar),
-        })
-        self._set_column_widths(ws)
-        ws.freeze_panes = "A2"
-
-    # ─── Styling helpers ──────────────────────────────────────────────────────
-
-    def _write_headers(self, ws, row: int, headers: List[str]) -> None:
+    def _write_headers(self, ws, row: int, headers: list) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
         fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         font = Font(bold=True, color="FFFFFF", size=10)
-        for col, h in enumerate(headers, 1):
-            c = ws.cell(row, col, h)
-            c.fill = fill
+        for i, h in enumerate(headers, 1):
+            c = ws.cell(row, i, h)
             c.font = font
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
+            c.fill = fill
+            c.alignment = Alignment(horizontal="center")
 
     def _apply_header_style(self, ws, row: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
         fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
-        font = Font(bold=True, color="FFFFFF")
+        font = Font(bold=True, color="FFFFFF", size=10)
         for cell in ws[row]:
-            if cell.value is not None:
-                cell.fill = fill
-                cell.font = font
-                cell.alignment = Alignment(horizontal="center")
+            cell.font = font
+            cell.fill = fill
+            cell.alignment = Alignment(horizontal="center")
 
-    def _alt_row(self, ws, row: int, start_row: int) -> None:
-        from openpyxl.styles import PatternFill
-        if (row - start_row) % 2 == 1:
+    def _alt_row(self, ws, row: int, min_col: int = 1) -> None:
+        if row % 2 == 0:
+            from openpyxl.styles import PatternFill
             fill = PatternFill("solid", fgColor=ALT_ROW_COLOR)
             for cell in ws[row]:
                 cell.fill = fill
 
-    def _write_total_row(self, ws, row: int, col_values: Dict[int, Optional[float]]) -> None:
+    def _write_total_row(self, ws, row: int, col_values: dict) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
         fill = PatternFill("solid", fgColor=TOTAL_FILL_COLOR)
         font = Font(bold=True)
@@ -752,7 +790,8 @@ class ExportService:
             c.font = font
             if val is not None:
                 c.value = val
-                c.number_format = '"Rp "#,##0'
+                if isinstance(val, (int, float)):
+                    c.number_format = '"Rp "#,##0'
 
     def _set_column_widths(self, ws) -> None:
         from openpyxl.utils import get_column_letter
@@ -820,6 +859,3 @@ class ExportService:
             ).execute()
         except Exception as e:
             logger.warning(f"upsert excel_files gagal: {e}")
-
-
-export_service = ExportService()

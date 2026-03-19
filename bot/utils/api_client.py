@@ -25,9 +25,14 @@ class APIError(Exception):
         try:
             resp_json = exc.response.json()
             raw = resp_json
+            # FastAPI HTTPException wraps payload in {"detail": {...}}
+            # Unwrap it so response_json contains the actual error dict
+            if "detail" in resp_json and isinstance(resp_json["detail"], dict):
+                resp_json = resp_json["detail"]
+                raw = resp_json
             msg = resp_json.get("error") or resp_json.get("detail") or str(exc)
             if isinstance(msg, dict):
-                msg = str(msg)
+                msg = msg.get("error") or str(msg)
         except Exception:
             msg = str(exc)
         return cls(message=str(msg), status_code=exc.response.status_code, raw_data=raw, response_json=resp_json)

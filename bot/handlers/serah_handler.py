@@ -449,10 +449,11 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 )
             except Exception:
                 await query.edit_message_text(
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah"),
-                        InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
-                    ]])
+                    f"❌ Gagal: Terjadi kesalahan saat memproses",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah")],
+                        [InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback")],
+                    ])
                 )
     else:
         await query.edit_message_text(
