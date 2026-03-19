@@ -320,9 +320,27 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         from utils.api_client import APIError
         if isinstance(e, APIError) and e.status_code in (401, 403): raise e
         logger.error(f"konfirmasi_serah error: {e}")
+
+        # Try to extract structured error from APIError
         raw = getattr(e, "raw_data", None)
-        if raw is not None:
+        detail = None
+        if raw and isinstance(raw, dict):
             detail = raw.get("detail") or raw
+        
+        # If detail is still not usable, try parsing the error message string
+        if not isinstance(detail, dict):
+            msg_str = str(e)
+            if "Stok tidak cukup" in msg_str:
+                # Try to parse as Python dict literal
+                import ast
+                try:
+                    detail = ast.literal_eval(msg_str)
+                except Exception:
+                    detail = {"error": "Stok tidak cukup"}
+            else:
+                detail = {"error": msg_str[:200]} if msg_str else None
+
+        if detail and isinstance(detail, dict):
             resp = {"success": False, "detail": detail}
         else:
             resp = None
@@ -356,32 +374,47 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
 
     elif resp and not resp.get("success"):
-        # HTTP 400 stok kurang — detail dalam resp
         detail = resp.get("detail") or resp.get("message", {})
-        if isinstance(detail, dict) and detail.get("error") == "Stok tidak cukup":
-            shortage = detail.get("details", [])
+
+        # Detect stock shortage — check both dict and string forms
+        is_stock_error = False
+        shortage = []
+        if isinstance(detail, dict):
+            err_key = detail.get("error", "")
+            if isinstance(err_key, str) and "Stok tidak cukup" in err_key:
+                is_stock_error = True
+                shortage = detail.get("details", [])
+        elif isinstance(detail, str) and "Stok tidak cukup" in detail:
+            is_stock_error = True
+
+        if is_stock_error and shortage:
             lines = [
                 "❌ *STOK TIDAK CUKUP*\n",
-                "Beberapa bahan tidak mencukupi untuk",
-                f"produksi hari ini\\:\n",
+                "Bahan tidak mencukupi untuk produksi hari ini:\n",
             ]
             for s in shortage[:5]:
                 name = _esc(str(s.get('ingredient', '?')))
                 unit = _esc(str(s.get('unit', '')))
                 needed = s.get('needed', 0)
                 available = s.get('available', 0)
-                shortage_val = s.get('shortage', 0)
-                # Format numbers nicely
-                needed_str = _esc(f"{needed:,.2f}".rstrip('0').rstrip('.'))
-                avail_str = _esc(f"{available:,.2f}".rstrip('0').rstrip('.'))
-                short_str = shortage_val if isinstance(shortage_val, str) else _esc(f"{shortage_val:,.2f}".rstrip('0').rstrip('.'))
+                short = s.get('shortage', 0)
+
+                # Format numbers — handle both string and numeric values
+                def _fmt_num(v):
+                    if isinstance(v, str):
+                        return _esc(v)
+                    try:
+                        return _esc(f"{float(v):,.2f}".rstrip('0').rstrip('.'))
+                    except Exception:
+                        return _esc(str(v))
+
                 lines.append(
                     f"• *{name}*\n"
-                    f"  Butuh: {needed_str} {unit}\n"
-                    f"  Stok: {avail_str} {unit}\n"
-                    f"  Kurang: {short_str} {unit}\n"
+                    f"  Butuh: {_fmt_num(needed)} {unit}\n"
+                    f"  Stok: {_fmt_num(available)} {unit}\n"
+                    f"  Kurang: {_fmt_num(short)}\n"
                 )
-            lines.append("💡 Silakan belanja dulu: /belanja")
+            lines.append("\n💡 Silakan belanja dulu: /belanja")
             await query.edit_message_text(
                 "\n".join(lines),
                 reply_markup=InlineKeyboardMarkup([[
@@ -390,16 +423,29 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 ]]),
                 parse_mode="MarkdownV2",
             )
+        elif is_stock_error:
+            await query.edit_message_text(
+                "❌ *Stok tidak cukup untuk produksi hari ini*\n\n"
+                "Silakan belanja bahan dulu: /belanja",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📝 Catat Belanja", callback_data="belanja"),
+                    InlineKeyboardButton("← Menu Utama",    callback_data="main_menu_callback"),
+                ]]),
+                parse_mode="MarkdownV2",
+            )
         else:
-            # Extract human-readable error message
+            # Generic error — extract human message
             if isinstance(detail, dict):
-                err_msg = detail.get("error") or detail.get("message") or "Terjadi kesalahan"
+                err_msg = str(detail.get("error") or detail.get("message") or "Terjadi kesalahan")
             elif isinstance(detail, str):
                 err_msg = detail
             else:
                 err_msg = "Terjadi kesalahan saat memproses"
+            # Remove any dict/json looking text
+            if err_msg.startswith("{") or err_msg.startswith("["):
+                err_msg = "Terjadi kesalahan saat memproses"
             await query.edit_message_text(
-                f"❌ *Gagal*\n\n{_esc(str(err_msg)[:200])}\n\nSilakan coba lagi\\.",
+                f"❌ *Gagal*\n\n{_esc(err_msg[:200])}\n\nSilakan coba lagi\\.",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah"),
                     InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
