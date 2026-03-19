@@ -1,9 +1,9 @@
 {
   "pages": {
-    "/(dashboard)/jadwal/page": [
+    "/(dashboard)/settings/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/jadwal/page.js"
+      "static/chunks/app/(dashboard)/settings/page.js"
     ],
     "/(dashboard)/layout": [
       "static/chunks/webpack.js",
@@ -15,40 +15,10 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
-    "/(dashboard)/jadwal/master/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/jadwal/master/page.js"
-    ],
-    "/(dashboard)/settings/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/settings/page.js"
-    ],
     "/(dashboard)/pembukuan/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/pembukuan/page.js"
-    ],
-    "/(dashboard)/pembukuan/[id]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/pembukuan/[id]/page.js"
-    ],
-    "/(dashboard)/mbg/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/mbg/page.js"
-    ],
-    "/(dashboard)/harga/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/harga/page.js"
-    ],
-    "/(dashboard)/stok/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/stok/page.js"
     ]
   }
 }
