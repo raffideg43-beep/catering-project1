@@ -109,6 +109,23 @@ def _get_monday(week_start: Optional[str], default_next: bool = False) -> date:
     return today - timedelta(days=today.weekday())
 
 
+def _fetch_week_menus(tenant_id: str, monday: date) -> Dict[int, str]:
+    """Fetch menu names for a week, keyed by day_of_week (1=Senin)."""
+    supabase = get_supabase()
+    try:
+        resp = (
+            supabase.table("mbg_weekly_menus")
+            .select("day_of_week, menu_name")
+            .eq("tenant_id", tenant_id)
+            .eq("week_start", monday.isoformat())
+            .execute()
+        )
+        menus = getattr(resp, "data", None) or []
+        return {m["day_of_week"]: m.get("menu_name", "") for m in menus if m.get("menu_name")}
+    except Exception:
+        return {}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GET /schedules/master — Master Schedule + School Timings
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -276,6 +293,9 @@ def load_master_timeline(
     if not master:
         raise HTTPException(404, "Master schedule belum di-setup. Silakan setup dulu.")
 
+    # Fetch menus for this week
+    menus = _fetch_week_menus(current_user.tenant_id, monday)
+
     prep_start = master["prep_start_time"]
     cook_start = master["cook_start_time"]
     cook_per_100 = master["cook_minutes_per_100"]
@@ -305,17 +325,21 @@ def load_master_timeline(
         cook_duration = max(30, int((total_portions / 100) * cook_per_100))
         cook_end = _time_add(cook_start, cook_duration)
 
+        # Menu for this day (day_of_week: 1=Mon, 2=Tue...)
+        day_menu = menus.get(i + 1, "")
+        menu_label = f" — Menu: {day_menu}" if day_menu else ""
+
         timeline = [
             {
                 "time": prep_start,
-                "activity": "Persiapan bahan",
+                "activity": f"Persiapan bahan{menu_label}",
                 "school_id": None,
                 "school_name": None,
                 "type": "prep",
             },
             {
                 "time": cook_start,
-                "activity": f"Mulai masak ({total_portions:,} porsi)",
+                "activity": f"Mulai masak ({total_portions:,} porsi){menu_label}",
                 "school_id": None,
                 "school_name": None,
                 "type": "cook",
@@ -357,6 +381,7 @@ def load_master_timeline(
             "timeline": timeline,
             "total_portions": total_portions,
             "cook_duration_minutes": cook_duration,
+            "menu_name": day_menu or None,
             "ai_notes": None,
         })
 
@@ -534,6 +559,9 @@ def _load_master_fallback(current_user, monday: date) -> Dict[str, Any]:
         cook_per_100 = master["cook_minutes_per_100"]
         schools = master["schools"]
 
+        # Fetch menus
+        menus = _fetch_week_menus(current_user.tenant_id, monday)
+
         days = []
         for i in range(5):
             d = monday + timedelta(days=i)
@@ -553,9 +581,12 @@ def _load_master_fallback(current_user, monday: date) -> Dict[str, Any]:
             cook_duration = max(30, int((total_portions / 100) * cook_per_100))
             cook_end = _time_add(cook_start, cook_duration)
 
+            day_menu = menus.get(i + 1, "")
+            menu_label = f" — Menu: {day_menu}" if day_menu else ""
+
             timeline = [
-                {"time": prep_start, "activity": "Persiapan bahan", "school_id": None, "school_name": None, "type": "prep"},
-                {"time": cook_start, "activity": f"Mulai masak ({total_portions:,} porsi)", "school_id": None, "school_name": None, "type": "cook"},
+                {"time": prep_start, "activity": f"Persiapan bahan{menu_label}", "school_id": None, "school_name": None, "type": "prep"},
+                {"time": cook_start, "activity": f"Mulai masak ({total_portions:,} porsi){menu_label}", "school_id": None, "school_name": None, "type": "cook"},
                 {"time": cook_end, "activity": "Selesai masak", "school_id": None, "school_name": None, "type": "cook_done"},
             ]
             for s in sorted(schools, key=lambda x: x["depart_time"]):
@@ -567,7 +598,9 @@ def _load_master_fallback(current_user, monday: date) -> Dict[str, Any]:
                 "date": d_str, "day_name": DAY_NAMES[i],
                 "is_holiday": False, "holiday_name": None,
                 "timeline": timeline, "total_portions": total_portions,
-                "cook_duration_minutes": cook_duration, "ai_notes": None,
+                "cook_duration_minutes": cook_duration,
+                "menu_name": day_menu or None,
+                "ai_notes": None,
             })
 
         return {

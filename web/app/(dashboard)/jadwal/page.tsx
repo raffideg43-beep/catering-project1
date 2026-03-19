@@ -22,6 +22,7 @@ interface DaySchedule {
     timeline: TimelineEvent[];
     total_portions: number;
     cook_duration_minutes?: number;
+    menu_name?: string | null;
     ai_notes?: string | null;
 }
 
@@ -306,6 +307,11 @@ export default function JadwalPage() {
                                     <span className="font-bold text-gray-800">{day.day_name}</span>
                                     <span className="text-gray-500 text-sm ml-2">{day.date}</span>
                                     {day.is_holiday && <span className="ml-2 text-red-600 text-sm font-medium">🎌 {day.holiday_name}</span>}
+                                    {day.menu_name && (
+                                        <span className="ml-2 bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                                            🍱 {day.menu_name}
+                                        </span>
+                                    )}
                                 </div>
                                 {!day.is_holiday && day.total_portions > 0 && (
                                     <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full text-sm">
