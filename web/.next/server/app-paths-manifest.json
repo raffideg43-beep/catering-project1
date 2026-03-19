@@ -1,4 +1,4 @@
 {
-  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
+  "/(dashboard)/page": "app/(dashboard)/page.js",
   "/(dashboard)/pembukuan/page": "app/(dashboard)/pembukuan/page.js"
 }

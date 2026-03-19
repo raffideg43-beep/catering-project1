@@ -600,6 +600,9 @@ async def download_excel(
     file_url = excel_row.get("file_url")
 
     if status == "ready" and file_url:
+        import time
+        buster = int(time.time())
+        file_url = f"{file_url}?t={buster}" if "?" not in file_url else f"{file_url}&t={buster}"
         return {"success": True, "data": {"file_url": file_url, "status": "ready"}}
 
     # Generate (sync — user menunggu)
@@ -613,7 +616,7 @@ async def download_excel(
     return {
         "success": True,
         "data": {
-            "file_url": file_url,
+            "file_url": f"{file_url}?t={int(datetime.now().timestamp())}",
             "status": "ready",
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },

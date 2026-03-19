@@ -375,17 +375,25 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     elif resp and not resp.get("success"):
         detail = resp.get("detail") or resp.get("message", {})
-
-        # Detect stock shortage — check both dict and string forms
-        is_stock_error = False
+        detail_str = str(detail)
+        
+        # Detect stock shortage no matter the nesting
+        is_stock_error = "Stok tidak cukup" in detail_str
         shortage = []
-        if isinstance(detail, dict):
-            err_key = detail.get("error", "")
-            if isinstance(err_key, str) and "Stok tidak cukup" in err_key:
-                is_stock_error = True
-                shortage = detail.get("details", [])
-        elif isinstance(detail, str) and "Stok tidak cukup" in detail:
-            is_stock_error = True
+
+        if is_stock_error:
+            # Try to get shortage details from dictionary
+            if isinstance(detail, dict) and "details" in detail:
+                 shortage = detail["details"]
+            elif isinstance(detail, dict) and "detail" in detail and isinstance(detail["detail"], dict):
+                 shortage = detail["detail"].get("details", [])
+            elif isinstance(detail, str):
+                 try:
+                     import ast
+                     parsed_dict = ast.literal_eval(detail)
+                     shortage = parsed_dict.get("details") or parsed_dict.get("detail", {}).get("details", [])
+                 except:
+                     pass
 
         if is_stock_error and shortage:
             lines = [
@@ -399,12 +407,16 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 available = s.get('available', 0)
                 short = s.get('shortage', 0)
 
-                # Format numbers — handle both string and numeric values
+                # Format numbers nicely
                 def _fmt_num(v):
                     if isinstance(v, str):
-                        return _esc(v)
+                        # if it's already a formatted string like "831.20 kg", just keep the digits/decimals
+                        # but it's easier to just escape it
+                        return _esc(v.split(' ')[0])
                     try:
-                        return _esc(f"{float(v):,.2f}".rstrip('0').rstrip('.'))
+                        val = float(v)
+                        sval = f"{val:,.2f}".rstrip('0').rstrip('.')
+                        return _esc(sval)
                     except Exception:
                         return _esc(str(v))
 
@@ -412,21 +424,33 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     f"• *{name}*\n"
                     f"  Butuh: {_fmt_num(needed)} {unit}\n"
                     f"  Stok: {_fmt_num(available)} {unit}\n"
-                    f"  Kurang: {_fmt_num(short)}\n"
+                    f"  Kurang: {_fmt_num(short)} {unit}\n"
                 )
             lines.append("\n💡 Silakan belanja dulu: /belanja")
-            await query.edit_message_text(
-                "\n".join(lines),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📝 Catat Belanja", callback_data="belanja"),
-                    InlineKeyboardButton("← Menu Utama",    callback_data="main_menu_callback"),
-                ]]),
-                parse_mode="MarkdownV2",
-            )
+            
+            try:
+                await query.edit_message_text(
+                    "\n".join(lines),
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📝 Catat Belanja", callback_data="belanja"),
+                        InlineKeyboardButton("← Menu Utama",    callback_data="main_menu_callback"),
+                    ]]),
+                    parse_mode="MarkdownV2",
+                )
+            except Exception as e:
+                logger.error(f"Failed to send formatted stock error: {e}")
+                # Fallback without markdown
+                await query.edit_message_text(
+                    "❌ Stok tidak cukup untuk produksi hari ini.\nSilakan belanja bahan dulu: /belanja",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📝 Catat Belanja", callback_data="belanja"),
+                        InlineKeyboardButton("← Menu Utama",    callback_data="main_menu_callback"),
+                    ]])
+                )
         elif is_stock_error:
             await query.edit_message_text(
                 "❌ *Stok tidak cukup untuk produksi hari ini*\n\n"
-                "Silakan belanja bahan dulu: /belanja",
+                "Silakan belanja bahan dulu /belanja",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("📝 Catat Belanja", callback_data="belanja"),
                     InlineKeyboardButton("← Menu Utama",    callback_data="main_menu_callback"),
@@ -436,22 +460,44 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         else:
             # Generic error — extract human message
             if isinstance(detail, dict):
-                err_msg = str(detail.get("error") or detail.get("message") or "Terjadi kesalahan")
+                err_msg = str(detail.get("error") or detail.get("message") or detail.get("detail") or "Terjadi kesalahan")
             elif isinstance(detail, str):
                 err_msg = detail
             else:
-                err_msg = "Terjadi kesalahan saat memproses"
+                err_msg = str(detail)
+            
             # Remove any dict/json looking text
             if err_msg.startswith("{") or err_msg.startswith("["):
-                err_msg = "Terjadi kesalahan saat memproses"
-            await query.edit_message_text(
-                f"❌ *Gagal*\n\n{_esc(err_msg[:200])}\n\nSilakan coba lagi\\.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah"),
-                    InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
-                ]]),
-                parse_mode="MarkdownV2",
-            )
+                # Try simple dict extraction one last time
+                try:
+                    import ast
+                    d = ast.literal_eval(err_msg)
+                    err_msg = d.get("error") or d.get("detail") or "Terjadi kesalahan saat memproses"
+                    if isinstance(err_msg, dict):
+                         err_msg = err_msg.get("error") or "Terjadi kesalahan saat memproses"
+                except:
+                    err_msg = "Terjadi kesalahan saat memproses"
+            
+            if len(str(err_msg)) > 200:
+                err_msg = str(err_msg)[:197] + "..."
+                
+            try:
+                await query.edit_message_text(
+                    f"❌ *Gagal*\n\n{_esc(str(err_msg))}\n\nSilakan coba lagi\\.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah"),
+                        InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+                    ]]),
+                    parse_mode="MarkdownV2",
+                )
+            except Exception:
+                await query.edit_message_text(
+                    f"❌ Gagal\n\n{str(err_msg)}\n\nSilakan coba lagi.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔄 Coba Lagi", callback_data="retry_serah"),
+                        InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+                    ]])
+                )
     else:
         await query.edit_message_text(
             "❌ *Gagal koneksi ke server*\n\nSilakan coba lagi nanti\\.",

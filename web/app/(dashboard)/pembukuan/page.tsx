@@ -110,23 +110,6 @@ export default function PembukuanPage() {
         }
     };
 
-    const handleRegenerateExcel = async () => {
-        if (!confirm("Generate ulang laporan Excel untuk bulan ini?")) return;
-        setExcelLoading(true);
-        try {
-            const r = await apiPost(`/reports/excel/regenerate?year=${tahun}&month=${bulan}`);
-            if (r?.data?.file_url) {
-                alert("Excel berhasil diperbarui!");
-                fetchData(); // refresh status
-                window.open(r.data.file_url, "_blank");
-            }
-        } catch {
-            alert("Gagal memperbarui Excel.");
-        } finally {
-            setExcelLoading(false);
-        }
-    };
-
     const handleKonfirmasi = async (id: string) => {
         try {
             await apiPost(`/transactions/${id}/confirm`);
@@ -142,22 +125,13 @@ export default function PembukuanPage() {
                 title="Pembukuan"
                 subtitle={`${MONTHS_FULL[bulan]} ${tahun}`}
                 actions={
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleRegenerateExcel}
-                            disabled={excelLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 disabled:opacity-60 transition-colors"
-                        >
-                            {excelLoading ? "⏳" : "🔄 Perbarui Excel"}
-                        </button>
-                        <button
-                            onClick={handleExcel}
-                            disabled={excelLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-                        >
-                            {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
-                        </button>
-                    </div>
+                    <button
+                        onClick={handleExcel}
+                        disabled={excelLoading}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    >
+                        {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
+                    </button>
                 }
             />
 

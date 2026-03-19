@@ -1,9 +1,9 @@
 {
   "pages": {
-    "/(dashboard)/settings/page": [
+    "/(dashboard)/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/settings/page.js"
+      "static/chunks/app/(dashboard)/page.js"
     ],
     "/(dashboard)/layout": [
       "static/chunks/webpack.js",
