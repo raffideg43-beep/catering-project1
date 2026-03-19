@@ -39,14 +39,18 @@ async def http_exception_handler(
         "HTTP %d on %s %s: %s",
         exc.status_code, request.method, request.url.path, exc.detail,
     )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "success": False,
-            "error": exc.detail,
-            "status_code": exc.status_code,
-        },
-    )
+    
+    content = {
+        "success": False,
+        "status_code": exc.status_code,
+    }
+    
+    if isinstance(exc.detail, dict):
+        content.update(exc.detail)
+    else:
+        content["error"] = str(exc.detail)
+        
+    return JSONResponse(status_code=exc.status_code, content=content)
 
 
 async def general_exception_handler(

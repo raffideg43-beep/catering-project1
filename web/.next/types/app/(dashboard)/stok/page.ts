@@ -1,8 +1,8 @@
-// File: C:\folder fix\web\app\(dashboard)\pembukuan\page.tsx
-import * as entry from '../../../../../app/(dashboard)/pembukuan/page.js'
+// File: C:\folder fix\web\app\(dashboard)\stok\page.tsx
+import * as entry from '../../../../../app/(dashboard)/stok/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
-type TEntry = typeof import('../../../../../app/(dashboard)/pembukuan/page.js')
+type TEntry = typeof import('../../../../../app/(dashboard)/stok/page.js')
 
 // Check that the entry is a valid entry
 checkFields<Diff<{

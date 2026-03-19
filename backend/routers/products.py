@@ -163,7 +163,11 @@ def update_product(
     if body.sell_price is not None:
         update_data["sell_price"] = float(body.sell_price)
     if body.stock_min is not None:
-        update_data["stock_min"] = float(body.stock_min)
+        # Fetch the product to get its conversion factor
+        prod_resp = supabase.table("products").select("conversion_factor").eq("id", product_id).single().execute()
+        prod = getattr(prod_resp, "data", None) or {}
+        factor = float(prod.get("conversion_factor") or 1)
+        update_data["stock_min"] = float(body.stock_min) * factor
 
     response = (
         supabase.table("products")
@@ -431,7 +435,7 @@ def adjust_stock(
     # Get current product
     product_resp = (
         supabase.table("products")
-        .select("stock_qty")
+        .select("stock_qty, conversion_factor")
         .eq("id", product_id)
         .eq("tenant_id", current_user.tenant_id)
         .single()
@@ -442,20 +446,25 @@ def adjust_stock(
     if not product_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
+    factor = float(product_data.get("conversion_factor") or 1)
+    # The input body.change_qty is assumed to be in display unit (e.g., user inputs 5 kg)
+    # Convert it to base unit before adding to existing base unit stock
+    base_change_qty = Decimal(str(body.change_qty)) * Decimal(str(factor))
+
     current_qty = Decimal(str(product_data["stock_qty"]))
-    new_qty = current_qty + body.change_qty
+    new_qty = current_qty + base_change_qty
     if new_qty < 0:
         new_qty = Decimal("0.000")
 
-    # Update product stock
+    # Update product stock (in base units)
     supabase.table("products").update({"stock_qty": float(new_qty)}).eq("id", product_id).execute()
 
-    # Insert stock history
+    # Insert stock history (in base units)
     supabase.table("stock_history").insert(
         {
             "tenant_id": current_user.tenant_id,
             "product_id": product_id,
-            "change_qty": float(body.change_qty),
+            "change_qty": float(base_change_qty),
             "balance_after": float(new_qty),
             "reason": body.reason,
             "notes": body.notes,
@@ -591,7 +600,7 @@ def adjust_stock_manual(
     # Ambil produk saat ini
     prod_resp = (
         supabase.table("products")
-        .select("id, name, stock_qty, unit")
+        .select("id, name, stock_qty, unit, conversion_factor")
         .eq("id", product_id)
         .eq("tenant_id", tid)
         .single()
@@ -601,19 +610,26 @@ def adjust_stock_manual(
     if not prod:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produk tidak ditemukan")
 
-    old_qty = Decimal(str(prod["stock_qty"] or 0))
-    new_qty = Decimal(str(body.new_qty))
-    delta = new_qty - old_qty
+    factor = float(prod.get("conversion_factor") or 1)
 
-    # Update stok produk
-    supabase.table("products").update({"stock_qty": float(new_qty)}).eq("id", product_id).execute()
+    # old_qty in db is in base units
+    old_qty_base = Decimal(str(prod["stock_qty"] or 0))
+    # new_qty from frontend is in display units (e.g., 105 kg)
+    new_qty_display = Decimal(str(body.new_qty))
+    # convert new_qty to base units
+    new_qty_base = new_qty_display * Decimal(str(factor))
+    
+    delta_base = new_qty_base - old_qty_base
 
-    # Insert stock_history
+    # Update stok produk (in base units)
+    supabase.table("products").update({"stock_qty": float(new_qty_base)}).eq("id", product_id).execute()
+
+    # Insert stock_history (in base units)
     supabase.table("stock_history").insert({
         "tenant_id": tid,
         "product_id": product_id,
-        "change_qty": float(delta),
-        "balance_after": float(new_qty),
+        "change_qty": float(delta_base),
+        "balance_after": float(new_qty_base),
         "reason": "adjustment",
         "notes": f"Koreksi manual: {body.reason}" + (f". {body.notes}" if body.notes else ""),
     }).execute()
@@ -626,8 +642,8 @@ def adjust_stock_manual(
             "action": "stock_adjustment",
             "resource": "products",
             "resource_id": product_id,
-            "old_data": {"stock_qty": float(old_qty)},
-            "new_data": {"stock_qty": float(new_qty), "delta": float(delta), "reason": body.reason},
+            "old_data": {"stock_qty": float(old_qty_base)},
+            "new_data": {"stock_qty": float(new_qty_base), "delta": float(delta_base), "reason": body.reason},
         }).execute()
     except Exception:
         pass  # audit_log non-fatal
@@ -638,8 +654,8 @@ def adjust_stock_manual(
             "product_id": product_id,
             "name": prod["name"],
             "unit": prod["unit"],
-            "old_qty": float(old_qty),
-            "new_qty": float(new_qty),
-            "delta": float(delta),
+            "old_qty": float(old_qty_base / Decimal(str(factor))),
+            "new_qty": float(new_qty_display),
+            "delta": float(delta_base / Decimal(str(factor))),
         },
     }

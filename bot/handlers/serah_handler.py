@@ -352,10 +352,18 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         if isinstance(e, APIError) and e.status_code == 400:
             error_data = getattr(e, "response_json", {})
-            if (isinstance(error_data, dict)
-                and error_data.get("error") == "Stok tidak cukup"
-                and "details" in error_data):
-                
+            
+            # Unwrapping rekursif sederhana jika "error" sendiri adalah dict (double-wrap)
+            if isinstance(error_data, dict) and isinstance(error_data.get("error"), dict):
+                error_data = error_data["error"]
+
+            is_stock_shortage = (
+                isinstance(error_data, dict) 
+                and (error_data.get("error") == "Stok tidak cukup" or "details" in error_data)
+                and isinstance(error_data.get("details"), list)
+            )
+
+            if is_stock_shortage:
                 details = error_data["details"]
                 lines = []
                 
@@ -389,9 +397,9 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     sd_str = f"{shortage_display:.2f}".rstrip('0').rstrip('.')
                     
                     lines.append(
-                        f"• {_esc(ingredient)}\n"
-                        f"  Butuh : {_esc(nd_str)} {_esc(display_unit)}\n"
-                        f"  Stok  : {_esc(ad_str)} {_esc(display_unit)}\n"
+                        f"• {_esc(str(ingredient).capitalize())}\n"
+                        f"  Butuh: {_esc(nd_str)} {_esc(display_unit)}\n"
+                        f"  Stok : {_esc(ad_str)} {_esc(display_unit)}\n"
                         f"  Kurang: {_esc(sd_str)} {_esc(display_unit)}"
                     )
                 
@@ -400,7 +408,7 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     f"❌ *STOK TIDAK CUKUP*\n\n"
                     f"Bahan tidak mencukupi untuk produksi:\n\n"
                     f"{detail_text}\n\n"
-                    f"💡 Silakan belanja dulu: /belanja"
+                    f"💡 Belanja dulu: /belanja"
                 )
             else:
                 raw_err = error_data.get('error', 'Unknown error') if isinstance(error_data, dict) else 'Unknown error'

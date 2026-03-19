@@ -118,6 +118,8 @@ class ExportService:
         else:
             last = date(year, month + 1, 1) - timedelta(days=1)
 
+        print(f"DEBUG: Fetching data for {year}-{month} (Range: {first} to {last}), tenant={tenant_id}")
+
         # Tenant info
         t_resp = (
             supabase.table("tenants")
@@ -174,6 +176,9 @@ class ExportService:
             .execute()
         )
         transactions = getattr(trx_resp, "data", None) or []
+        print(f"DEBUG: Found {len(transactions)} confirmed transactions")
+        if transactions:
+            print(f"DEBUG: Sample Transaction: {transactions[0]['date']} - {transactions[0].get('total')}")
 
         # Items per transaction
         trx_ids = [t["id"] for t in transactions]
@@ -816,16 +821,14 @@ class ExportService:
         bucket = "nota-photos"
 
         try:
-            # Coba hapus dulu (overwrite)
-            try:
-                supabase.storage.from_(bucket).remove([storage_path])
-            except Exception:
-                pass
-
+            # Use upsert: true to overwrite if exists
             supabase.storage.from_(bucket).upload(
                 path=storage_path,
                 file=content,
-                file_options={"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+                file_options={
+                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "upsert": "true"
+                },
             )
             url = supabase.storage.from_(bucket).get_public_url(storage_path)
             return url if isinstance(url, str) else str(url)

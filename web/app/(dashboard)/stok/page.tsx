@@ -146,7 +146,7 @@ export default function StokPage() {
 
     const openKoreksi = (p: Product) => {
         setKoreksiModal({ product: p });
-        setKoreksiNewQty(String(p.stock_qty));
+        setKoreksiNewQty(String(p.stock_qty_display ?? p.stock_qty));
         setKoreksiReason("");
         setKoreksiNotes("");
         setKoreksiConfirm(false);
@@ -177,26 +177,32 @@ export default function StokPage() {
     );
 
     const statusOrder = (p: Product) => {
-        if (p.stock_qty === 0) return 0;
-        if (p.stock_qty <= p.stock_min) return 1;
-        if (p.stock_qty <= p.stock_min * 2) return 2;
+        const qty = p.stock_qty_display ?? p.stock_qty;
+        const min = p.stock_min_display ?? p.stock_min;
+        if (qty === 0) return 0;
+        if (qty <= min) return 1;
+        if (qty <= min * 2) return 2;
         return 3;
     };
 
     const sorted = [...filtered].sort((a, b) => {
         if (sortCol === "status") return sortAsc ? statusOrder(a) - statusOrder(b) : statusOrder(b) - statusOrder(a);
         if (sortCol === "name") return sortAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-        if (sortCol === "stock_qty") return sortAsc ? a.stock_qty - b.stock_qty : b.stock_qty - a.stock_qty;
+        if (sortCol === "stock_qty") {
+            const aq = a.stock_qty_display ?? a.stock_qty;
+            const bq = b.stock_qty_display ?? b.stock_qty;
+            return sortAsc ? aq - bq : bq - aq;
+        }
         if (sortCol === "nilai") {
-            const av = a.stock_qty * parseFloat(a.hpp || "0");
-            const bv = b.stock_qty * parseFloat(b.hpp || "0");
+            const av = (a.stock_qty_display ?? a.stock_qty) * parseFloat(a.hpp || "0");
+            const bv = (b.stock_qty_display ?? b.stock_qty) * parseFloat(b.hpp || "0");
             return sortAsc ? av - bv : bv - av;
         }
         return 0;
     });
 
-    const lowCount = items.filter(p => p.stock_qty <= p.stock_min).length;
-    const totalNilai = items.reduce((s, p) => s + p.stock_qty * parseFloat(p.hpp || "0"), 0);
+    const lowCount = items.filter(p => (p.stock_qty_display ?? p.stock_qty) <= (p.stock_min_display ?? p.stock_min)).length;
+    const totalNilai = items.reduce((s, p) => s + (p.stock_qty_display ?? p.stock_qty) * parseFloat(p.hpp || "0"), 0);
 
     const handleSort = (col: typeof sortCol) => {
         if (sortCol === col) setSortAsc(a => !a);
@@ -226,11 +232,15 @@ export default function StokPage() {
 
     const exportCsv = () => {
         const rows = [["Nama", "Kategori", "Satuan", "HPP", "Stok Saat Ini", "Stok Min", "Nilai Stok"]];
-        sorted.forEach(p => rows.push([
-            p.name, p.category ?? "", p.unit,
-            p.hpp, String(p.stock_qty), String(p.stock_min),
-            String(Math.round(p.stock_qty * parseFloat(p.hpp || "0"))),
-        ]));
+        sorted.forEach(p => {
+            const qty = p.stock_qty_display ?? p.stock_qty;
+            const min = p.stock_min_display ?? p.stock_min;
+            rows.push([
+                p.name, p.category ?? "", p.display_unit || p.unit,
+                p.hpp, String(qty), String(min),
+                String(Math.round(qty * parseFloat(p.hpp || "0"))),
+            ]);
+        });
         const csv = rows.map(r => r.join(",")).join("\n");
         const a = document.createElement("a");
         a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
@@ -252,7 +262,7 @@ export default function StokPage() {
     };
 
     const newQtyNum = parseFloat(koreksiNewQty) || 0;
-    const deltaNum = koreksiModal ? newQtyNum - koreksiModal.product.stock_qty : 0;
+    const deltaNum = koreksiModal ? newQtyNum - (koreksiModal.product.stock_qty_display ?? koreksiModal.product.stock_qty) : 0;
 
     return (
         <div className="space-y-5">
@@ -278,7 +288,7 @@ export default function StokPage() {
                 <StatCard title="Total Item" value={`${items.length} item`} icon="📦" />
                 <StatCard title="Stok Menipis" value={`${lowCount} item`} icon="⚠️" />
                 <StatCard title="Nilai Total" value={formatRp(totalNilai)} icon="💰" />
-                <StatCard title="Item Aktif" value={`${items.filter(p => p.stock_qty > 0).length} item`} icon="✅" />
+                <StatCard title="Item Aktif" value={`${items.filter(p => (p.stock_qty_display ?? p.stock_qty) > 0).length} item`} icon="✅" />
             </div>
 
             {/* ═══ PROYEKSI STOK ════════════════════════════════════════ */}
@@ -447,8 +457,9 @@ export default function StokPage() {
                             </thead>
                             <tbody>
                                 {sorted.map((p, i) => {
-                                    const nilai = p.stock_qty * parseFloat(p.hpp || "0");
-                                    const st = getStockStatus(p.stock_qty, p.stock_min);
+                                    const qty = p.stock_qty_display ?? p.stock_qty;
+                                    const nilai = qty * parseFloat(p.hpp || "0");
+                                    const st = getStockStatus(qty, p.stock_min_display ?? p.stock_min);
                                     return (
                                         <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                             <td className="px-4 py-2.5">
@@ -456,9 +467,9 @@ export default function StokPage() {
                                                     className="font-medium text-blue-700 hover:underline text-left">{p.name}</button>
                                             </td>
                                             <td className="px-4 py-2.5 text-gray-500 text-xs">{p.category || "—"}</td>
-                                            <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
+                                            <td className="px-4 py-2.5 text-gray-500">{p.display_unit || p.unit}</td>
                                             <td className="px-4 py-2.5 text-right">{formatRp(p.hpp)}</td>
-                                            <td className="px-4 py-2.5 text-right font-semibold">{p.stock_qty.toLocaleString("id-ID")}</td>
+                                            <td className="px-4 py-2.5 text-right font-semibold">{(p.stock_qty_display ?? p.stock_qty).toLocaleString("id-ID")}</td>
                                             <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">
                                                 {editingMinStockId === p.id ? (
                                                     <div className="flex items-center justify-end gap-2">
@@ -474,8 +485,8 @@ export default function StokPage() {
                                                         <button onClick={() => setEditingMinStockId(null)} className="text-gray-400 hover:text-red-500 text-lg">✕</button>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex items-center justify-end gap-2 group cursor-pointer" onClick={() => { setEditingMinStockId(p.id); setEditMinStockValue(String(p.stock_min)); }}>
-                                                        <span>{p.stock_min.toLocaleString("id-ID")}</span>
+                                                    <div className="flex items-center justify-end gap-2 group cursor-pointer" onClick={() => { setEditingMinStockId(p.id); setEditMinStockValue(String(p.stock_min_display ?? p.stock_min)); }}>
+                                                        <span>{(p.stock_min_display ?? p.stock_min).toLocaleString("id-ID")}</span>
                                                         <span className="text-gray-300 group-hover:text-blue-500 transition-colors">✏️</span>
                                                     </div>
                                                 )}
@@ -593,7 +604,7 @@ export default function StokPage() {
                         <div className="bg-blue-50 rounded-lg p-3 text-sm">
                             <span className="text-blue-700">Stok sistem saat ini: </span>
                             <span className="font-bold text-blue-900">
-                                {koreksiModal.product.stock_qty.toLocaleString("id-ID")} {koreksiModal.product.unit}
+                                {(koreksiModal.product.stock_qty_display ?? koreksiModal.product.stock_qty).toLocaleString("id-ID")} {koreksiModal.product.display_unit || koreksiModal.product.unit}
                             </span>
                         </div>
 
