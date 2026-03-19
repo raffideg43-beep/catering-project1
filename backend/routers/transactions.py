@@ -217,10 +217,21 @@ async def confirm_transaction(
                     "hpp": str(item.get("price"))
                 }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
 
+            # Get conversion factor
+            prod_resp = (
+                supabase.table("products")
+                .select("conversion_factor")
+                .eq("id", product_id)
+                .single()
+                .execute()
+            )
+            factor = float((getattr(prod_resp, "data", None) or {}).get("conversion_factor") or 1)
+            qty_base = float(qty) * factor
+
             # Stok KELUAR (pembelian bahan = stok masuk) → delta positif
             supabase.rpc("increment_stock", {
                 "p_product_id": product_id,
-                "p_delta": float(qty),
+                "p_delta": qty_base,
                 "p_tenant_id": current_user.tenant_id,
             }).execute()
 
@@ -238,7 +249,7 @@ async def confirm_transaction(
                 "tenant_id": current_user.tenant_id,
                 "product_id": product_id,
                 "transaction_id": trx_id,
-                "change_qty": str(qty),
+                "change_qty": str(qty_base),
                 "balance_after": str(balance),
                 "reason": "purchase",
                 "notes": f"Konfirmasi nota {trx.get('ref_number', '')}",
@@ -917,9 +928,20 @@ async def create_manual_transaction(
                     "hpp": str(harga)
                 }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
 
+                # Get conversion factor
+                prod_resp = (
+                    supabase.table("products")
+                    .select("conversion_factor")
+                    .eq("id", product_id)
+                    .single()
+                    .execute()
+                )
+                factor = float((getattr(prod_resp, "data", None) or {}).get("conversion_factor") or 1)
+                qty_base = float(qty) * factor
+
                 supabase.rpc("increment_stock", {
                     "p_product_id": product_id,
-                    "p_delta": float(qty),
+                    "p_delta": qty_base,
                     "p_tenant_id": current_user.tenant_id,
                 }).execute()
                 bal_resp = (
@@ -934,7 +956,7 @@ async def create_manual_transaction(
                     "tenant_id": current_user.tenant_id,
                     "product_id": product_id,
                     "transaction_id": trx_id,
-                    "change_qty": str(qty),
+                    "change_qty": str(qty_base),
                     "balance_after": str(balance),
                     "reason": "purchase",
                     "notes": f"Manual: {supplier_name or 'tanpa supplier'}",

@@ -38,6 +38,19 @@ class AliasService:
         Return dict:
           {product_id, product_name, confidence, source, needs_confirmation}
         """
+        # ─── Langkah 0: Cek product utama (exact / case-insensitive) via memory ───
+        products = self._get_products(tenant_id, supabase)
+        for p in products:
+            if p["name"].lower() == nama_item.lower():
+                logger.info(f"Main product match: '{nama_item}' → '{p['name']}'")
+                return {
+                    "product_id": p["id"],
+                    "product_name": p["name"],
+                    "confidence": 1.0,
+                    "source": "exact_match",
+                    "needs_confirmation": False,
+                }
+
         # ─── Langkah 1: Cek product_aliases (DB) ───
         alias_resp = (
             supabase.table("product_aliases")
@@ -61,7 +74,6 @@ class AliasService:
             }
 
         # ─── Langkah 2: AI matching via Gemini ───
-        products = self._get_products(tenant_id, supabase)
         if not products:
             return self._unresolved(nama_item)
 
