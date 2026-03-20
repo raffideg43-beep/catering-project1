@@ -738,6 +738,82 @@ async def create_bulk_delivery(
     }
 
 
+# ─── GET /mbg/deliveries/monthly ─────────────────────────────────────────────
+
+@delivery_router.get("/monthly", response_model=Dict[str, Any])
+def get_monthly_deliveries(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Get all delivery summaries for a given month in one call."""
+    from calendar import monthrange
+    supabase = get_supabase()
+    tenant_id = current_user.tenant_id
+
+    _, last_day = monthrange(year, month)
+    first = f"{year}-{month:02d}-01"
+    last = f"{year}-{month:02d}-{last_day:02d}"
+
+    # Fetch all deliveries in the month
+    del_resp = (
+        supabase.table("mbg_deliveries")
+        .select("id, school_id, delivery_date, menu_id, menu_name, portions_sent, receiver_name, status, schools(name)")
+        .eq("tenant_id", tenant_id)
+        .gte("delivery_date", first)
+        .lte("delivery_date", last)
+        .order("delivery_date")
+        .execute()
+    )
+    deliveries_raw = getattr(del_resp, "data", None) or []
+
+    # Fetch budget allocations for the month
+    alloc_resp = (
+        supabase.table("mbg_budget_allocations")
+        .select("date, pdf_draft_url")
+        .eq("tenant_id", tenant_id)
+        .gte("date", first)
+        .lte("date", last)
+        .execute()
+    )
+    alloc_map = {a["date"]: a for a in (getattr(alloc_resp, "data", None) or [])}
+
+    # Group by date
+    by_date: Dict[str, list] = {}
+    for d in deliveries_raw:
+        dd = d.get("delivery_date", "")
+        by_date.setdefault(dd, []).append(d)
+
+    summaries = []
+    for dd, rows in sorted(by_date.items()):
+        schools_clean = [
+            {
+                "school_name": (r.get("schools") or {}).get("name", "?"),
+                "portions_sent": r.get("portions_sent", 0),
+                "receiver_name": r.get("receiver_name"),
+                "status": r.get("status"),
+            }
+            for r in rows
+        ]
+        total_portions = sum(r.get("portions_sent", 0) for r in rows)
+        alloc = alloc_map.get(dd)
+        summaries.append({
+            "date": dd,
+            "has_delivery": True,
+            "menu_name": rows[0].get("menu_name"),
+            "total_portions": total_portions,
+            "schools_count": len(schools_clean),
+            "total_schools": len(schools_clean),
+            "deliveries": schools_clean,
+            "pdf_draft_url": (alloc or {}).get("pdf_draft_url"),
+        })
+
+    return {
+        "success": True,
+        "data": summaries,
+    }
+
+
 # ─── GET /mbg/deliveries/summary ─────────────────────────────────────────────
 
 @delivery_router.get("/summary", response_model=Dict[str, Any])
@@ -802,7 +878,7 @@ def get_delivery_summary(
     # Ambil alokasi
     alloc_resp = (
         supabase.table("mbg_budget_allocations")
-        .select("total_revenue, budget_food, budget_labor, budget_ops")
+        .select("total_revenue, budget_food, budget_labor, budget_ops, pdf_draft_url")
         .eq("tenant_id", tenant_id)
         .eq("date", target_date.isoformat())
         .limit(1)
@@ -810,6 +886,7 @@ def get_delivery_summary(
     )
     alloc_rows = getattr(alloc_resp, "data", None) or []
     allocation = alloc_rows[0] if alloc_rows else None
+    pdf_draft_url = (allocation or {}).get("pdf_draft_url")
 
     deliveries_clean = [
         {
@@ -828,10 +905,12 @@ def get_delivery_summary(
             "has_delivery": len(deliveries_raw) > 0,
             "total_portions": total_portions,
             "total_schools": len(deliveries_clean),
+            "schools_count": len(deliveries_clean),
             "menu_name": menu_name,
             "has_bom": has_bom,
             "deliveries": deliveries_clean,
             "allocation": allocation,
+            "pdf_draft_url": pdf_draft_url,
             "stok_status": stok_status,
         },
     }

@@ -119,19 +119,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         context.user_data["active_batch"] = batch
 
         # Batalkan timeout lama jika ada
-        jobs = context.job_queue.get_jobs_by_name(f"batch_timeout_{chat_id}")
-        for j in jobs:
-            j.schedule_removal()
+        if context.job_queue:
+            jobs = context.job_queue.get_jobs_by_name(f"batch_timeout_{chat_id}")
+            for j in jobs:
+                j.schedule_removal()
 
-        # Jadwalkan auto-timeout 5 menit
-        context.job_queue.run_once(
-            check_batch_timeout,
-            when=BATCH_TIMEOUT,
-            name=f"batch_timeout_{chat_id}",
-            chat_id=chat_id,
-            user_id=user_id,
-            data={"chat_id": chat_id},
-        )
+            # Jadwalkan auto-timeout 5 menit
+            context.job_queue.run_once(
+                check_batch_timeout,
+                when=BATCH_TIMEOUT,
+                name=f"batch_timeout_{chat_id}",
+                chat_id=chat_id,
+                user_id=user_id,
+                data={"chat_id": chat_id},
+            )
 
     # ─── Tambah foto ke batch ────────────────────────────────────────
     batch["photos"].append(photo_bytes)
