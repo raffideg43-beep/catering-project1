@@ -118,8 +118,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         }
         context.user_data["active_batch"] = batch
 
-        # Batalkan timeout lama jika ada
-        if context.job_queue:
+        # Batalkan timeout lama jika ada (job_queue bisa None di Windows)
+        if context.job_queue is not None:
             jobs = context.job_queue.get_jobs_by_name(f"batch_timeout_{chat_id}")
             for j in jobs:
                 j.schedule_removal()

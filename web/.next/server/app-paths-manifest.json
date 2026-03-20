@@ -1,7 +1,7 @@
 {
-  "/(dashboard)/pembukuan/page": "app/(dashboard)/pembukuan/page.js",
-  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
   "/(dashboard)/mbg/page": "app/(dashboard)/mbg/page.js",
-  "/(dashboard)/stok/page": "app/(dashboard)/stok/page.js",
-  "/(dashboard)/piutang/page": "app/(dashboard)/piutang/page.js"
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
+  "/(dashboard)/hutang/page": "app/(dashboard)/hutang/page.js",
+  "/(dashboard)/piutang/page": "app/(dashboard)/piutang/page.js",
+  "/(dashboard)/pembukuan/page": "app/(dashboard)/pembukuan/page.js"
 }

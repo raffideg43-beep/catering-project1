@@ -38,26 +38,33 @@ export default function MbgPage() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [mResp, settingsResp, delivResp] = await Promise.all([
+            const [mResp, settingsResp] = await Promise.all([
                 apiGet("/reports/monthly", { year: tahun, month: bulan }),
                 apiGet("/mbg/settings").catch(() => null),
-                apiGet("/mbg/deliveries/monthly", { year: tahun, month: bulan }),
             ]);
             setMonthly(mResp?.data ?? null);
             if (settingsResp?.data?.price_per_portion) {
                 setPricePerPortion(Number(settingsResp.data.price_per_portion));
             }
 
-            // Use the new monthly endpoint — single query, no dropped days
-            const filled: DeliverySummary[] = (delivResp?.data ?? []).map((d: any) => ({
-                date: d.date,
-                menu_name: d.menu_name,
-                total_portions: d.total_portions,
-                schools_count: d.schools_count || d.total_schools,
-                has_delivery: true,
-                pdf_draft_url: d.pdf_draft_url,
-                deliveries: d.deliveries,
-            }));
+            // Fetch summaries per hari dalam bulan (hanya hari yang ada delivery)
+            const lastDay = new Date(tahun, bulan, 0).getDate();
+            const dates: string[] = [];
+            for (let d = 1; d <= lastDay; d++) {
+                dates.push(`${tahun}-${String(bulan).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+            }
+
+            // Batch fetch — ambil hanya summary delivery
+            const results = await Promise.allSettled(
+                dates.map(d => apiGet("/mbg/deliveries/summary", { date: d }).catch(() => null))
+            );
+
+            const filled: DeliverySummary[] = [];
+            results.forEach((r, i) => {
+                if (r.status === "fulfilled" && r.value?.data?.has_delivery) {
+                    filled.push({ date: dates[i], ...r.value.data });
+                }
+            });
             setSummaries(filled.sort((a, b) => a.date.localeCompare(b.date)));
         } catch { }
         setLoading(false);

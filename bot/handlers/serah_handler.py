@@ -434,6 +434,19 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     ])
                 )
 
+        elif isinstance(e, APIError) and e.status_code == 409:
+            error_msg = getattr(e, "message", str(e))
+            await query.edit_message_text(
+                f"⚠️ *Penyerahan Sudah Tercatat*\n\n"
+                f"Data penyerahan hari ini sudah ada di sistem\\.\n"
+                f"_{_esc(str(error_msg))}_\n\n"
+                f"Tidak perlu kirim ulang\\.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback")]
+                ]),
+                parse_mode="MarkdownV2"
+            )
+
         elif isinstance(e, APIError) and e.status_code >= 500:
             await query.edit_message_text(
                 "❌ *Server bermasalah*\\. Coba lagi\\.",
