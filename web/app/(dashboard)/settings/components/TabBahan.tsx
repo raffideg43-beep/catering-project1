@@ -27,7 +27,7 @@ interface Component {
 
 interface Recipe {
   id: string; menu_id: string; ingredient_id: string | null;
-  component_id: string | null; qty_needed: number; unit: string;
+  component_id: string | null; qty_needed: number; daily_qty?: number; usage_type?: string; unit: string;
 }
 
 interface SimIngredient {
@@ -43,6 +43,7 @@ interface FormRowItem {
   ingredient_id: string | null;
   qty_needed: number;
   unit: string;
+  usage_type: 'per_porsi' | 'per_hari';
 }
 
 interface ParsedBelanja {
@@ -81,7 +82,7 @@ export function TabBahan() {
   const [showCompModal, setShowCompModal] = useState(false);
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [compForm, setCompForm] = useState({ name: "", description: "" });
-  const [compFormItems, setCompFormItems] = useState<FormRowItem[]>([{ ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }]);
+  const [compFormItems, setCompFormItems] = useState<FormRowItem[]>([{ ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
 
   /* ─── Menu BOM ───────────────────────────────────────────────────── */
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
@@ -239,14 +240,15 @@ export function TabBahan() {
             ingredient_id: it.ingredient_id,
             ingredient_name: it.product_name || getIngName(it.ingredient_id),
             qty_needed: it.qty_needed,
-            unit: it.unit || ""
+            unit: it.unit || "",
+            usage_type: "per_porsi"
           }))
-          : [{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]
+          : [{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]
       );
     } else {
       setEditingCompId(null);
       setCompForm({ name: "", description: "" });
-      setCompFormItems([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]);
+      setCompFormItems([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
     }
     setShowCompModal(true);
   };
@@ -330,7 +332,7 @@ export function TabBahan() {
   const openMenuForm = () => {
     setMenuForm({ name: "", unit: "porsi" });
     setMenuFormComps([]);
-    setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "" }]);
+    setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
     setShowMenuModal(true);
   };
 
@@ -375,7 +377,10 @@ export function TabBahan() {
           const actualIngId = await getOrCreateIngredient(item.ingredient_name, item.unit);
           await apiPost("/recipes", {
             menu_id: menuId, ingredient_id: actualIngId,
-            qty_needed: item.qty_needed, unit: item.unit || "kg"
+            qty_needed: item.usage_type === "per_porsi" ? item.qty_needed : 0,
+            daily_qty: item.usage_type === "per_hari" ? item.qty_needed : 0,
+            usage_type: item.usage_type,
+            unit: item.unit || "kg"
           });
         }
       }
@@ -601,12 +606,18 @@ export function TabBahan() {
                         <h4 className="font-semibold text-gray-700 mb-2 text-sm">🧪 Bahan Baku Langsung:</h4>
                         {directRecipes.length === 0
                           ? <p className="text-gray-400 text-sm italic">Belum ada bahan baku langsung</p>
-                          : <div className="space-y-1">{directRecipes.map(r => (
-                              <div key={r.id} className="flex justify-between items-center bg-green-50 px-3 py-2 rounded text-sm">
-                                <span className="text-green-800">• {getIngName(r.ingredient_id!)} <span className="text-green-600">{r.qty_needed} {r.unit}</span></span>
-                                <button onClick={() => deleteRecipe(r.id, menu.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
-                              </div>
-                            ))}</div>}
+                          : <div className="space-y-1">{directRecipes.map(r => {
+                              const isDaily = r.usage_type === "per_hari";
+                              const qtyLabel = isDaily ? `${r.daily_qty || r.qty_needed} ${r.unit}/hari` : `${r.qty_needed} ${r.unit}/porsi`;
+                              return (
+                                <div key={r.id} className={`flex justify-between items-center px-3 py-2 rounded text-sm ${isDaily ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                  <span className={isDaily ? 'text-orange-800' : 'text-green-800'}>
+                                    • {getIngName(r.ingredient_id!)} — <span className={isDaily ? 'text-orange-600 font-medium' : 'text-green-600'}>{qtyLabel} {isDaily && "📅"}</span>
+                                  </span>
+                                  <button onClick={() => deleteRecipe(r.id, menu.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
+                                </div>
+                              );
+                            })}</div>}
                       </div>
 
                       {/* BOM Preview */}
@@ -692,7 +703,7 @@ export function TabBahan() {
                         </div>
                       ))}
                     </div>
-                    <button type="button" onClick={() => setCompFormItems(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }])}
+                    <button type="button" onClick={() => setCompFormItems(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "", usage_type: "per_porsi" }])}
                       className="text-purple-600 hover:text-purple-800 text-sm font-medium mt-3 block">+ Tambah Bahan</button>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">💡 Jika nama bahan diketik manual dan belum terdaftar di master data, sistem akan otomatis mendaftarkannya.</p>
@@ -756,30 +767,63 @@ export function TabBahan() {
                     <span>🧪 Bahan Baku Langsung</span>
                   </label>
                   <div className="bg-green-50/50 border border-green-100 rounded-lg p-3">
-                    <div className="flex text-xs font-semibold text-gray-500 mb-2 px-1">
-                      <div className="flex-1">Nama Bahan Asli</div>
-                      <div className="w-20">Qty</div>
-                      <div className="w-16">Satuan</div>
-                      <div className="w-6"></div>
-                    </div>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {menuFormDirects.map((row, idx) => (
-                        <div key={idx} className="flex gap-2 items-start">
-                          <input type="text" list="bahan-list" placeholder="Pilih / ketik bahan..."
-                            value={row.ingredient_name} onChange={e => updateMenuDirectRow(idx, e.target.value)}
-                            className="flex-1 px-2 py-1.5 border rounded text-sm bg-white" />
-                          <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
-                            onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, qty_needed: parseFloat(e.target.value) || 0 } : r))}
-                            className="w-20 px-2 py-1.5 border rounded text-sm" />
-                          <input type="text" placeholder="Satuan" value={row.unit}
-                            onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
-                            className="w-16 px-2 py-1.5 border rounded text-sm" />
-                          <button type="button" onClick={() => setMenuFormDirects(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-gray-400 hover:text-red-500 text-lg pt-1">✕</button>
+                        <div key={idx} className="bg-white p-3 border rounded-lg space-y-3 relative shadow-sm">
+                          <button type="button" onClick={() => setMenuFormDirects(prev => prev.filter((_, i) => i !== idx))} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 text-lg">✕</button>
+                          
+                          <div className="flex gap-2 pr-6">
+                            <div className="flex-1">
+                              <label className="block text-xs text-gray-500 mb-1">Nama Bahan</label>
+                              <input type="text" list="bahan-list" placeholder="Pilih bahan..."
+                                value={row.ingredient_name} onChange={e => updateMenuDirectRow(idx, e.target.value)}
+                                className="w-full px-2 py-1.5 border rounded text-sm bg-white" />
+                            </div>
+                            <div className="w-32">
+                              <label className="block text-xs text-gray-500 mb-1">
+                                {row.usage_type === 'per_porsi' ? `Qty (per Porsi)` : `Qty (per Hari)`}
+                              </label>
+                              <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
+                                onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, qty_needed: parseFloat(e.target.value) || 0 } : r))}
+                                className="w-full px-2 py-1.5 border rounded text-sm" />
+                            </div>
+                            <div className="w-24">
+                              <label className="block text-xs text-gray-500 mb-1">Satuan</label>
+                              <input type="text" placeholder="mis: kg" value={row.unit}
+                                onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                                className="w-full px-2 py-1.5 border rounded text-sm" />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, usage_type: 'per_porsi' } : r))}
+                              className={`flex-1 py-1.5 px-3 rounded text-xs font-medium border transition-colors ${row.usage_type === 'per_porsi' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
+                            >
+                              ⚖️ Per Porsi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, usage_type: 'per_hari' } : r))}
+                              className={`flex-1 py-1.5 px-3 rounded text-xs font-medium border transition-colors ${row.usage_type === 'per_hari' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300 hover:border-orange-400'}`}
+                            >
+                              📅 Per Hari
+                            </button>
+                          </div>
+                          
+                          {row.usage_type === 'per_hari' && (
+                            <div className="p-2 bg-orange-50 border border-orange-200 rounded">
+                              <p className="text-xs text-orange-700">
+                                📅 <strong>Bahan Overhead</strong> — qty ini dipakai flat per hari masak, tidak dikalikan jumlah porsi.<br/>
+                                <span className="text-orange-600">Cocok untuk: minyak goreng, gas LPG, garam masak, bumbu dasar</span>
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                    <button type="button" onClick={() => setMenuFormDirects(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "" }])}
+                    <button type="button" onClick={() => setMenuFormDirects(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "", usage_type: "per_porsi" }])}
                       className="text-green-600 hover:text-green-800 text-sm font-medium mt-3">+ Tambah Bahan Langsung</button>
                   </div>
                 </div>

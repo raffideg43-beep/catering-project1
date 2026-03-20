@@ -15,30 +15,25 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
-    "/(dashboard)/mbg/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/mbg/page.js"
-    ],
     "/(dashboard)/stok/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/stok/page.js"
     ],
-    "/(dashboard)/piutang/page": [
+    "/(dashboard)/jadwal/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/piutang/page.js"
+      "static/chunks/app/(dashboard)/jadwal/page.js"
     ],
-    "/(dashboard)/hutang/page": [
+    "/(dashboard)/jadwal/master/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/hutang/page.js"
+      "static/chunks/app/(dashboard)/jadwal/master/page.js"
     ],
-    "/(dashboard)/pembukuan/page": [
+    "/(dashboard)/settings/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/pembukuan/page.js"
+      "static/chunks/app/(dashboard)/settings/page.js"
     ]
   }
 }
