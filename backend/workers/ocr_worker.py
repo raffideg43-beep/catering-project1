@@ -227,47 +227,22 @@ def _update_batch_counter(
         )
         batch = getattr(batch_resp, "data", None)
         if not batch:
-            logger.warning(f"Batch {batch_id} tidak ditemukan saat update counter")
+            logger.warning(f"Batch {batch_id} tidak ditemukan di database. Pastikan record photo_batches sudah terbuat.")
             return
 
         # Update counter
-        processed = batch.get("processed", 0)
-        failed = batch.get("failed", 0)
+        processed_photos = batch.get("processed_photos", 0)
         total = batch.get("total_photos", 1)
-        photos: list = batch.get("photos") or []
 
         if success:
-            processed += 1
-        else:
-            failed += 1
+            processed_photos += 1
 
-        # Update status foto dalam batch
-        for p in photos:
-            if p.get("trx_id") == trx_id:
-                p["status"] = "done" if success else "failed"
-                if error:
-                    p["error_message"] = error
-                break
-
-        new_processed = processed
-        new_failed = failed
-        is_complete = (new_processed + new_failed) >= total
-
-        if is_complete:
-            if new_failed == 0:
-                batch_status = "done"
-            elif new_processed == 0:
-                batch_status = "all_failed"
-            else:
-                batch_status = "partial_error"
-        else:
-            batch_status = "processing"
+        is_complete = processed_photos >= total
+        batch_status = "done" if is_complete else "processing"
 
         supabase.table("photo_batches").update({
-            "processed": new_processed,
-            "failed": new_failed,
+            "processed_photos": processed_photos,
             "status": batch_status,
-            "photos": photos,
         }).eq("id", batch_id).execute()
 
         # Kirim notif batch jika sudah complete
@@ -278,9 +253,9 @@ def _update_batch_counter(
                 bot_token=bot_token,
                 supabase=supabase,
                 total=total,
-                processed=new_processed,
-                failed=new_failed,
-                photos=photos,
+                processed=processed_photos,
+                failed=total - processed_photos,
+                photos=[], # Database lacks 'photos' column
             )
 
     except Exception as e:
@@ -335,26 +310,12 @@ def _send_batch_complete(
 
     if failed == 0:
         lines.append(f"✅ *{total} nota selesai diproses\\!*\n")
+        lines.append("Semua data berhasil diekstrak dan siap dikonfirmasi\\.")
     elif processed > 0:
         lines.append(f"⚠️ *{processed} berhasil, {failed} gagal\\.*\n")
-        lines.append("*Berhasil:*")
     else:
         lines.append(f"❌ *Semua {total} nota gagal dibaca\\.*\n")
         lines.append("Kemungkinan foto buram atau terpotong\\.")
-
-    # List nota berhasil
-    for n, p in enumerate([p for p in photos if p.get("status") == "done"], 1):
-        tid = p.get("trx_id")
-        trx = trx_map.get(tid, {})
-        nama = _esc_worker(trx.get("nama_toko") or "Tidak diketahui")
-        total_trx = _esc_worker(_fmt_rp_worker(trx.get("total", 0)))
-        lines.append(f"*{n}\\.* 🏪 {nama} — {total_trx}")
-        if tid:
-            inline_keyboard.append([
-                {"text": "✅ Konfirmasi", "callback_data": f"confirm_{tid}"},
-                {"text": "✏️ Edit",       "callback_data": f"edit_{tid}"},
-                {"text": "❌ Batal",      "callback_data": f"cancel_{tid}"},
-            ])
 
     # Tombol konfirmasi semua / batal semua
     if processed > 0:
@@ -365,10 +326,7 @@ def _send_batch_complete(
              "callback_data": f"batal_semua_{batch_id}"},
         ])
 
-    # Foto gagal
-    if failed > 0 and processed > 0:
-        lines.append(f"\n❌ *Gagal dibaca \\({failed} foto\\):*")
-        lines.append("Kemungkinan foto buram atau terpotong\\.")
+    if failed > 0:
         inline_keyboard.append([{
             "text": "🔄 Kirim Ulang Foto yang Gagal",
             "callback_data": f"kirim_ulang_{batch_id}",

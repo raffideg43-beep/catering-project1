@@ -25,8 +25,8 @@ class Settings(BaseSettings):
 
     # --- AI ---
     gemini_api_key: str | None = None
-    gemini_ocr_model: str = "gemini-2.5-flash"
-    gemini_text_model: str = "gemini-2.5-flash-lite"
+    gemini_ocr_model: str = "gemini-2.0-flash"
+    gemini_text_model: str = "gemini-2.0-flash"
 
     # --- Redis ---
     redis_url: str = "redis://localhost:6379"

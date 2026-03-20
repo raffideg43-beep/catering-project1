@@ -607,16 +607,14 @@ async def upload_photo_batch(
             "id": batch_id,
             "tenant_id": current_user.tenant_id,
             "user_id": current_user.id,
-            "telegram_id": telegram_id,
             "total_photos": len(files),
-            "processed": 0,
-            "failed": total_failed,
+            "processed_photos": 0,
             "status": "processing",
-            "photos": batch_photos,
-            "expires_at": expires_at,
+            "collection_timeout": expires_at,
         }).execute()
     except Exception as e:
-        # Batch record gagal — non-fatal, OCR tetap jalan
+        # Batch record gagal — log errornya untuk diagnosa
+        logger.error(f"Gagal membuar record photo_batches [{batch_id}]: {e}")
         pass
 
     # ─── Enqueue OCR background tasks SETELAH batch ditulis ke DB ──────
