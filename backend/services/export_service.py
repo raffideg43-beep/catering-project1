@@ -851,8 +851,6 @@ class ExportService:
         }
         if file_url:
             row["file_url"] = file_url
-        if status == "ready":
-            row["generated_at"] = now
         if error_message:
             row["error_message"] = error_message
 

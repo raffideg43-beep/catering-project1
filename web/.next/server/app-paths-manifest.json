@@ -1,7 +1,8 @@
 {
-  "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/stok/page": "app/(dashboard)/stok/page.js",
+  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
   "/(dashboard)/jadwal/master/page": "app/(dashboard)/jadwal/master/page.js",
+  "/(dashboard)/stok/page": "app/(dashboard)/stok/page.js",
   "/(dashboard)/jadwal/page": "app/(dashboard)/jadwal/page.js",
-  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js"
+  "/(dashboard)/stok/riwayat/page": "app/(dashboard)/stok/riwayat/page.js",
+  "/(dashboard)/mbg/page": "app/(dashboard)/mbg/page.js"
 }

@@ -236,6 +236,8 @@ def get_stock_projection(
         .select("id, name, unit, stock_qty, stock_min, hpp")
         .eq("tenant_id", tid)
         .eq("is_active", True)
+        .neq("category", "produk_jadi")
+        .neq("category", "komponen")
         .execute()
     )
     products = getattr(prod_resp, "data", None) or []
@@ -408,6 +410,8 @@ def get_low_stock_products(current_user: UserInDB = Depends(get_current_user)):
         .select("*")
         .eq("tenant_id", current_user.tenant_id)
         .eq("is_active", True)
+        .neq("category", "produk_jadi")
+        .neq("category", "komponen")
         .execute()
     )
 
