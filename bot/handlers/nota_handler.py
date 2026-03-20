@@ -92,6 +92,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # ─── Download + Kompres ───────────────────────────────────────────
+    logger.info("DEBUG: handle_photo dipanggil (Job Queue: %s)", context.job_queue is not None)
     photo = update.message.photo[-1]
     try:
         photo_file = await photo.get_file()
