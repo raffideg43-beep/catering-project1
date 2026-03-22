@@ -1,6 +1,12 @@
+import os
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Base directory for the bot
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / ".env"
 
 
 class BotSettings(BaseSettings):
@@ -10,7 +16,10 @@ class BotSettings(BaseSettings):
     backend_url: str
     web_url: str
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE) if ENV_FILE.exists() else ".env",
+        env_file_encoding="utf-8"
+    )
 
 
 @lru_cache
