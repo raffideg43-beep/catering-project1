@@ -1,5 +1,5 @@
 {
   "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/anggaran/page": "app/(dashboard)/anggaran/page.js",
-  "/(dashboard)/anggaran/buku-kas/page": "app/(dashboard)/anggaran/buku-kas/page.js"
+  "/(dashboard)/anggaran/buku-kas/page": "app/(dashboard)/anggaran/buku-kas/page.js",
+  "/(dashboard)/anggaran/page": "app/(dashboard)/anggaran/page.js"
 }

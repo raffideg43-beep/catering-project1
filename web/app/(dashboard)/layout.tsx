@@ -13,7 +13,13 @@ const NAV_ITEMS = [
       { href: "/anggaran/buku-kas", label: "📒 Buku Kas" },
     ]
   },
-  { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
+  { 
+    href: "/pembukuan", icon: "📋", label: "Pembukuan",
+    children: [
+      { href: "/pembukuan", label: "📊 Overview" },
+      { href: "/pembukuan/dokumen", label: "📄 Dokumen Legal" },
+    ]
+  },
   { href: "/mbg", icon: "🍱", label: "MBG" },
   {
     href: "/stok", icon: "📦", label: "Stok",

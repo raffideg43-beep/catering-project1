@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -52,6 +52,10 @@ export default function PembukuanPage() {
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [excelLoading, setExcelLoading] = useState(false);
+    const [legalDocs, setLegalDocs] = useState<any[]>([]);
+    const [sptLoading, setSptLoading] = useState(false);
+    const [bapLoading, setBapLoading] = useState(false);
+    
     const [error, setError] = useState<string | null>(null);
     const [stalCount, setStalCount] = useState(0); // nota processing > 24 jam
 
@@ -75,15 +79,17 @@ export default function PembukuanPage() {
             params.date_from = first;
             params.date_to = last;
 
-            const [trxResp, mResp] = await Promise.all([
+            const [trxResp, mResp, legalResp] = await Promise.all([
                 apiGet("/transactions", params),
                 apiGet("/reports/monthly", { year: tahun, month: bulan }),
+                apiGet("/legal/documents", { year: tahun, month: bulan })
             ]);
 
             const items = trxResp?.data?.items ?? trxResp?.data ?? [];
             setTransactions(items);
             setTotalCount(trxResp?.data?.total ?? items.length);
             setMonthly(mResp?.data ?? null);
+            setLegalDocs(legalResp?.data ?? []);
 
             // Stale nota: processing > 24 jam
             const yesterday = new Date(Date.now() - 86_400_000).toISOString();
@@ -100,21 +106,58 @@ export default function PembukuanPage() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const handleExcel = async () => {
+    const handleGenerateExcel = async () => {
         setExcelLoading(true);
         try {
-            const r = await apiGet(`/reports/excel/download?year=${tahun}&month=${bulan}`);
-            if (r?.data?.file_url) {
-                window.open(r.data.file_url, "_blank");
-            } else {
-                alert("Excel belum tersedia, coba lagi.");
-            }
+            await apiPost("/legal/excel-dinas/generate", { year: tahun, month: bulan });
+            fetchData();
         } catch {
             alert("Gagal generate Excel. Coba lagi.");
         } finally {
             setExcelLoading(false);
         }
     };
+
+    const handleGenerateSPT = async () => {
+        setSptLoading(true);
+        try {
+            await apiPost("/legal/spt/generate", { year: tahun, month: bulan });
+            fetchData();
+        } catch (e: any) {
+            alert(e.response?.data?.detail || "Gagal generate SPT.");
+        } finally {
+            setSptLoading(false);
+        }
+    };
+
+    const handleGenerateBAP = async () => {
+        setBapLoading(true);
+        try {
+            const res = await apiPost("/legal/bap/generate", { year: tahun, month: bulan });
+            if (!res.success) {
+                alert(res.error || "BAP tidak dapat dibuat.");
+            }
+            fetchData();
+        } catch (e: any) {
+             alert(e.response?.data?.detail || "Gagal generate BAP.");
+        } finally {
+            setBapLoading(false);
+        }
+    };
+
+    const handleUpdateStatus = async (id: string, status: string) => {
+        try {
+            await apiPut(`/legal/documents/${id}/status`, { status });
+            fetchData();
+        } catch {
+            alert("Gagal update status.");
+        }
+    };
+
+    const getDoc = (type: string) => legalDocs.find(d => d.doc_type === type);
+    const excelDoc = getDoc("excel_dinas");
+    const sptDoc = getDoc("spt");
+    const bapDoc = getDoc("bap");
 
     const handleSaveOps = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -157,15 +200,158 @@ export default function PembukuanPage() {
                             + Biaya Operasional
                         </button>
                         <button
-                            onClick={handleExcel}
-                            disabled={excelLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                            onClick={() => setShowOpsModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
                         >
-                            {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
+                            + Biaya Operasional
                         </button>
                     </div>
                 }
             />
+
+            {/* ─── DOKUMEN LEGAL & EXCEL SECTION ─────────────────────────────────── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                
+                {/* EXCEL DINAS */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex gap-3">
+                            <span className="text-3xl">📊</span>
+                            <div>
+                                <h3 className="font-bold text-gray-900">Excel Dinas {MONTHS[bulan]} {tahun}</h3>
+                                <p className="text-sm text-gray-500">10 Sheet Laporan Lengkap</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                        <div className="text-sm flex items-center justify-between py-1">
+                            <span className="text-gray-500">Status:</span>
+                            <span className={`font-medium ${excelDoc ? "text-green-600" : "text-gray-500"}`}>
+                                {excelDoc ? "✅ Siap didownload" : "⚪ Belum digenerate"}
+                            </span>
+                        </div>
+                        {excelDoc && (
+                           <div className="text-xs text-gray-400 mt-1">Generated: {new Date(excelDoc.generated_at).toLocaleString("id-ID")}</div>
+                        )}
+                    </div>
+                    
+                    <div className="mt-auto flex flex-col gap-2">
+                        {excelDoc && (
+                            <a href={excelDoc.file_url} target="_blank" rel="noopener noreferrer" className="w-full py-2 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg text-sm font-medium text-center transition-colors">
+                                📥 Download Excel
+                            </a>
+                        )}
+                        <button onClick={handleGenerateExcel} disabled={excelLoading} className="w-full py-2 border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50">
+                            {excelLoading ? "⏳ Generating..." : excelDoc ? "🔄 Generate Ulang" : "➕ Generate Excel"}
+                        </button>
+                    </div>
+                </div>
+
+                {/* SPT */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex gap-3">
+                            <span className="text-3xl">📋</span>
+                            <div>
+                                <h3 className="font-bold text-gray-900">SPT</h3>
+                                <p className="text-sm text-gray-500">Surat Pernyataan Tanggung Jawab</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                        <div className="text-sm flex items-center justify-between py-1">
+                            <span className="text-gray-500">Status:</span>
+                            <span className={`font-medium ${!sptDoc ? "text-gray-500" : sptDoc.status === "draft" ? "text-orange-500" : sptDoc.status === "final" ? "text-green-600" : "text-blue-600"}`}>
+                                {!sptDoc ? "⚪ Belum digenerate" : sptDoc.status === "draft" ? "📝 Draft (Belum TTD)" : sptDoc.status === "final" ? "✅ Final (Sudah TTD)" : "📤 Submitted"}
+                            </span>
+                        </div>
+                        {sptDoc && (
+                           <div className="text-xs text-gray-400 mt-1">Generated: {new Date(sptDoc.generated_at).toLocaleString("id-ID")}</div>
+                        )}
+                    </div>
+                    
+                    <div className="mt-auto flex flex-col gap-2">
+                        {sptDoc && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <a href={sptDoc.file_url} target="_blank" rel="noopener noreferrer" className="py-2 bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg text-sm font-medium text-center transition-colors">
+                                    📥 Download PDF
+                                </a>
+                                {sptDoc.status === "draft" ? (
+                                    <button onClick={() => handleUpdateStatus(sptDoc.id, "final")} className="py-2 bg-green-500 text-white hover:bg-green-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
+                                        ✅ Tandai Final
+                                    </button>
+                                ) : sptDoc.status === "final" ? (
+                                    <button onClick={() => handleUpdateStatus(sptDoc.id, "submitted")} className="py-2 bg-blue-500 text-white hover:bg-blue-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
+                                        📤 Tandai Submitted
+                                    </button>
+                                ) : (
+                                    <div className="py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium text-center">✔ Submitted</div>
+                                )}
+                            </div>
+                        )}
+                        <button onClick={handleGenerateSPT} disabled={sptLoading} className="w-full py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50">
+                            {sptLoading ? "⏳ Generating..." : sptDoc ? "🔄 Generate Ulang" : "➕ Generate SPT"}
+                        </button>
+                    </div>
+                </div>
+
+                {/* BAP */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex gap-3">
+                            <span className="text-3xl">📝</span>
+                            <div>
+                                <h3 className="font-bold text-gray-900">BAP Kas</h3>
+                                <p className="text-sm text-gray-500">Berita Acara Pemeriksaan Sisa Kas</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                        <div className="text-sm flex items-center justify-between py-1">
+                            <span className="text-gray-500">Status:</span>
+                            <span className={`font-medium ${!bapDoc ? "text-gray-400" : bapDoc.status === "draft" ? "text-orange-500" : bapDoc.status === "final" ? "text-green-600" : "text-blue-600"}`}>
+                                {!bapDoc ? "⚪ Tidak Ada / N/A" : bapDoc.status === "draft" ? "📝 Draft (Belum TTD)" : bapDoc.status === "final" ? "✅ Final (Sudah TTD)" : "📤 Submitted"}
+                            </span>
+                        </div>
+                        {!bapDoc && <div className="text-xs text-gray-400 mt-1 italic">Hanya dibuat jika ada pengembalian sisa dana kas ke negara</div>}
+                        {bapDoc && (
+                           <div className="text-xs text-gray-400 mt-1">Generated: {new Date(bapDoc.generated_at).toLocaleString("id-ID")}</div>
+                        )}
+                    </div>
+                    
+                    <div className="mt-auto flex flex-col gap-2">
+                        {bapDoc && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <a href={bapDoc.file_url} target="_blank" rel="noopener noreferrer" className="py-2 bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg text-sm font-medium text-center transition-colors">
+                                    📥 Download PDF
+                                </a>
+                                {bapDoc.status === "draft" ? (
+                                    <button onClick={() => handleUpdateStatus(bapDoc.id, "final")} className="py-2 bg-green-500 text-white hover:bg-green-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
+                                        ✅ Tandai Final
+                                    </button>
+                                ) : bapDoc.status === "final" ? (
+                                    <button onClick={() => handleUpdateStatus(bapDoc.id, "submitted")} className="py-2 bg-blue-500 text-white hover:bg-blue-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
+                                        📤 Tandai Submitted
+                                    </button>
+                                ) : (
+                                    <div className="py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium text-center">✔ Submitted</div>
+                                )}
+                            </div>
+                        )}
+                        <button onClick={handleGenerateBAP} disabled={bapLoading} title="Hanya akan berhasil jika ada Sisa Kas setelah perhitungan operasional" className="w-full py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50">
+                            {bapLoading ? "⏳ Generating..." : bapDoc ? "🔄 Generate Ulang" : "➕ Generate BAP (Cek Sisa)"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold">Log Transaksi & Pengeluaran</h2>
+                <a href="/pembukuan/dokumen" className="text-sm text-blue-600 font-medium hover:underline">Lihat Semua Dokumen →</a>
+            </div>
 
             {/* ─── Filter Bar ─────────────────────────────────── */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">

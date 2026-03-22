@@ -303,6 +303,15 @@ class ExportService:
         )
         kas_ledger = getattr(ledger_res, "data", None) or []
 
+        # School Beneficiaries (for Sheet 9)
+        sb_res = (
+            supabase.table("school_beneficiaries")
+            .select("*, schools(name), beneficiary_types(name)")
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        school_beneficiaries = getattr(sb_res, "data", None) or []
+
         return {
             "tenant": tenant,
             "first": first,
@@ -320,6 +329,7 @@ class ExportService:
             "operational_costs": operational_costs,
             "payroll_items": payroll_items,
             "kas_ledger": kas_ledger,
+            "school_beneficiaries": school_beneficiaries,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -350,6 +360,15 @@ class ExportService:
         # Sheet 7: Buku Kas Umum
         ws_bku = wb.create_sheet("Buku Kas Umum")
 
+        # Sheet 8: Buku Kas Kecil
+        ws_bkk = wb.create_sheet("Buku Kas Kecil")
+
+        # Sheet 9: Penerima Manfaat
+        ws_pm = wb.create_sheet("Penerima Manfaat")
+
+        # Sheet 10: Rekapitulasi Juknis
+        ws_rj = wb.create_sheet("Rekapitulasi Juknis")
+
         logger.info(f"Building workbook with sheets: {wb.sheetnames}")
 
         self._fill_ringkasan(ws_ringkasan, data, year, month)
@@ -358,26 +377,41 @@ class ExportService:
         self._fill_laporan_pemerintah(ws_pemerintah, data, year, month)
         self._fill_riwayat_nota(ws_nota, data)
         self._fill_ops_upah(ws_ops, data, year, month)
-        self._fill_bku(ws_bku, data, year, month)
+        self._fill_bku(ws_bku, data, year, month, "va_bank", "BUKU KAS UMUM")
+        self._fill_bku(ws_bkk, data, year, month, "kas_kecil", "BUKU KAS KECIL")
+        self._fill_penerima_manfaat(ws_pm, data)
+        self._fill_rekapitulasi_juknis(ws_rj, data, year, month)
 
         return wb
 
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
 
-    def _fill_bku(self, ws, data: dict, year: int, month: int) -> None:
+    def _fill_bku(self, ws, data: dict, year: int, month: int, kas_type: str, title: str) -> None:
         from openpyxl.styles import Font, Alignment
         bulan_str = BULAN[month]
         
         ws.merge_cells("A1:G1")
-        ws["A1"] = f"BUKU KAS UMUM — {bulan_str} {year}"
+        ws["A1"] = f"{title} — {bulan_str} {year}"
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = ["No", "Tanggal", "Akun Kas", "Keterangan", "Masuk (Debit)", "Keluar (Kredit)", "Saldo Akhir"]
         self._write_headers(ws, 3, headers)
 
+        filtered_ledger = []
+        for e in data.get("kas_ledger", []):
+            acc_info = e.get("kas_accounts")
+            if isinstance(acc_info, dict) and acc_info.get("type") == kas_type:
+                filtered_ledger.append(e)
+
         row = 4
-        for i, entry in enumerate(data.get("kas_ledger", []), 1):
+        if not filtered_ledger:
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada transaksi pada kas ini")
+            self._set_column_widths(ws)
+            return
+
+        for i, entry in enumerate(filtered_ledger, 1):
             is_debit = entry.get("entry_type") == "debit"
             masuk = entry.get("amount") if is_debit else 0
             keluar = 0 if is_debit else entry.get("amount")
@@ -399,6 +433,88 @@ class ExportService:
             self._alt_row(ws, row, 3)
             row += 1
 
+        self._set_column_widths(ws)
+
+    def _fill_penerima_manfaat(self, ws, data: dict) -> None:
+        from openpyxl.styles import Font, Alignment
+        ws.merge_cells("A1:D1")
+        ws["A1"] = "DATA PENERIMA MANFAAT MBG"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        headers = ["No", "Sekolah", "Jenis Penerima", "Jumlah Porsi (Target)"]
+        self._write_headers(ws, 3, headers)
+        
+        sb_data = data.get("school_beneficiaries", [])
+        row = 4
+        if not sb_data:
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Data Kosong")
+        else:
+            for i, sb in enumerate(sb_data, 1):
+                sch_name = sb.get("schools", {}).get("name", "") if isinstance(sb.get("schools"), dict) else ""
+                bt_name = sb.get("beneficiary_types", {}).get("name", "") if isinstance(sb.get("beneficiary_types"), dict) else ""
+                ws.cell(row, 1, i)
+                ws.cell(row, 2, sch_name)
+                ws.cell(row, 3, bt_name)
+                ws.cell(row, 4, sb.get("target_portions", 0))
+                self._alt_row(ws, row, 3)
+                row += 1
+                
+        self._set_column_widths(ws)
+
+    def _fill_rekapitulasi_juknis(self, ws, data: dict, year: int, month: int) -> None:
+        from openpyxl.styles import Font, Alignment, PatternFill
+        bulan_str = BULAN[month]
+        
+        ws.merge_cells("A1:E1")
+        ws["A1"] = f"REKAPITULASI JUKNIS 80:15:5 — {bulan_str} {year}"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+        
+        headers = ["Keterangan", "Anggaran (Target)", "Realisasi (Aktual)", "Selisih", "%"]
+        self._write_headers(ws, 3, headers)
+        
+        deliveries = data.get("deliveries", [])
+        transactions = data.get("transactions", [])
+        total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
+        price_pp = Decimal(str(data.get("price_per_portion", 15000)))
+        revenue_gross = price_pp * total_portions
+        
+        exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
+        exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
+        exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
+        total_exp = exp_bahan + exp_upah + exp_ops
+        
+        target_bahan = revenue_gross * Decimal("0.80")
+        target_upah = revenue_gross * Decimal("0.15")
+        target_ops = revenue_gross * Decimal("0.05")
+        
+        def pct(aktual, target):
+            return f"{round(float(aktual/target*100), 1)}%" if target > 0 else "0%"
+            
+        rows_data = [
+            ("Dana Masuk (Pencairan MBG)", revenue_gross, revenue_gross, 0, "100%"), # Assuming pencairan follows portions
+            ("-", "-", "-", "-", "-"),
+            ("Bahan Pangan (80%)", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
+            ("Insentif/Upah (15%)", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
+            ("Operasional (5%)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
+            ("-", "-", "-", "-", "-"),
+            ("Total Pengeluaran", revenue_gross, total_exp, revenue_gross - total_exp, pct(total_exp, revenue_gross))
+        ]
+        
+        row = 4
+        for rd in rows_data:
+            ws.cell(row, 1, rd[0])
+            if rd[0] == "-":
+                row += 1
+                continue
+            ws.cell(row, 2, float(rd[1])).number_format = '"Rp "#,##0'
+            ws.cell(row, 3, float(rd[2])).number_format = '"Rp "#,##0'
+            ws.cell(row, 4, float(rd[3])).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, rd[4])
+            row += 1
+            
         self._set_column_widths(ws)
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
