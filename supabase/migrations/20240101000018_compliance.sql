@@ -106,19 +106,33 @@ ALTER TABLE beneficiary_types     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE school_beneficiaries  ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies (tenant isolation) — semua tabel baru
-DO $$ 
-DECLARE tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'budget_allocations','fund_disbursements','kas_accounts',
-    'fund_transfers','fund_returns','beneficiary_types','school_beneficiaries'
-  ] LOOP
-    EXECUTE format(
-      'CREATE POLICY IF NOT EXISTS "tenant_iso_%s" ON %I FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()))',
-      tbl, tbl
-    );
-  END LOOP;
-END $$;
+DROP POLICY IF EXISTS "tenant_iso_budget_allocations" ON budget_allocations;
+CREATE POLICY "tenant_iso_budget_allocations" ON budget_allocations FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_fund_disbursements" ON fund_disbursements;
+CREATE POLICY "tenant_iso_fund_disbursements" ON fund_disbursements FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_kas_accounts" ON kas_accounts;
+CREATE POLICY "tenant_iso_kas_accounts" ON kas_accounts FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_fund_transfers" ON fund_transfers;
+CREATE POLICY "tenant_iso_fund_transfers" ON fund_transfers FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_fund_returns" ON fund_returns;
+CREATE POLICY "tenant_iso_fund_returns" ON fund_returns FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_beneficiary_types" ON beneficiary_types;
+CREATE POLICY "tenant_iso_beneficiary_types" ON beneficiary_types FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+
+DROP POLICY IF EXISTS "tenant_iso_school_beneficiaries" ON school_beneficiaries;
+CREATE POLICY "tenant_iso_school_beneficiaries" ON school_beneficiaries FOR ALL
+  USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
 
 -- Auto-set juknis_category untuk data existing
 UPDATE transactions

@@ -181,7 +181,7 @@ def main():
         handle_photo, handle_text_input, selesai_kirim,
         konfirmasi_semua, batal_semua, kirim_ulang,
     )
-    from handlers.kas_handler import kas_entry
+    from handlers.kas_handler import get_kas_conversation_handler
 
     from telegram import BotCommand
     from telegram.ext import (
@@ -244,7 +244,7 @@ def main():
     app.add_handler(CommandHandler("stok",     stok_command))
     app.add_handler(CommandHandler("piutang",  piutang_command))
     app.add_handler(CommandHandler("hutang",   hutang_command))
-    app.add_handler(CommandHandler("kas",      kas_entry))
+    app.add_handler(get_kas_conversation_handler())
     app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
     app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
     app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
