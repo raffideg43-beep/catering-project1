@@ -7,7 +7,7 @@
     ],
     "python.analysis.autoImportCompletions": true,
     "python.analysis.typeCheckingMode": "off",
-    "python.languageServer": "Jedi",
+    "python.languageServer": "None",
     "pyre.enable": false,
     "pyre-vscode.enable": false
 }

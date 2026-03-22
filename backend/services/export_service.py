@@ -455,8 +455,7 @@ class ExportService:
         row += 2
 
         # ── Section B: PEMBELIAN / PENGELUARAN ──
-        section_b_start = row
-        ws.merge_cells(f"A{row}:L{row}")
+        ws.merge_cells(f"A{row}:P{row}")
         ws[f"A{row}"] = f"PEMBELIAN & PENGELUARAN — {bulan_str} {year}"
         ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
         ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
@@ -465,7 +464,8 @@ class ExportService:
 
         pembelian_headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
                              "Harga Satuan", "Subtotal", "PPh22", "PPN",
-                             "Total Bayar", "Metode Bayar"]
+                             "Total Bayar", "Metode Bayar",
+                             "Kategori Juknis", "Sumber Dana", "Tgl Bayar", "Foto Nota"]
         self._write_headers(ws, row, pembelian_headers)
         row += 1
 
@@ -506,6 +506,18 @@ class ExportService:
                 ws.cell(row, 10, 0)
                 ws.cell(row, 11, total_trx).number_format = '"Rp "#,##0'
                 ws.cell(row, 12, method)
+                ws.cell(row, 13, (trx.get("juknis_category") or "—").replace("_", " ").title())
+                ws.cell(row, 14, (trx.get("fund_source") or "kas_umum").replace("_", " ").title())
+                ws.cell(row, 15, trx.get("payment_date") or del_date)
+                # Foto nota hyperlink
+                photo_url = trx.get("photo_url")
+                cell_foto = ws.cell(row, 16)
+                if photo_url:
+                    cell_foto.hyperlink = photo_url
+                    cell_foto.value = "📷 Lihat Foto"
+                    cell_foto.font = Font(color="0563C1", underline="single")
+                else:
+                    cell_foto.value = "—"
                 tot_sub += _d(trx.get("total"))
                 tot_pay += _d(trx.get("total"))
                 self._alt_row(ws, row, 2)
@@ -540,6 +552,18 @@ class ExportService:
                 ws.cell(row, 10, float(ppn)).number_format = '"Rp "#,##0'
                 ws.cell(row, 11, float(bayar)).number_format = '"Rp "#,##0'
                 ws.cell(row, 12, method)
+                ws.cell(row, 13, (trx.get("juknis_category") or "—").replace("_", " ").title())
+                ws.cell(row, 14, (trx.get("fund_source") or "kas_umum").replace("_", " ").title())
+                ws.cell(row, 15, trx.get("payment_date") or del_date)
+                # Foto nota hyperlink
+                photo_url = trx.get("photo_url")
+                cell_foto = ws.cell(row, 16)
+                if photo_url:
+                    cell_foto.hyperlink = photo_url
+                    cell_foto.value = "📷 Lihat Foto"
+                    cell_foto.font = Font(color="0563C1", underline="single")
+                else:
+                    cell_foto.value = "—"
                 self._alt_row(ws, row, 2)
                 row += 1
 
@@ -843,9 +867,16 @@ class ExportService:
         error_message: Optional[str] = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        try:
+            year, month = map(int, period.split("-"))
+        except:
+            year, month = 0, 0
+            
         row: Dict[str, Any] = {
             "tenant_id": tenant_id,
             "period": period,
+            "year": year,
+            "month": month,
             "status": status,
             "last_updated": now,
         }

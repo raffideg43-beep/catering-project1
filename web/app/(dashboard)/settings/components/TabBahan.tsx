@@ -135,6 +135,8 @@ export function TabBahan() {
   const getCompName = (compId: string) => components.find(c => c.id === compId)?.name || "?";
   const getIngName = (ingId: string) => products.find(p => p.id === ingId)?.name || "?";
   const getIngUnit = (ingId: string) => products.find(p => p.id === ingId)?.unit || "";
+  const getIngFactor = (ingId: string) => products.find(p => p.id === ingId)?.conversion_factor || 1;
+  const getIngDisplayUnit = (ingId: string) => products.find(p => p.id === ingId)?.display_unit || products.find(p => p.id === ingId)?.unit || "";
 
   // Helper: Find product by exact name (case insensitive)
   const findProductByName = (name: string): Product | undefined => {
@@ -608,7 +610,12 @@ export function TabBahan() {
                           ? <p className="text-gray-400 text-sm italic">Belum ada bahan baku langsung</p>
                           : <div className="space-y-1">{directRecipes.map(r => {
                               const isDaily = r.usage_type === "per_hari";
-                              const qtyLabel = isDaily ? `${r.daily_qty || r.qty_needed} ${r.unit}/hari` : `${r.qty_needed} ${r.unit}/porsi`;
+                              const ingId = r.ingredient_id || "";
+                              const factor = getIngFactor(ingId);
+                              const dispUnit = getIngDisplayUnit(ingId) || r.unit;
+                              const rawQty = isDaily ? (r.daily_qty || r.qty_needed) : r.qty_needed;
+                              const displayQty = isDaily ? rawQty / factor : rawQty / factor;
+                              const qtyLabel = isDaily ? `${displayQty.toLocaleString("id-ID")} ${dispUnit}/hari` : `${displayQty.toLocaleString("id-ID")} ${dispUnit}/porsi`;
                               return (
                                 <div key={r.id} className={`flex justify-between items-center px-3 py-2 rounded text-sm ${isDaily ? 'bg-orange-50' : 'bg-green-50'}`}>
                                   <span className={isDaily ? 'text-orange-800' : 'text-green-800'}>

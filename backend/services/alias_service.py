@@ -31,14 +31,13 @@ class AliasService:
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent?key={self.api_key}"
         )
-        self._products_cache: dict = {}  # {tenant_id: [(id, name)]}
 
     def resolve(self, nama_item: str, tenant_id: str, supabase) -> dict:
         """
         Return dict:
           {product_id, product_name, confidence, source, needs_confirmation}
         """
-        # ─── Langkah 0: Cek product utama (exact / case-insensitive) via memory ───
+        # ─── Langkah 0: Cek product utama (exact / case-insensitive) via DB ───
         products = self._get_products(tenant_id, supabase)
         for p in products:
             if p["name"].lower() == nama_item.lower():
@@ -136,9 +135,7 @@ class AliasService:
         }
 
     def _get_products(self, tenant_id: str, supabase) -> list:
-        """Ambil produk tenant dengan cache per request."""
-        if tenant_id in self._products_cache:
-            return self._products_cache[tenant_id]
+        """Ambil produk tenant — ALWAYS fresh from DB, no stale cache."""
         resp = (
             supabase.table("products")
             .select("id, name, category")
@@ -147,9 +144,7 @@ class AliasService:
             .limit(200)
             .execute()
         )
-        products = getattr(resp, "data", None) or []
-        self._products_cache[tenant_id] = products
-        return products
+        return getattr(resp, "data", None) or []
 
     def _ask_gemini(self, prompt: str) -> Optional[dict]:
         """Kirim prompt ke Gemini, return parsed dict atau None."""

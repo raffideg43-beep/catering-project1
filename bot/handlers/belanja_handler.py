@@ -28,6 +28,7 @@ from core.config import settings
 from utils.api_client import get_api_client
 from utils.formatter import format_error
 from utils.session import get_token, is_authenticated, get_role
+from utils.number_parser import parse_id_number
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +70,18 @@ def _parse_item_line(line: str) -> Optional[dict]:
     if len(tokens) < 4:
         return None
     try:
-        harga = Decimal(str(tokens[-1]).replace(",", ""))
+        harga = parse_id_number(tokens[-1])
         satuan = tokens[-2]
-        qty = Decimal(str(tokens[-3]).replace(",", ""))
+        qty = parse_id_number(tokens[-3])
         nama = " ".join(tokens[:-3])
         if qty <= 0 or harga <= 0 or not nama:
             return None
         return {
             "nama_item": nama,
-            "qty": float(qty),
+            "qty": qty,
             "satuan": satuan,
-            "harga_satuan": float(harga),
-            "subtotal": float(qty * harga),
+            "harga_satuan": harga,
+            "subtotal": qty * harga,
         }
     except (InvalidOperation, ValueError, IndexError):
         return None
@@ -318,11 +319,24 @@ async def _submit_manual(
     supplier = context.user_data.get("manual_supplier")
     items = context.user_data.get("manual_items", [])
 
+    # Auto-detect juknis category from item names (smart default)
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
+        from services.juknis_service import auto_categorize
+        item_names = [it.get("nama_item", "") for it in items]
+        juknis_cat = auto_categorize(item_names)
+    except Exception:
+        juknis_cat = "bahan_pangan"
+
     payload = {
         "supplier_name": supplier,
         "date": date.today().isoformat(),
         "payment_method": payment,
         "due_date": due_date,
+        "fund_source": "kas_umum",
+        "payment_date": date.today().isoformat(),
+        "juknis_category": juknis_cat,
         "items": items,
     }
 

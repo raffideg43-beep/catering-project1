@@ -21,6 +21,7 @@ from utils.api_client import get_api_client
 from utils.formatter import format_error
 from utils.image_utils import compress_photo
 from utils.session import get_role, get_token, is_authenticated
+from utils.number_parser import parse_id_number
 
 logger = logging.getLogger(__name__)
 
@@ -498,8 +499,8 @@ async def konfirmasi_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             else:
                 errors.append(tid[:8])
         except Exception as e:
-            from utils.api_client import APIError
-            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             errors.append(f"{tid[:8]}: {e}")
 
     err_note = f"\n\n⚠️ {len(errors)} gagal: {', '.join(errors[:3])}" if errors else ""
@@ -575,6 +576,21 @@ def _esc(text: str) -> str:
     return re.sub(r"([_*\[\]()~`>#+\-=|{}.!\\])", r"\\\1", str(text))
 
 
+def _parse_edit_input(text: str) -> tuple[float, float] | None:
+    """Helper to parse 'qty harga' input."""
+    parts = text.split()
+    if len(parts) != 2:
+        return None
+    try:
+        qty = parse_id_number(parts[0])
+        harga = parse_id_number(parts[1])
+        if qty < 0 or harga < 0:
+            return None
+        return float(qty), float(harga)
+    except Exception:
+        return None
+
+
 # ─── Global text input handler: edit item inline ──────────────────────────────
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -592,26 +608,18 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return  # tidak dalam mode edit, abaikan
 
     text = update.message.text.strip()
-    parts = text.split()
-    if len(parts) < 2:
+    parsed_values = _parse_edit_input(text)
+
+    if parsed_values is None:
         await update.message.reply_text(
-            "❌ Format salah\\.\nGunakan: `qty harga`\nContoh: `10 13500`",
+            "❌ Format salah atau nilai tidak valid\\.\n"
+            "Gunakan: `qty harga`\nContoh: `10 13500`\n"
+            "Qty dan harga harus angka positif\\.",
             parse_mode="MarkdownV2",
         )
         return
 
-    try:
-        from decimal import Decimal
-        qty = float(Decimal(parts[0].replace(",", "")))
-        harga = float(Decimal(parts[1].replace(",", "").replace(".", "")))
-        if qty <= 0 or harga <= 0:
-            raise ValueError
-    except Exception:
-        await update.message.reply_text(
-            "❌ Nilai tidak valid\\. qty dan harga harus angka positif\\.",
-            parse_mode="MarkdownV2",
-        )
-        return
+    qty, harga = parsed_values
 
     token = get_token(context)
     api = get_api_client(settings.backend_url)

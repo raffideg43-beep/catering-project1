@@ -196,7 +196,7 @@ def update_product(
     return {"success": True, "data": ProductResponse(**data[0])}
 
 
-@router.delete("/{product_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner"]))])
+@router.delete("/{product_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
 def delete_product(
     product_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -224,6 +224,7 @@ def get_stock_projection(
     """
     import math
     from datetime import date, timedelta
+    from services.recipe_service import recipe_service
 
     supabase = get_supabase()
     tid = current_user.tenant_id
@@ -233,7 +234,7 @@ def get_stock_projection(
     # ── Ambil semua produk aktif ──────────────────────────────────────────
     prod_resp = (
         supabase.table("products")
-        .select("id, name, unit, stock_qty, stock_min, hpp")
+        .select("id, name, unit, base_unit, display_unit, conversion_factor, stock_qty, stock_min, hpp")
         .eq("tenant_id", tid)
         .eq("is_active", True)
         .neq("category", "produk_jadi")
@@ -276,48 +277,36 @@ def get_stock_projection(
         active_days = min(len(weekly), days)
 
         if menu_ids:
-            # Ambil resep (komponen + bahan langsung)
+            # Ambil resep
             recipe_resp = (
                 supabase.table("recipes")
-                .select("menu_id, ingredient_id, component_id, qty_needed")
+                .select("*")
                 .in_("menu_id", menu_ids)
                 .execute()
             )
             recipes = getattr(recipe_resp, "data", None) or []
 
-            # Komponen → bahan
-            comp_ids = list({r["component_id"] for r in recipes if r.get("component_id")})
-            comp_items: list = []
-            if comp_ids:
-                ci_resp = (
-                    supabase.table("recipe_component_items")
-                    .select("component_id, ingredient_id, qty_needed")
-                    .in_("component_id", comp_ids)
-                    .execute()
-                )
-                comp_items = getattr(ci_resp, "data", None) or []
+            # Hitung kemunculan tiap menu
+            menu_counts = {}
+            for w in weekly:
+                mid = w.get("menu_id")
+                if mid:
+                    menu_counts[mid] = menu_counts.get(mid, 0) + 1
 
-            comp_ing_map: Dict[str, list] = {}
-            for ci in comp_items:
-                comp_ing_map.setdefault(ci["component_id"], []).append(ci)
+            total_flat = {}
+            for mid, count in menu_counts.items():
+                m_recipes = [r for r in recipes if r["menu_id"] == mid]
+                # Hitung untuk `total_portions` porsi
+                # _flatten_recipes otomatis expand komponen dan respect usage_type
+                flat_for_run = recipe_service._flatten_recipes(m_recipes, total_portions, supabase)
+                
+                # Akumulasi ke total mingguan
+                for iid, qty_base in flat_for_run.items():
+                    total_flat[iid] = total_flat.get(iid, 0) + float(qty_base) * count
 
-            # Akumulasi kebutuhan per hari
-            for menu_row in weekly:
-                menu_id = menu_row.get("menu_id")
-                if not menu_id:
-                    continue
-                for r in recipes:
-                    if r["menu_id"] != menu_id:
-                        continue
-                    needed = float(r.get("qty_needed") or 0) * total_portions
-                    if r.get("ingredient_id"):
-                        iid = r["ingredient_id"]
-                        daily_usage[iid] = daily_usage.get(iid, 0) + needed / max(active_days, 1)
-                    elif r.get("component_id"):
-                        for ci in comp_ing_map.get(r["component_id"], []):
-                            iid = ci["ingredient_id"]
-                            sub = float(ci.get("qty_needed") or 0) * total_portions
-                            daily_usage[iid] = daily_usage.get(iid, 0) + sub / max(active_days, 1)
+            # Konversi menjadi pemakaian rata-rata per hari
+            for iid, total_base in total_flat.items():
+                daily_usage[iid] = total_base / max(active_days, 1)
 
     if not based_on_menu:
         # Fallback: rata-rata pemakaian 7 hari terakhir
@@ -339,20 +328,28 @@ def get_stock_projection(
     items_out = []
     for p in products:
         pid = p["id"]
-        stock = float(p.get("stock_qty") or 0)
-        stock_min = float(p.get("stock_min") or 0)
-        usage = daily_usage.get(pid, 0)
-        needed_period = usage * days
+        # Semua diubah ke DISPLAY UNIT dengan membaginya dengan conversion_factor
+        factor = float(p.get("conversion_factor") or 1)
+        
+        stock_base = float(p.get("stock_qty") or 0)
+        stock_min_base = float(p.get("stock_min") or 0)
+        usage_base = daily_usage.get(pid, 0)
+        
+        stock_disp = stock_base / factor if factor else stock_base
+        stock_min_disp = stock_min_base / factor if factor else stock_min_base
+        usage_disp = usage_base / factor if factor else usage_base
+        
+        needed_period_disp = usage_disp * days
 
-        if usage > 0:
-            days_rem = stock / usage
+        if usage_disp > 0:
+            days_rem = stock_disp / usage_disp
         else:
             days_rem = 999  # tak terbatas
 
-        sufficient = stock >= needed_period
-        shortage = max(needed_period - stock, 0)
+        sufficient = stock_disp >= needed_period_disp
+        shortage_disp = max(needed_period_disp - stock_disp, 0)
 
-        if stock <= 0:
+        if stock_disp <= 0:
             stat = "habis"
         elif days_rem < 1:
             stat = "kritis"
@@ -361,19 +358,23 @@ def get_stock_projection(
         else:
             stat = "aman"
 
+        disp_unit = p.get("display_unit") or p.get("unit", "pcs")
+
         items_out.append({
             "product_id": pid,
             "name": p["name"],
-            "unit": p["unit"],
-            "stock_qty": stock,
-            "stock_min": stock_min,
-            "daily_usage": round(usage, 4),
+            "unit": disp_unit,
+            "stock_qty": stock_base, # Keep raw for sorting if needed
+            "stock_qty_display": round(stock_disp, 3),
+            "stock_min_display": round(stock_min_disp, 3),
+            "daily_usage": round(usage_disp, 4),
             "days_remaining": round(min(days_rem, 999), 1),
-            "needed_for_period": round(needed_period, 3),
+            "needed_for_period": round(needed_period_disp, 3),
             "sufficient": sufficient,
-            "shortage": round(shortage, 3),
+            "shortage": round(shortage_disp, 3),
             "status": stat,
             "hpp": p.get("hpp"),
+            "display_unit": disp_unit,
         })
 
     # Sort: kritis/habis dulu

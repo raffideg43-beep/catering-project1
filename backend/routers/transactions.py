@@ -36,6 +36,7 @@ from models.transaction import (
     TransactionUpdate,
 )
 from models.user import UserInDB
+from utils.unit_converter import get_base_unit
 from workers.ocr_worker import run_ocr_in_background
 
 router = APIRouter(tags=["transactions"])
@@ -255,6 +256,7 @@ async def confirm_transaction(
                 "notes": f"Konfirmasi nota {trx.get('ref_number', '')}",
             }).execute()
         except Exception as e:
+            logger.error(f"Gagal confirm stok {item.get('product_name', '?')}: {e}")
             stok_errors.append(f"{item.get('product_name', '?')}: {e}")
 
     # ─── Insert cashflow_log (arus kas keluar) ────────────────────────
@@ -331,6 +333,10 @@ def list_transactions(
     status: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    juknis_category: Optional[str] = Query(None),
+    fund_source: Optional[str] = Query(None),
+    payment_date_start: Optional[str] = Query(None),
+    payment_date_end: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
     current_user: UserInDB = Depends(get_current_user),
@@ -355,6 +361,14 @@ def list_transactions(
         q = q.eq("type", type)
     if search:
         q = q.ilike("nama_toko", f"%{search}%")
+    if juknis_category:
+        q = q.eq("juknis_category", juknis_category)
+    if fund_source:
+        q = q.eq("fund_source", fund_source)
+    if payment_date_start:
+        q = q.gte("payment_date", payment_date_start)
+    if payment_date_end:
+        q = q.lte("payment_date", payment_date_end)
 
     resp = q.range(offset, offset + limit - 1).execute()
     data = getattr(resp, "data", None) or []
@@ -828,6 +842,13 @@ async def create_manual_transaction(
     payment_method = body.get("payment_method", "tunai")
     due_date = body.get("due_date") or None
     notes = body.get("notes") or None
+    fund_source = body.get("fund_source", "kas_umum")
+    payment_date = body.get("payment_date") or trx_date
+
+    # Auto-detect juknis category from item names
+    from services.juknis_service import auto_categorize
+    item_names = [it.get("nama_item", "") for it in items_input]
+    juknis_category = body.get("juknis_category") or auto_categorize(item_names, current_user.tenant_id)
 
     # ─── Insert transaksi (status=confirmed langsung) ─────────────────
     supplier_name = body.get("supplier_name") or None
@@ -839,6 +860,10 @@ async def create_manual_transaction(
         "source": "telegram_manual",
         "status": "confirmed",
         "date": trx_date,
+        "payment_date": payment_date,
+        "fund_source": fund_source,
+        "juknis_category": juknis_category,
+        "transaction_type": "debit",
         "nama_toko": supplier_name,
         "payment_method": payment_method,
         "due_date": due_date,
@@ -875,11 +900,16 @@ async def create_manual_transaction(
         # Jika produk belum ada, buat otomatis sebagai bahan_baku
         if not product_id:
             try:
+                base, c_factor = get_base_unit(satuan)
                 new_prod_resp = supabase.table("products").insert({
                     "tenant_id": current_user.tenant_id,
                     "name": product_name,
                     "category": "bahan_baku",
                     "unit": satuan,
+                    "base_unit": base,
+                    "display_unit": satuan,
+                    "conversion_factor": float(c_factor),
+                    "is_active": True,
                     "hpp": str(harga),
                     "sell_price": "0.00",
                     "stock_min": "0",
@@ -889,6 +919,7 @@ async def create_manual_transaction(
                 if new_prod_data:
                     product_id = new_prod_data[0]["id"]
             except Exception as e:
+                logger.error(f"Auto-create gagal untuk '{product_name}': {e}")
                 stok_errors.append(f"Gagal auto-create produk '{product_name}': {e}")
         
         # Ambil HPP dari produk jika ketemu
@@ -960,6 +991,7 @@ async def create_manual_transaction(
                     "notes": f"Manual: {supplier_name or 'tanpa supplier'}",
                 }).execute()
             except Exception as e:
+                logger.error(f"Gagal update stok {product_name}: {e}")
                 stok_errors.append(f"{product_name}: {e}")
 
     # ─── Update total ─────────────────────────────────────────────────

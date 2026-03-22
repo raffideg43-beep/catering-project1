@@ -16,6 +16,9 @@ interface Transaction {
     pph22_amount?: string;
     ppn_amount?: string;
     items_count?: number;
+    juknis_category?: string;
+    payment_date?: string;
+    fund_source?: string;
     created_at: string;
 }
 
@@ -43,6 +46,7 @@ export default function PembukuanPage() {
     const [tahun, setTahun] = useState(now.getFullYear());
     const [status, setStatus] = useState("all");
     const [supplier, setSupplier] = useState("");
+    const [juknisFilter, setJuknisFilter] = useState("all");
     const [page, setPage] = useState(0);
 
     const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -62,6 +66,7 @@ export default function PembukuanPage() {
             const params: any = { limit: LIMIT, offset: page * LIMIT };
             if (status !== "all") params.status = status;
             if (supplier.trim()) params.supplier = supplier.trim();
+            if (juknisFilter !== "all") params.juknis_category = juknisFilter;
             // Date range: bulan/tahun
             const first = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
             const lastDay = new Date(tahun, bulan, 0).getDate();
@@ -90,7 +95,7 @@ export default function PembukuanPage() {
         } finally {
             setLoading(false);
         }
-    }, [bulan, tahun, status, supplier, page]);
+    }, [bulan, tahun, status, supplier, juknisFilter, page]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -125,13 +130,36 @@ export default function PembukuanPage() {
                 title="Pembukuan"
                 subtitle={`${MONTHS_FULL[bulan]} ${tahun}`}
                 actions={
-                    <button
-                        onClick={handleExcel}
-                        disabled={excelLoading}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-                    >
-                        {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleExcel}
+                            disabled={excelLoading}
+                            className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                        >
+                            {excelLoading ? "⏳..." : `📥 Normal`}
+                        </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const url = `/reports/excel/download?year=${tahun}&month=${bulan}&format=audit`;
+                                    const resp = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}${url}`, {
+                                        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                                    });
+                                    if (!resp.ok) throw new Error();
+                                    const blob = await resp.blob();
+                                    const a = document.createElement('a');
+                                    a.href = URL.createObjectURL(blob);
+                                    a.download = `pembukuan_audit_${tahun}_${String(bulan).padStart(2,'0')}.xlsx`;
+                                    a.click();
+                                } catch {
+                                    alert('Gagal download audit Excel.');
+                                }
+                            }}
+                            className="flex items-center gap-1 px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                        >
+                            📋 Untuk Audit
+                        </button>
+                    </div>
                 }
             />
 
@@ -182,6 +210,20 @@ export default function PembukuanPage() {
                             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-300"
                         />
                     </div>
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1">Kategori Juknis</label>
+                        <select
+                            value={juknisFilter}
+                            onChange={(e) => { setJuknisFilter(e.target.value); setPage(0); }}
+                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        >
+                            <option value="all">Semua</option>
+                            <option value="bahan_pangan">Bahan Pangan</option>
+                            <option value="operasional">Operasional</option>
+                            <option value="insentif">Insentif</option>
+                            <option value="dana_masuk">Dana Masuk</option>
+                        </select>
+                    </div>
                     <button
                         onClick={() => { setPage(0); fetchData(); }}
                         className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
@@ -189,7 +231,7 @@ export default function PembukuanPage() {
                         🔍 Cari
                     </button>
                     <button
-                        onClick={() => { setBulan(now.getMonth() + 1); setTahun(now.getFullYear()); setStatus("all"); setSupplier(""); setPage(0); }}
+                        onClick={() => { setBulan(now.getMonth() + 1); setTahun(now.getFullYear()); setStatus("all"); setSupplier(""); setJuknisFilter("all"); setPage(0); }}
                         className="px-4 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
                     >
                         🔄 Reset
@@ -234,7 +276,7 @@ export default function PembukuanPage() {
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50 border-b border-gray-100">
                                     <tr>
-                                        {["Tanggal", "Supplier", "Items", "Total", "PPh22", "PPN", "Bayar", "Status", "Aksi"].map((h) => (
+                                        {["Tanggal", "Supplier", "Items", "Total", "Kategori", "Tgl Bayar", "Status", "Aksi"].map((h) => (
                                             <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
                                         ))}
                                     </tr>
@@ -243,6 +285,20 @@ export default function PembukuanPage() {
                                     {transactions.map((trx, i) => {
                                         const pph22 = parseFloat(trx.pph22_amount || "0");
                                         const ppn = parseFloat(trx.ppn_amount || "0");
+                                        const juknisColors: Record<string, string> = {
+                                            bahan_pangan: "bg-green-100 text-green-700",
+                                            operasional: "bg-blue-100 text-blue-700",
+                                            insentif: "bg-purple-100 text-purple-700",
+                                            dana_masuk: "bg-yellow-100 text-yellow-700",
+                                        };
+                                        const juknisLabels: Record<string, string> = {
+                                            bahan_pangan: "Bahan Pangan",
+                                            operasional: "Operasional",
+                                            insentif: "Insentif",
+                                            dana_masuk: "Dana Masuk",
+                                        };
+                                        const jCat = trx.juknis_category || "";
+                                        const showPayDate = trx.payment_date && trx.payment_date !== trx.date;
                                         return (
                                             <tr key={trx.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                                 <td className="px-4 py-3 whitespace-nowrap text-gray-600">
@@ -251,13 +307,20 @@ export default function PembukuanPage() {
                                                 <td className="px-4 py-3 font-medium text-gray-800 max-w-[140px] truncate">{trx.nama_toko || "—"}</td>
                                                 <td className="px-4 py-3 text-center text-gray-500">{trx.items_count ?? "—"}</td>
                                                 <td className="px-4 py-3 font-semibold whitespace-nowrap">{formatRp(trx.total)}</td>
-                                                <td className="px-4 py-3 text-gray-500 whitespace-nowrap" title={pph22 === 0 ? "Dihitung saat Excel" : ""}>
-                                                    {pph22 > 0 ? formatRp(pph22) : <span className="text-gray-300">—</span>}
+                                                <td className="px-4 py-3">
+                                                    {jCat ? (
+                                                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${juknisColors[jCat] || "bg-gray-100 text-gray-600"}`}>
+                                                            {juknisLabels[jCat] || jCat}
+                                                        </span>
+                                                    ) : <span className="text-gray-300">—</span>}
                                                 </td>
-                                                <td className="px-4 py-3 text-gray-500 whitespace-nowrap" title={ppn === 0 ? "Dihitung saat Excel" : ""}>
-                                                    {ppn > 0 ? formatRp(ppn) : <span className="text-gray-300">—</span>}
+                                                <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                                                    {showPayDate ? (
+                                                        <span title="Cash basis">
+                                                            {new Date(trx.payment_date!).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
+                                                        </span>
+                                                    ) : <span className="text-gray-300">—</span>}
                                                 </td>
-                                                <td className="px-4 py-3 text-gray-500 text-xs">{trx.payment_method || "—"}</td>
                                                 <td className="px-4 py-3"><StatusBadge status={trx.status} /></td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
