@@ -6,6 +6,7 @@ import { isAuthenticated, clearToken } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
+  { href: "/anggaran", icon: "📊", label: "Anggaran" },
   { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
   { href: "/mbg", icon: "🍱", label: "MBG" },
   {

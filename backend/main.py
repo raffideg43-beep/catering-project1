@@ -33,6 +33,8 @@ from routers import payables as payables_router
 from routers import price_tracking as price_tracking_router
 from routers import schedules as schedules_router
 from routers import imports as imports_router
+from routers import budget as budget_router
+from routers import beneficiaries as beneficiaries_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,6 +139,8 @@ app.include_router(payables_router.router)
 app.include_router(price_tracking_router.router)
 app.include_router(schedules_router.router)
 app.include_router(imports_router.router)
+app.include_router(budget_router.router, prefix="/budget")
+app.include_router(beneficiaries_router.router)
 
 
 

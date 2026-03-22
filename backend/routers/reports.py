@@ -229,7 +229,7 @@ def get_monthly_report(
     # ─── Expenses bulanan ─────────────────────────────────────────────
     exp_resp = (
         supabase.table("transactions")
-        .select("id, total, juknis_category, suppliers(name)")
+        .select("id, total, suppliers(name)")
         .eq("tenant_id", tid)
         .eq("type", "expense")
         .eq("status", "confirmed")
@@ -297,33 +297,6 @@ def get_monthly_report(
         import logging
         logging.warning("Failed to fetch excel_files status: %s", e)
 
-    # ─── Juknis breakdown ─────────────────────────────────────────────
-    juknis_map: Dict[str, Decimal] = {}
-    for r in exp_rows:
-        cat = r.get("juknis_category") or "lainnya"
-        juknis_map[cat] = juknis_map.get(cat, Decimal("0")) + _d(r.get("total"))
-
-    juknis_breakdown = {
-        "bahan_pangan": str(juknis_map.get("bahan_pangan", Decimal("0"))),
-        "operasional": str(juknis_map.get("operasional", Decimal("0"))),
-        "insentif": str(juknis_map.get("insentif", Decimal("0"))),
-        "lainnya": str(juknis_map.get("lainnya", Decimal("0"))),
-    }
-
-    # ─── Realisasi vs Budget (80/15/5) ────────────────────────────────
-    budget_bahan = revenue_gross * Decimal("0.80")
-    budget_upah = revenue_gross * Decimal("0.15")
-    budget_ops = revenue_gross * Decimal("0.05")
-    real_bahan = _d(juknis_map.get("bahan_pangan"))
-    real_upah = _d(juknis_map.get("insentif"))
-    real_ops = _d(juknis_map.get("operasional"))
-
-    realisasi_vs_budget = {
-        "bahan": {"budget": str(budget_bahan), "realisasi": str(real_bahan), "selisih": str(budget_bahan - real_bahan)},
-        "upah": {"budget": str(budget_upah), "realisasi": str(real_upah), "selisih": str(budget_upah - real_upah)},
-        "ops": {"budget": str(budget_ops), "realisasi": str(real_ops), "selisih": str(budget_ops - real_ops)},
-    }
-
     return {
         "success": True,
         "data": {
@@ -354,80 +327,8 @@ def get_monthly_report(
                 "items": low_items,
             },
             "excel_status": excel_status,
-            "juknis_breakdown": juknis_breakdown,
-            "realisasi_vs_budget": realisasi_vs_budget,
         },
     }
-
-
-# ─── GET /reports/excel/download ──────────────────────────────────────────────
-
-@router.get("/excel/download")
-def download_excel(
-    year: Optional[int] = Query(default=None),
-    month: Optional[int] = Query(default=None),
-    format: str = Query(default="normal"),
-    current_user: UserInDB = Depends(get_current_user),
-):
-    """Download Excel pembukuan. format=normal|audit"""
-    from fastapi.responses import StreamingResponse
-    from io import BytesIO
-    import logging as _log
-
-    supabase = get_supabase()
-    tid = current_user.tenant_id
-    today = date.today()
-    y = year or today.year
-    m = month or today.month
-    period_key = f"{y:04d}-{m:02d}"
-
-    # Check if Excel file exists in storage
-    excel_resp = (
-        supabase.table("excel_files")
-        .select("file_url")
-        .eq("tenant_id", tid)
-        .eq("period", period_key)
-        .limit(1)
-        .execute()
-    )
-    excel_rows = getattr(excel_resp, "data", None) or []
-
-    if not excel_rows or not excel_rows[0].get("file_url"):
-        raise HTTPException(status_code=404, detail="Excel belum di-generate untuk periode ini. Klik Generate di halaman Pembukuan.")
-
-    file_url = excel_rows[0]["file_url"]
-
-    if format == "audit":
-        # Download original file, strip data validations
-        import httpx
-        from openpyxl import load_workbook
-
-        try:
-            resp = httpx.get(file_url, timeout=30.0)
-            resp.raise_for_status()
-            wb = load_workbook(BytesIO(resp.content))
-
-            # Strip data validations for Google Sheets compat
-            for ws in wb.worksheets:
-                ws.data_validations.dataValidation = []
-
-            buf = BytesIO()
-            wb.save(buf)
-            buf.seek(0)
-            filename = f"pembukuan_audit_{y}_{m:02d}.xlsx"
-        except Exception as e:
-            _log.warning(f"Audit Excel generation failed: {e}")
-            raise HTTPException(status_code=500, detail="Gagal generate audit Excel")
-
-        return StreamingResponse(
-            buf,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    else:
-        # Redirect to storage URL for normal download
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=file_url)
 
 
 # ─── GET /reports/stock ───────────────────────────────────────────────────────

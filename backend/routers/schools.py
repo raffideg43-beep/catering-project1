@@ -64,10 +64,6 @@ def create_school(
             detail="Sekolah dengan nama ini sudah ada",
         )
 
-    # Auto-calc default_portions from student counts if provided
-    total_penerima = body.jumlah_siswa_l + body.jumlah_siswa_p + body.jumlah_pendidik
-    portions = total_penerima if total_penerima > 0 else body.default_portions
-
     response = (
         supabase.table("schools")
         .insert(
@@ -76,10 +72,7 @@ def create_school(
                 "name": body.name,
                 "address": body.address,
                 "contact_name": body.contact_name,
-                "default_portions": portions,
-                "jumlah_siswa_l": body.jumlah_siswa_l,
-                "jumlah_siswa_p": body.jumlah_siswa_p,
-                "jumlah_pendidik": body.jumlah_pendidik,
+                "default_portions": body.default_portions,
                 "notes": body.notes,
                 "is_active": True,
             }
@@ -113,33 +106,10 @@ def update_school(
         update_data["address"] = body.address
     if body.contact_name is not None:
         update_data["contact_name"] = body.contact_name
+    if body.default_portions is not None:
+        update_data["default_portions"] = body.default_portions
     if body.notes is not None:
         update_data["notes"] = body.notes
-    if body.jumlah_siswa_l is not None:
-        update_data["jumlah_siswa_l"] = body.jumlah_siswa_l
-    if body.jumlah_siswa_p is not None:
-        update_data["jumlah_siswa_p"] = body.jumlah_siswa_p
-    if body.jumlah_pendidik is not None:
-        update_data["jumlah_pendidik"] = body.jumlah_pendidik
-
-    # Auto-update default_portions when student data changes
-    has_student_update = any(
-        getattr(body, f) is not None
-        for f in ["jumlah_siswa_l", "jumlah_siswa_p", "jumlah_pendidik"]
-    )
-    if has_student_update:
-        # Fetch current values for fields not in this update
-        cur_resp = supabase.table("schools").select("jumlah_siswa_l, jumlah_siswa_p, jumlah_pendidik").eq("id", school_id).single().execute()
-        cur = getattr(cur_resp, "data", None) or {}
-        l_val = body.jumlah_siswa_l if body.jumlah_siswa_l is not None else (cur.get("jumlah_siswa_l") or 0)
-        p_val = body.jumlah_siswa_p if body.jumlah_siswa_p is not None else (cur.get("jumlah_siswa_p") or 0)
-        g_val = body.jumlah_pendidik if body.jumlah_pendidik is not None else (cur.get("jumlah_pendidik") or 0)
-        total = l_val + p_val + g_val
-        if total > 0:
-            update_data["default_portions"] = total
-
-    if body.default_portions is not None and not has_student_update:
-        update_data["default_portions"] = body.default_portions
 
     response = (
         supabase.table("schools")

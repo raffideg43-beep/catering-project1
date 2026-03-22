@@ -333,10 +333,6 @@ def list_transactions(
     status: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    juknis_category: Optional[str] = Query(None),
-    fund_source: Optional[str] = Query(None),
-    payment_date_start: Optional[str] = Query(None),
-    payment_date_end: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
     current_user: UserInDB = Depends(get_current_user),
@@ -361,14 +357,6 @@ def list_transactions(
         q = q.eq("type", type)
     if search:
         q = q.ilike("nama_toko", f"%{search}%")
-    if juknis_category:
-        q = q.eq("juknis_category", juknis_category)
-    if fund_source:
-        q = q.eq("fund_source", fund_source)
-    if payment_date_start:
-        q = q.gte("payment_date", payment_date_start)
-    if payment_date_end:
-        q = q.lte("payment_date", payment_date_end)
 
     resp = q.range(offset, offset + limit - 1).execute()
     data = getattr(resp, "data", None) or []
@@ -842,16 +830,16 @@ async def create_manual_transaction(
     payment_method = body.get("payment_method", "tunai")
     due_date = body.get("due_date") or None
     notes = body.get("notes") or None
-    fund_source = body.get("fund_source", "kas_umum")
-    payment_date = body.get("payment_date") or trx_date
-
-    # Auto-detect juknis category from item names
-    from services.juknis_service import auto_categorize
-    item_names = [it.get("nama_item", "") for it in items_input]
-    juknis_category = body.get("juknis_category") or auto_categorize(item_names, current_user.tenant_id)
 
     # ─── Insert transaksi (status=confirmed langsung) ─────────────────
     supplier_name = body.get("supplier_name") or None
+
+    # ─── Juknis auto-categorize ──────────────────────────────────────
+    from services.juknis_service import auto_categorize
+    juknis_cat = body.get("juknis_category") or auto_categorize(
+        [it.get("nama_item", "") for it in items_input]
+    )
+    kas_account_id = body.get("kas_account_id") or None
 
     trx_data = {
         "tenant_id": current_user.tenant_id,
@@ -860,10 +848,6 @@ async def create_manual_transaction(
         "source": "telegram_manual",
         "status": "confirmed",
         "date": trx_date,
-        "payment_date": payment_date,
-        "fund_source": fund_source,
-        "juknis_category": juknis_category,
-        "transaction_type": "debit",
         "nama_toko": supplier_name,
         "payment_method": payment_method,
         "due_date": due_date,
@@ -873,6 +857,9 @@ async def create_manual_transaction(
         "discount": "0.00",
         "total": "0.00",
         "subtotal": "0.00",
+        "juknis_category": juknis_cat,
+        "kas_account_id": kas_account_id,
+        "transaction_type": "debit",
     }
     resp = supabase.table("transactions").insert(trx_data).execute()
     data = getattr(resp, "data", None) or []

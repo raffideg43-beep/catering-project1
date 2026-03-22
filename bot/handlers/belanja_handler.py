@@ -207,11 +207,23 @@ async def input_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     grand_total = sum(i["subtotal"] for i in items)
     supplier = context.user_data.get("manual_supplier")
 
+    # ─── Juknis kategori auto-detect ────────────────────────────────
+    from services.juknis_service import auto_categorize
+    juknis_cat = auto_categorize([i["nama_item"] for i in items])
+    juknis_labels = {
+        "bahan_pangan": "🥦 Bahan Pangan",
+        "operasional": "⚙️ Operasional",
+        "insentif": "👷 Insentif",
+        "lainnya": "📦 Lainnya",
+    }
+    context.user_data["manual_juknis"] = juknis_cat
+
     # ─── Format konfirmasi ────────────────────────────────────────────
     lines = [
         "📝 *Langkah 3/3: Konfirmasi*\n",
         f"🏪 Supplier: {_esc(supplier or 'Tidak ada')}",
         f"📅 Tanggal: {_esc(date.today().strftime('%d/%m/%Y'))}",
+        f"📂 Kategori: {_esc(juknis_labels.get(juknis_cat, juknis_cat))}",
         "\n📦 *Item:*",
     ]
     for i in items:
@@ -319,24 +331,11 @@ async def _submit_manual(
     supplier = context.user_data.get("manual_supplier")
     items = context.user_data.get("manual_items", [])
 
-    # Auto-detect juknis category from item names (smart default)
-    try:
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
-        from services.juknis_service import auto_categorize
-        item_names = [it.get("nama_item", "") for it in items]
-        juknis_cat = auto_categorize(item_names)
-    except Exception:
-        juknis_cat = "bahan_pangan"
-
     payload = {
         "supplier_name": supplier,
         "date": date.today().isoformat(),
         "payment_method": payment,
         "due_date": due_date,
-        "fund_source": "kas_umum",
-        "payment_date": date.today().isoformat(),
-        "juknis_category": juknis_cat,
         "items": items,
     }
 

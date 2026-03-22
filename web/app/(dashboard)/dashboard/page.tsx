@@ -32,11 +32,6 @@ interface MonthlyData {
     profit_estimate: { gross_profit: string };
     stock_summary: { low_stock_count: number };
     excel_status: string;
-    realisasi_vs_budget?: {
-        bahan: { budget: string; realisasi: string; selisih: string };
-        upah: { budget: string; realisasi: string; selisih: string };
-        ops: { budget: string; realisasi: string; selisih: string };
-    };
 }
 
 interface Transaction {
@@ -216,50 +211,6 @@ export default function DashboardPage() {
                     )}
                 </div>
             </div>
-
-            {/* ─── Realisasi vs Budget ─────────────────────────── */}
-            {monthly?.realisasi_vs_budget && (() => {
-                const rvb = monthly.realisasi_vs_budget;
-                const items = [
-                    { label: "Bahan Pangan 80%", data: rvb.bahan, color: "bg-green-500", emoji: "🥦" },
-                    { label: "Insentif 15%", data: rvb.upah, color: "bg-purple-500", emoji: "👷" },
-                    { label: "Operasional 5%", data: rvb.ops, color: "bg-blue-500", emoji: "⚙️" },
-                ];
-                return (
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                        <h2 className="font-semibold text-gray-800 mb-4">📊 Realisasi vs Budget</h2>
-                        <div className="space-y-4">
-                            {items.map(({ label, data, color, emoji }) => {
-                                const budget = parseFloat(data.budget) || 0;
-                                const realisasi = parseFloat(data.realisasi) || 0;
-                                const selisih = parseFloat(data.selisih) || 0;
-                                const pct = budget > 0 ? Math.round((realisasi / budget) * 100) : 0;
-                                const over = pct > 100;
-                                return (
-                                    <div key={label}>
-                                        <div className="flex items-center justify-between text-sm mb-1">
-                                            <span className="font-medium text-gray-700">{emoji} {label}</span>
-                                            <span className={`text-xs font-semibold ${over ? "text-orange-600" : "text-green-600"}`}>
-                                                {pct}% {over ? `— Over ${formatRp(Math.abs(selisih))} ⚠️` : selisih > 0 ? `— Hemat ${formatRp(selisih)} ✅` : "✅"}
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-gray-100 rounded-full h-2.5">
-                                            <div
-                                                className={`h-2.5 rounded-full transition-all ${over ? "bg-orange-500" : color}`}
-                                                style={{ width: `${Math.min(pct, 100)}%` }}
-                                            />
-                                        </div>
-                                        <div className="flex justify-between text-xs text-gray-400 mt-1">
-                                            <span>Budget: {formatRp(budget)}</span>
-                                            <span>Real: {formatRp(realisasi)}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                );
-            })()}
 
             {/* ─── Transaksi Terbaru ────────────────────────────── */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
