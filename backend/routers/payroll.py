@@ -13,6 +13,8 @@ from core.dependencies import get_current_user, require_role
 from models.hr import PayrollPeriodCreate
 from models.user import UserInDB
 from services.pdf_service import pdf_service
+from services.kas_service import KasService
+from decimal import Decimal
 
 router = APIRouter(prefix="/payroll", tags=["hr"])
 
@@ -204,15 +206,16 @@ def approve_payroll_period(
 
 
 @router.post("/periods/{period_id}/pay", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner"]))])
-def pay_payroll_period(
+async def pay_payroll_period(
     period_id: str,
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Pay a payroll period, creating transactions."""
+    """Pay a payroll period, creating transactions & kas double entry."""
     supabase = get_supabase()
+    tid = current_user.tenant_id
     
     # 1. Validate status
-    period_res = supabase.table("payroll_periods").select("*").eq("id", period_id).eq("tenant_id", current_user.tenant_id).execute()
+    period_res = supabase.table("payroll_periods").select("*").eq("id", period_id).eq("tenant_id", tid).execute()
     periods = getattr(period_res, "data", None)
     if not periods:
         raise HTTPException(status_code=404, detail="Period not found")
@@ -220,9 +223,22 @@ def pay_payroll_period(
     period = periods[0]
     if period["status"] != "approved":
         raise HTTPException(status_code=400, detail="Periode harus di-approve sebelum bisa dibayar")
+
+    # Ambil default kas account (prioritaskan kas_kecil, kemudian va_bank)
+    kas_res = supabase.table("kas_accounts").select("id").eq("tenant_id", tid).eq("type", "kas_kecil").limit(1).execute()
+    kas_rows = getattr(kas_res, "data", None) or []
+    if not kas_rows:
+        kas_res = supabase.table("kas_accounts").select("id").eq("tenant_id", tid).eq("type", "va_bank").limit(1).execute()
+        kas_rows = getattr(kas_res, "data", None) or []
+    
+    if not kas_rows:
+        raise HTTPException(status_code=400, detail="Belum ada akun Kas yang dikonfigurasi. Buat kas di pengaturan anggaran.")
+        
+    kas_account_id = kas_rows[0]["id"]
         
     # 2. Update status to paid
-    today_str = date.today().isoformat()
+    today_dt = date.today()
+    today_str = today_dt.isoformat()
     supabase.table("payroll_periods").update({
         "status": "paid",
         "paid_date": today_str
@@ -239,14 +255,17 @@ def pay_payroll_period(
     
     for item in items:
         emp_name = item.get("employees", {}).get("name", "Unknown")
-        net = item["net_amount"]
-        
+        net = float(item["net_amount"])
+        if net <= 0:
+            continue
+            
         # Insert transaction
         txn_res = supabase.table("transactions").insert({
-            "tenant_id": current_user.tenant_id,
+            "tenant_id": tid,
             "type": "expense",
             "source": "payroll",
             "juknis_category": "insentif",
+            "kas_account_id": kas_account_id,
             "total": net,
             "date": today_str,
             "notes": f"Gaji {emp_name} - {period['name']}",
@@ -256,11 +275,31 @@ def pay_payroll_period(
         
         txn_data = getattr(txn_res, "data", None)
         if txn_data:
+            trx_id = txn_data[0]["id"]
             # Update item with transaction_id
             supabase.table("payroll_items").update({
-                "transaction_id": txn_data[0]["id"]
+                "transaction_id": trx_id
             }).eq("id", item["id"]).execute()
             
+            # KasService Double Entry
+            try:
+                await KasService.record_expense(
+                    tenant_id=tid,
+                    transaction_id=trx_id,
+                    amount=Decimal(str(net)),
+                    kas_account_id=kas_account_id,
+                    description=f"Gaji {emp_name} - {period['name']}",
+                    expense_date=today_dt,
+                    created_by=current_user.id,
+                    supabase=supabase,
+                    reference_type="payroll"
+                )
+            except ValueError as e:
+                # Revert period status if failed? Usually better to raise directly
+                raise HTTPException(status_code=400, detail=f"Gagal membayar {emp_name}: {str(e)}")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+                
     return {"success": True, "total_paid": period.get("total_amount", 0)}
 
 

@@ -11,6 +11,8 @@ from core.database import get_supabase
 from core.dependencies import get_current_user, require_role
 from models.hr import OperationalCostCreate
 from models.user import UserInDB
+from services.kas_service import KasService
+from decimal import Decimal
 
 router = APIRouter(prefix="/operational", tags=["financial"])
 
@@ -89,24 +91,48 @@ def get_operational_costs(
 
 
 @router.post("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
-def create_operational_cost(
+async def create_operational_cost(
     body: OperationalCostCreate,
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Record new operational cost & insert transaction."""
+    """Record new operational cost & insert transaction & double entry kas."""
     supabase = get_supabase()
+    tid = current_user.tenant_id
 
     cost_data = body.model_dump(exclude_unset=True)
-    cost_data["tenant_id"] = current_user.tenant_id
-    if "cost_date" in cost_data and cost_data["cost_date"]:
-        cost_data["cost_date"] = cost_data["cost_date"].isoformat()
+    cost_data["tenant_id"] = tid
+    
+    try:
+        cost_dt = cost_data["cost_date"] if isinstance(cost_data.get("cost_date"), date) else date.today()
+        cost_data["cost_date"] = cost_dt.isoformat()
+    except:
+        cost_dt = date.today()
+        cost_data["cost_date"] = cost_dt.isoformat()
+
+    # Get kas account id fallback
+    kas_account_id = cost_data.get("kas_account_id")
+    if "kas_account_id" in cost_data:
+        del cost_data["kas_account_id"]
+    
+    if not kas_account_id:
+        kas_res = supabase.table("kas_accounts").select("id").eq("tenant_id", tid).eq("type", "kas_kecil").limit(1).execute()
+        kas_rows = getattr(kas_res, "data", None) or []
+        if not kas_rows:
+            kas_res = supabase.table("kas_accounts").select("id").eq("tenant_id", tid).eq("type", "va_bank").limit(1).execute()
+            kas_rows = getattr(kas_res, "data", None) or []
+        if kas_rows:
+            kas_account_id = kas_rows[0]["id"]
+            
+    if not kas_account_id:
+        raise HTTPException(status_code=400, detail="Belum ada akun Kas yang dikonfigurasi.")
 
     # 1. Insert transaction
     txn_res = supabase.table("transactions").insert({
-        "tenant_id": current_user.tenant_id,
+        "tenant_id": tid,
         "type": "expense",
         "source": "manual_operational",
         "juknis_category": "operasional",
+        "kas_account_id": kas_account_id,
         "total": float(body.amount),
         "date": cost_data["cost_date"],
         "notes": body.name,
@@ -115,14 +141,35 @@ def create_operational_cost(
     }).execute()
     
     txn_data = getattr(txn_res, "data", None)
+    trx_id = None
     if txn_data:
-        cost_data["transaction_id"] = txn_data[0]["id"]
+        trx_id = txn_data[0]["id"]
+        cost_data["transaction_id"] = trx_id
 
     # 2. Insert operational cost
     response = supabase.table("operational_costs").insert(cost_data).execute()
     data = getattr(response, "data", None) or []
     if not data:
         raise HTTPException(status_code=500, detail="Failed to save operational cost")
+
+    # 3. Double entry Kas
+    if trx_id and float(body.amount) > 0:
+        try:
+            await KasService.record_expense(
+                tenant_id=tid,
+                transaction_id=trx_id,
+                amount=Decimal(str(body.amount)),
+                kas_account_id=kas_account_id,
+                description=f"Biaya Operasional: {body.name}",
+                expense_date=cost_dt,
+                created_by=current_user.id,
+                supabase=supabase,
+                reference_type="expense"
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Kas double entry failed: {e}")
 
     return {"success": True, "data": data[0]}
 

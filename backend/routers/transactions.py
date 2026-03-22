@@ -38,6 +38,7 @@ from models.transaction import (
 from models.user import UserInDB
 from utils.unit_converter import get_base_unit
 from workers.ocr_worker import run_ocr_in_background
+from services.kas_service import KasService
 
 router = APIRouter(tags=["transactions"])
 logger = logging.getLogger(__name__)
@@ -272,6 +273,29 @@ async def confirm_transaction(
         }).execute()
     except Exception as e:
         pass  # non-fatal
+
+    # ─── Kas Ledger Double Entry ───────────────────────────────────────
+    kas_account_id = trx.get("kas_account_id")
+    if kas_account_id:
+        try:
+            trx_dt = date.fromisoformat(trx.get("date")) if trx.get("date") else date.today()
+        except Exception:
+            trx_dt = date.today()
+            
+        try:
+            await KasService.record_expense(
+                tenant_id=current_user.tenant_id,
+                transaction_id=trx_id,
+                amount=Decimal(str(trx.get("total", "0.00"))),
+                kas_account_id=kas_account_id,
+                description=f"Belanja nota {trx.get('ref_number', trx_id[:8])}",
+                expense_date=trx_dt,
+                created_by=current_user.id,
+                supabase=supabase,
+                reference_type="expense"
+            )
+        except Exception as e:
+            logger.error(f"KasService double entry gagal pada confirm: {e}")
 
     # ─── Jika hutang → insert payables ───────────────────────────────
     if trx.get("payment_method") == "hutang" or trx.get("payment_status") == "belum_lunas":
@@ -1016,6 +1040,28 @@ async def create_manual_transaction(
             logger.info(f"Payable created for trx {trx_id}, amount={grand_total}, due={due_date}")
         except Exception as e:
             logger.error(f"Failed to insert payable for manual transaction {trx_id}: {e}")
+
+    # ─── Kas Ledger Double Entry ───────────────────────────────────────
+    if kas_account_id and grand_total > 0:
+        try:
+            trx_dt = date.fromisoformat(trx_date) if trx_date else date.today()
+        except:
+            trx_dt = date.today()
+            
+        try:
+            await KasService.record_expense(
+                tenant_id=current_user.tenant_id,
+                transaction_id=trx_id,
+                amount=grand_total,
+                kas_account_id=kas_account_id,
+                description=f"Belanja manual {supplier_name or ''}",
+                expense_date=trx_dt,
+                created_by=current_user.id,
+                supabase=supabase,
+                reference_type="expense"
+            )
+        except Exception as e:
+            logger.error(f"Kas double entry failed: {e}")
 
     # ─── Trigger Excel regenerate ──────────────────────────────────────
     from services.export_service import ExportService

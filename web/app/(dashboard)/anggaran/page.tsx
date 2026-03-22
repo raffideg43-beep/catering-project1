@@ -67,6 +67,11 @@ export default function AnggaranPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [data, setData] = useState<BudgetSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Ledger state
+  const [ledger, setLedger] = useState<any[]>([]);
+  const [activeKas, setActiveKas] = useState<string | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   // Modals
   const [showPagu, setShowPagu] = useState(false);
@@ -109,11 +114,29 @@ export default function AnggaranPage() {
     try {
       const res = await apiGet(`/budget/summary?year=${year}&month=${month}`);
       setData(res?.data || null);
+      if (res?.data?.kas_balances?.length > 0 && !activeKas) {
+        setActiveKas(res.data.kas_balances[0].id);
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [year, month]);
+  }, [year, month, activeKas]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fetchLedger = useCallback(async () => {
+    if (!activeKas) return;
+    setLedgerLoading(true);
+    try {
+      // Get dates for selected month/year
+      const startDate = new Date(year, month - 1, 1).toLocaleDateString('en-CA');
+      const endDate = new Date(year, month, 0).toLocaleDateString('en-CA');
+      const res = await apiGet(`/budget/ledger?kas_account_id=${activeKas}&start_date=${startDate}&end_date=${endDate}&limit=20`);
+      setLedger(res?.data?.entries || []);
+    } catch (e) { console.error(e); }
+    setLedgerLoading(false);
+  }, [year, month, activeKas]);
+
+  useEffect(() => { fetchLedger(); }, [fetchLedger]);
 
   // ─── Actions ─────────────────────────────────────────────────────────
 
@@ -297,6 +320,65 @@ export default function AnggaranPage() {
               )}
             </div>
           </div>
+
+          {/* ─── Buku Kas Preview ─── */}
+          {data.kas_balances.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h2 className="font-bold text-gray-900">📒 Buku Kas</h2>
+              </div>
+              <div className="p-4 border-b border-gray-100 flex flex-wrap gap-2">
+                {data.kas_balances.map(k => (
+                  <button 
+                    key={k.id} 
+                    onClick={() => setActiveKas(k.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${activeKas === k.id ? 'bg-blue-600 outline-none text-white border-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'}`}
+                  >
+                    {k.type === "va_bank" ? "🏦" : "💵"} {k.name}
+                  </button>
+                ))}
+              </div>
+              <div className="p-0 overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100/50 text-xs text-gray-500 uppercase tracking-wider">
+                      <th className="p-4 font-medium">Tanggal</th>
+                      <th className="p-4 font-medium">Keterangan</th>
+                      <th className="p-4 font-medium text-right">Masuk</th>
+                      <th className="p-4 font-medium text-right">Keluar</th>
+                      <th className="p-4 font-medium text-right bg-blue-50/30">Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100/50 text-sm">
+                    {ledgerLoading ? (
+                      <tr><td colSpan={5} className="p-8 text-center text-gray-400 italic">Memuat buku kas...</td></tr>
+                    ) : ledger.length > 0 ? (
+                      ledger.map((l, i) => {
+                        const isDebit = l.entry_type === "debit";
+                        return (
+                          <tr key={l.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="p-4 text-gray-500 whitespace-nowrap">{new Date(l.entry_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</td>
+                            <td className="p-4 font-medium text-gray-800">{l.description}</td>
+                            <td className="p-4 text-right">
+                              {isDebit && <span className="text-green-600 font-medium">+{fmtRp(l.amount)}</span>}
+                            </td>
+                            <td className="p-4 text-right">
+                              {!isDebit && <span className="text-red-500 font-medium">-{fmtRp(l.amount)}</span>}
+                            </td>
+                            <td className="p-4 text-right bg-blue-50/10 font-bold text-gray-800">
+                              {fmtRp(l.balance_after)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr><td colSpan={5} className="p-8 text-center text-gray-400 italic">Belum ada transaksi di kas ini pada bulan terpilih</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ─── Realisasi 80:15:5 ─── */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">

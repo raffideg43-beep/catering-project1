@@ -290,6 +290,19 @@ class ExportService:
             )
             payroll_items = getattr(items_res, "data", None) or []
 
+        # Kas Ledger
+        ledger_res = (
+            supabase.table("kas_ledger")
+            .select("*, kas_accounts(name, type)")
+            .eq("tenant_id", tenant_id)
+            .gte("entry_date", first.isoformat())
+            .lte("entry_date", last.isoformat())
+            .order("entry_date")
+            .order("created_at")
+            .execute()
+        )
+        kas_ledger = getattr(ledger_res, "data", None) or []
+
         return {
             "tenant": tenant,
             "first": first,
@@ -306,6 +319,7 @@ class ExportService:
             "payables": payables,
             "operational_costs": operational_costs,
             "payroll_items": payroll_items,
+            "kas_ledger": kas_ledger,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -333,6 +347,9 @@ class ExportService:
         # Sheet 6: Operasional & Upah
         ws_ops = wb.create_sheet("Operasional & Upah")
 
+        # Sheet 7: Buku Kas Umum
+        ws_bku = wb.create_sheet("Buku Kas Umum")
+
         logger.info(f"Building workbook with sheets: {wb.sheetnames}")
 
         self._fill_ringkasan(ws_ringkasan, data, year, month)
@@ -341,10 +358,48 @@ class ExportService:
         self._fill_laporan_pemerintah(ws_pemerintah, data, year, month)
         self._fill_riwayat_nota(ws_nota, data)
         self._fill_ops_upah(ws_ops, data, year, month)
+        self._fill_bku(ws_bku, data, year, month)
 
         return wb
 
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
+
+    def _fill_bku(self, ws, data: dict, year: int, month: int) -> None:
+        from openpyxl.styles import Font, Alignment
+        bulan_str = BULAN[month]
+        
+        ws.merge_cells("A1:G1")
+        ws["A1"] = f"BUKU KAS UMUM — {bulan_str} {year}"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        headers = ["No", "Tanggal", "Akun Kas", "Keterangan", "Masuk (Debit)", "Keluar (Kredit)", "Saldo Akhir"]
+        self._write_headers(ws, 3, headers)
+
+        row = 4
+        for i, entry in enumerate(data.get("kas_ledger", []), 1):
+            is_debit = entry.get("entry_type") == "debit"
+            masuk = entry.get("amount") if is_debit else 0
+            keluar = 0 if is_debit else entry.get("amount")
+            
+            ws.cell(row, 1, i)
+            ws.cell(row, 2, entry.get("entry_date", ""))
+            
+            # Safe access for kas_account inner join
+            acc_info = entry.get("kas_accounts")
+            acc_name = acc_info.get("name", "") if isinstance(acc_info, dict) else ""
+            ws.cell(row, 3, acc_name)
+            
+            ws.cell(row, 4, entry.get("description", ""))
+            
+            ws.cell(row, 5, float(masuk)).number_format = '"Rp "#,##0'
+            ws.cell(row, 6, float(keluar)).number_format = '"Rp "#,##0'
+            ws.cell(row, 7, float(entry.get("balance_after", 0))).number_format = '"Rp "#,##0'
+            
+            self._alt_row(ws, row, 3)
+            row += 1
+
+        self._set_column_widths(ws)
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment

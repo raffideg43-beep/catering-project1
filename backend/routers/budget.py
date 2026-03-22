@@ -15,6 +15,7 @@ from core.database import get_supabase
 from core.dependencies import get_current_user, require_role
 from models.user import UserInDB
 from services.budget_service import budget_service
+from services.kas_service import KasService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["budget"])
@@ -148,7 +149,7 @@ def set_pagu(
 
 
 @router.post("/disbursement", dependencies=[Depends(require_role(["owner", "admin"]))])
-def add_disbursement(
+async def add_disbursement(
     body: DisbursementBody,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -169,28 +170,33 @@ def add_disbursement(
     resp = supabase.table("fund_disbursements").insert(disb_data).execute()
     disb = (getattr(resp, "data", None) or [{}])[0]
 
-    # Update VA Bank balance (first va_bank account or create one)
+    # Create VA Bank if not exists so KasService can find it
     va_resp = (
         supabase.table("kas_accounts")
-        .select("id, current_balance")
+        .select("id")
         .eq("tenant_id", tid)
         .eq("type", "va_bank")
         .limit(1)
         .execute()
     )
-    va_rows = getattr(va_resp, "data", None) or []
-    if va_rows:
-        va = va_rows[0]
-        new_bal = float(va.get("current_balance", 0)) + body.amount
-        supabase.table("kas_accounts").update({"current_balance": new_bal}).eq("id", va["id"]).execute()
-    else:
-        # Auto-create VA Bank
+    if not va_resp.data:
+        # Auto-create VA Bank with 0 balance (will be updated by record_entry)
         supabase.table("kas_accounts").insert({
             "tenant_id": tid,
             "name": "VA Bank MBG",
             "type": "va_bank",
-            "current_balance": body.amount,
+            "current_balance": 0,
         }).execute()
+
+    await KasService.record_disbursement(
+        tenant_id=tid,
+        disbursement_id=disb["id"],
+        amount=Decimal(str(body.amount)),
+        disbursement_date=date.fromisoformat(body.disbursement_date),
+        reference_number=body.reference_number or "-",
+        created_by=current_user.id,
+        supabase=supabase
+    )
 
     # Cashflow log
     try:
@@ -209,72 +215,35 @@ def add_disbursement(
 
 
 @router.post("/fund-transfer", dependencies=[Depends(require_role(["owner", "admin"]))])
-def fund_transfer(
+async def fund_transfer(
     body: FundTransferBody,
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Transfer dana antar kas."""
+    """Transfer dana antar kas (Double Entry via KasService)."""
     supabase = get_supabase()
     tid = current_user.tenant_id
 
     if body.from_account_id == body.to_account_id:
         raise HTTPException(400, "Kas asal dan tujuan tidak boleh sama")
 
-    # Get from account
-    from_resp = (
-        supabase.table("kas_accounts")
-        .select("id, name, current_balance")
-        .eq("id", body.from_account_id)
-        .eq("tenant_id", tid)
-        .single()
-        .execute()
-    )
-    from_acc = getattr(from_resp, "data", None)
-    if not from_acc:
-        raise HTTPException(404, "Kas asal tidak ditemukan")
-
-    from_bal = float(from_acc.get("current_balance", 0))
-    if from_bal < body.amount:
-        raise HTTPException(400, f"Saldo tidak cukup. Saldo: {from_bal}, Transfer: {body.amount}")
-
-    # Get to account
-    to_resp = (
-        supabase.table("kas_accounts")
-        .select("id, name, current_balance")
-        .eq("id", body.to_account_id)
-        .eq("tenant_id", tid)
-        .single()
-        .execute()
-    )
-    to_acc = getattr(to_resp, "data", None)
-    if not to_acc:
-        raise HTTPException(404, "Kas tujuan tidak ditemukan")
-
-    # Update balances
-    supabase.table("kas_accounts").update(
-        {"current_balance": from_bal - body.amount}
-    ).eq("id", body.from_account_id).execute()
-
-    to_bal = float(to_acc.get("current_balance", 0))
-    supabase.table("kas_accounts").update(
-        {"current_balance": to_bal + body.amount}
-    ).eq("id", body.to_account_id).execute()
-
-    # Insert transfer record
-    transfer_data = {
-        "tenant_id": tid,
-        "from_account_id": body.from_account_id,
-        "to_account_id": body.to_account_id,
-        "amount": body.amount,
-        "transfer_date": body.transfer_date,
-        "notes": body.notes,
-        "created_by": current_user.id,
-    }
-    resp = supabase.table("fund_transfers").insert(transfer_data).execute()
-    transfer = (getattr(resp, "data", None) or [{}])[0]
-
-    # Cashflow logs
     try:
+        transfer_data = await KasService.transfer(
+            tenant_id=tid,
+            from_account_id=body.from_account_id,
+            to_account_id=body.to_account_id,
+            amount=Decimal(str(body.amount)),
+            transfer_date=date.fromisoformat(body.transfer_date),
+            notes=body.notes or "",
+            created_by=current_user.id,
+            supabase=supabase
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # Optional: Keep cashflow log if needed for UI, although ledger is the source of truth now
+    try:
+        from_acc = supabase.table("kas_accounts").select("name").eq("id", body.from_account_id).execute().data[0]
+        to_acc = supabase.table("kas_accounts").select("name").eq("id", body.to_account_id).execute().data[0]
         supabase.table("cashflow_log").insert({
             "tenant_id": tid,
             "flow_type": "out",
@@ -294,11 +263,11 @@ def fund_transfer(
     except Exception as e:
         logger.warning(f"Cashflow log insert failed: {e}")
 
-    return {"success": True, "data": transfer}
+    return {"success": True, "data": transfer_data}
 
 
 @router.post("/fund-return", dependencies=[Depends(require_role(["owner"]))])
-def fund_return(
+async def fund_return(
     body: FundReturnBody,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -306,7 +275,7 @@ def fund_return(
     supabase = get_supabase()
     tid = current_user.tenant_id
 
-    # Upsert fund_returns
+    # Insert fund_returns
     data = {
         "tenant_id": tid,
         "year": body.year,
@@ -322,21 +291,20 @@ def fund_return(
         .execute()
     )
     rows = getattr(resp, "data", None) or []
+    ret_id = rows[0]["id"] if rows else None
 
-    # Deduct from VA Bank
-    va_resp = (
-        supabase.table("kas_accounts")
-        .select("id, current_balance")
-        .eq("tenant_id", tid)
-        .eq("type", "va_bank")
-        .limit(1)
-        .execute()
-    )
-    va_rows = getattr(va_resp, "data", None) or []
-    if va_rows:
-        va = va_rows[0]
-        new_bal = float(va.get("current_balance", 0)) - body.amount
-        supabase.table("kas_accounts").update({"current_balance": new_bal}).eq("id", va["id"]).execute()
+    if ret_id:
+        try:
+            await KasService.record_return_to_gov(
+                tenant_id=tid,
+                return_id=ret_id,
+                amount=Decimal(str(body.amount)),
+                return_date=date.fromisoformat(body.return_date),
+                created_by=current_user.id,
+                supabase=supabase
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     # Cashflow log
     try:
@@ -355,18 +323,18 @@ def fund_return(
 
 
 @router.get("/kas-accounts", dependencies=[Depends(require_role(["owner", "admin"]))])
-def get_kas_accounts(
+async def get_kas_accounts(
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """List semua kas accounts + saldo."""
+    """List semua kas accounts + saldo realtime dari kas_ledger."""
     return {
         "success": True,
-        "data": budget_service.get_kas_balances(current_user.tenant_id),
+        "data": await KasService.get_all_balances(current_user.tenant_id, get_supabase()),
     }
 
 
 @router.post("/kas-accounts", dependencies=[Depends(require_role(["owner"]))])
-def create_kas_account(
+async def create_kas_account(
     body: KasAccountBody,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -376,10 +344,57 @@ def create_kas_account(
         "tenant_id": current_user.tenant_id,
         "name": body.name,
         "type": body.type,
-        "current_balance": body.initial_balance,
+        "current_balance": 0, # Initial balance will be recorded as opening balance if needed
     }
     resp = supabase.table("kas_accounts").insert(data).execute()
     rows = getattr(resp, "data", None) or []
     if not rows:
         raise HTTPException(400, "Gagal membuat kas account. Nama mungkin sudah ada.")
-    return {"success": True, "data": rows[0]}
+        
+    acc = rows[0]
+    if body.initial_balance > 0:
+        await KasService.record_entry(
+            tenant_id=current_user.tenant_id,
+            kas_account_id=acc["id"],
+            entry_type="debit",
+            amount=Decimal(str(body.initial_balance)),
+            reference_type="income",
+            reference_id=None,
+            description="Saldo Awal",
+            entry_date=date.today(),
+            created_by=current_user.id,
+            supabase=supabase
+        )
+        # return updated balance
+        acc["current_balance"] = float(body.initial_balance)
+        
+    return {"success": True, "data": acc}
+
+@router.get("/ledger", dependencies=[Depends(require_role(["owner", "admin"]))])
+async def get_kas_ledger(
+    kas_account_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = Query(50),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Mendapatkan riwayat kas_ledger lengkap dengan object double entry."""
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    
+    sd = date.fromisoformat(start_date) if start_date else None
+    ed = date.fromisoformat(end_date) if end_date else None
+    
+    entries = await KasService.get_ledger(tid, supabase, kas_account_id, sd, ed, limit)
+    
+    resp_data = {"entries": entries}
+    
+    if kas_account_id:
+        acc_resp = supabase.table("kas_accounts").select("*").eq("id", kas_account_id).eq("tenant_id", tid).execute()
+        if acc_resp.data:
+            acc = acc_resp.data[0]
+            curr_bal = await KasService.get_balance(kas_account_id, tid, supabase)
+            acc["current_balance"] = float(curr_bal)
+            resp_data["account"] = acc
+
+    return {"success": True, "data": resp_data}

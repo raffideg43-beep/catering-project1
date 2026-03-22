@@ -15,20 +15,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
-    "/(dashboard)/dashboard/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/dashboard/page.js"
-    ],
     "/(dashboard)/anggaran/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/anggaran/page.js"
     ],
-    "/(dashboard)/settings/page": [
+    "/(dashboard)/anggaran/buku-kas/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/settings/page.js"
+      "static/chunks/app/(dashboard)/anggaran/buku-kas/page.js"
     ]
   }
 }

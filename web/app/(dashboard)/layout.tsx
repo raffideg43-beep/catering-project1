@@ -6,7 +6,13 @@ import { isAuthenticated, clearToken } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
-  { href: "/anggaran", icon: "📊", label: "Anggaran" },
+  { 
+    href: "/anggaran", icon: "📊", label: "Anggaran",
+    children: [
+      { href: "/anggaran", label: "📊 Overview" },
+      { href: "/anggaran/buku-kas", label: "📒 Buku Kas" },
+    ]
+  },
   { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
   { href: "/mbg", icon: "🍱", label: "MBG" },
   {
