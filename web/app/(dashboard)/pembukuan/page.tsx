@@ -55,6 +55,10 @@ export default function PembukuanPage() {
     const [error, setError] = useState<string | null>(null);
     const [stalCount, setStalCount] = useState(0); // nota processing > 24 jam
 
+    const [showOpsModal, setShowOpsModal] = useState(false);
+    const [opsForm, setOpsForm] = useState({ name: "", amount: "", cost_date: "", is_recurring: false, notes: "" });
+    const [opsSaving, setOpsSaving] = useState(false);
+
     const LIMIT = 50;
 
     const fetchData = useCallback(async () => {
@@ -112,6 +116,24 @@ export default function PembukuanPage() {
         }
     };
 
+    const handleSaveOps = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setOpsSaving(true);
+        try {
+            await apiPost("/operational", {
+                ...opsForm,
+                amount: Number(opsForm.amount)
+            });
+            setShowOpsModal(false);
+            setOpsForm({ name: "", amount: "", cost_date: "", is_recurring: false, notes: "" });
+            fetchData();
+        } catch (e: any) {
+            alert(e.message || "Gagal menyimpan biaya operasional");
+        } finally {
+            setOpsSaving(false);
+        }
+    };
+
     const handleKonfirmasi = async (id: string) => {
         try {
             await apiPost(`/transactions/${id}/confirm`);
@@ -127,13 +149,21 @@ export default function PembukuanPage() {
                 title="Pembukuan"
                 subtitle={`${MONTHS_FULL[bulan]} ${tahun}`}
                 actions={
-                    <button
-                        onClick={handleExcel}
-                        disabled={excelLoading}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-                    >
-                        {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowOpsModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+                        >
+                            + Biaya Operasional
+                        </button>
+                        <button
+                            onClick={handleExcel}
+                            disabled={excelLoading}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                        >
+                            {excelLoading ? "⏳ Menyiapkan..." : `📥 Download Excel ${MONTHS[bulan]}`}
+                        </button>
+                    </div>
                 }
             />
 
@@ -338,6 +368,43 @@ export default function PembukuanPage() {
                     </>
                 )}
             </div>
+
+            {/* Modal Biaya Operasional */}
+            {showOpsModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 relative">
+                        <h3 className="text-xl font-bold mb-4">Catat Biaya Operasional</h3>
+                        <form onSubmit={handleSaveOps} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Nama Biaya</label>
+                                <input required placeholder="Contoh: Beli Gas 3kg" value={opsForm.name} onChange={e => setOpsForm({...opsForm, name: e.target.value})} className="w-full p-2 border rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Nominal (Rp)</label>
+                                <input required type="number" min="0" value={opsForm.amount} onChange={e => setOpsForm({...opsForm, amount: e.target.value})} className="w-full p-2 border rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Tanggal</label>
+                                <input required type="date" value={opsForm.cost_date} onChange={e => setOpsForm({...opsForm, cost_date: e.target.value})} className="w-full p-2 border rounded-lg" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input type="checkbox" id="is_recurring" checked={opsForm.is_recurring} onChange={e => setOpsForm({...opsForm, is_recurring: e.target.checked})} className="w-4 h-4 rounded text-blue-600" />
+                                <label htmlFor="is_recurring" className="text-sm font-medium">Biaya Rutin Bulanan</label>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Catatan (Opsional)</label>
+                                <textarea value={opsForm.notes} onChange={e => setOpsForm({...opsForm, notes: e.target.value})} className="w-full p-2 border rounded-lg" rows={2} />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowOpsModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium cursor-pointer">Batal</button>
+                                <button type="submit" disabled={opsSaving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 cursor-pointer">
+                                    {opsSaving ? "Menyimpan..." : "Simpan"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

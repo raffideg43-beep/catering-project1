@@ -253,6 +253,43 @@ class ExportService:
         )
         payables = getattr(pay_resp, "data", None) or []
 
+        # Operational Costs
+        ops_resp = (
+            supabase.table("operational_costs")
+            .select("*, transactions(status)")
+            .eq("tenant_id", tenant_id)
+            .gte("cost_date", first.isoformat())
+            .lt("cost_date", (last + timedelta(days=1)).isoformat())
+            .order("cost_date")
+            .execute()
+        )
+        # Filter only active (not voided) if we want, or show all
+        operational_costs = getattr(ops_resp, "data", None) or []
+
+        # Payroll Items
+        # Period date must overlap or we just get items by date?
+        # Actually, period has start_date / end_date. Just fetch periods and their items.
+        period_resp = (
+            supabase.table("payroll_periods")
+            .select("id, name, start_date")
+            .eq("tenant_id", tenant_id)
+            .gte("start_date", first.isoformat())
+            .lt("start_date", (last + timedelta(days=1)).isoformat())
+            .execute()
+        )
+        periods = getattr(period_resp, "data", None) or []
+        period_ids = [p["id"] for p in periods]
+        
+        payroll_items = []
+        if period_ids:
+            items_res = (
+                supabase.table("payroll_items")
+                .select("*, employees(name), payroll_periods(name, start_date)")
+                .in_("period_id", period_ids)
+                .execute()
+            )
+            payroll_items = getattr(items_res, "data", None) or []
+
         return {
             "tenant": tenant,
             "first": first,
@@ -267,6 +304,8 @@ class ExportService:
             "stock_history": stock_history,
             "receivables": receivables,
             "payables": payables,
+            "operational_costs": operational_costs,
+            "payroll_items": payroll_items,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -290,6 +329,9 @@ class ExportService:
 
         # Sheet 5: Riwayat Nota
         ws_nota = wb.create_sheet("Riwayat Nota")
+        
+        # Sheet 6: Operasional & Upah
+        ws_ops = wb.create_sheet("Operasional & Upah")
 
         logger.info(f"Building workbook with sheets: {wb.sheetnames}")
 
@@ -298,6 +340,7 @@ class ExportService:
         self._fill_stok(ws_stok, data)
         self._fill_laporan_pemerintah(ws_pemerintah, data, year, month)
         self._fill_riwayat_nota(ws_nota, data)
+        self._fill_ops_upah(ws_ops, data, year, month)
 
         return wb
 
@@ -332,7 +375,11 @@ class ExportService:
         pph22 = (revenue_gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
         revenue_net = revenue_gross - pph22
 
-        total_exp = sum(_d(t.get("total")) for t in transactions)
+        exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
+        exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
+        exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
+        total_exp = exp_bahan + exp_upah + exp_ops
+        
         gross_profit = revenue_net - total_exp
 
         rows = [
@@ -342,6 +389,9 @@ class ExportService:
             ("Pendapatan Kotor",  float(revenue_gross)),
             ("PPh 22 (1,5%)",    float(pph22)),
             ("Pendapatan Bersih", float(revenue_net)),
+            ("Pengeluaran Bahan Pangan", float(exp_bahan)),
+            ("Pengeluaran Insentif/Upah", float(exp_upah)),
+            ("Pengeluaran Operasional", float(exp_ops)),
             ("Total Pengeluaran", float(total_exp)),
             ("Laba Kotor",        float(gross_profit)),
         ]
@@ -774,6 +824,92 @@ class ExportService:
 
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
+
+    # ─── Sheet 6: Operasional & Upah ──────────────────────────────────────────
+
+    def _fill_ops_upah(self, ws, data: dict, year: int, month: int) -> None:
+        from openpyxl.styles import Font, PatternFill, Alignment
+        bulan_str = BULAN[month]
+
+        # ── Section A: BIAYA OPERASIONAL ──
+        ws.merge_cells("A1:G1")
+        ws["A1"] = f"BIAYA OPERASIONAL — {bulan_str} {year}"
+        ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws["A1"].alignment = Alignment(horizontal="center")
+
+        ops_headers = ["No", "Tanggal", "Nama Biaya", "Kategori", "Nominal", "Rutin?", "Catatan"]
+        self._write_headers(ws, 2, ops_headers)
+
+        row = 3
+        total_ops = Decimal("0")
+        
+        for n, cost in enumerate(data.get("operational_costs", []), 1):
+            amt = float(_d(cost.get("amount")))
+            total_ops += _d(cost.get("amount"))
+            
+            ws.cell(row, 1, n)
+            ws.cell(row, 2, cost.get("cost_date", ""))
+            ws.cell(row, 3, cost.get("name", ""))
+            ws.cell(row, 4, cost.get("category", ""))
+            ws.cell(row, 5, amt).number_format = '"Rp "#,##0'
+            ws.cell(row, 6, "Ya" if cost.get("is_recurring") else "Tidak")
+            ws.cell(row, 7, cost.get("notes", ""))
+            self._alt_row(ws, row, 2)
+            row += 1
+
+        if not data.get("operational_costs"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada biaya operasional bulan ini")
+            row += 1
+
+        self._write_total_row(ws, row, {5: float(total_ops)})
+        row += 2
+
+        # ── Section B: GAJI & UPAH ──
+        ws.merge_cells(f"A{row}:J{row}")
+        ws[f"A{row}"] = f"GAJI & UPAH (BERDASARKAN PERIODE) — {bulan_str} {year}"
+        ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws[f"A{row}"].alignment = Alignment(horizontal="center")
+        row += 1
+
+        upah_headers = ["No", "Periode", "Mulai", "Nama", "Jabatan", "Hadir", "Alpa", "Gaji/Hari", "Potongan", "Total Terima"]
+        self._write_headers(ws, row, upah_headers)
+        row += 1
+
+        total_upah = Decimal("0")
+        n = 0
+        
+        for item in data.get("payroll_items", []):
+            n += 1
+            period = item.get("payroll_periods", {})
+            emp = item.get("employees", {})
+            net = float(_d(item.get("net_amount")))
+            total_upah += _d(item.get("net_amount"))
+            
+            ws.cell(row, 1, n)
+            ws.cell(row, 2, period.get("name", ""))
+            ws.cell(row, 3, period.get("start_date", ""))
+            ws.cell(row, 4, emp.get("name", ""))
+            ws.cell(row, 5, item.get("position_name", ""))
+            ws.cell(row, 6, item.get("present_days", 0))
+            ws.cell(row, 7, item.get("absent_days", 0))
+            ws.cell(row, 8, float(_d(item.get("base_salary")))).number_format = '"Rp "#,##0'
+            ws.cell(row, 9, float(_d(item.get("deductions")))).number_format = '"Rp "#,##0'
+            ws.cell(row, 10, net).number_format = '"Rp "#,##0'
+            self._alt_row(ws, row, 2)
+            row += 1
+            
+        if not data.get("payroll_items"):
+            ws.cell(row, 1, "—")
+            ws.cell(row, 2, "Tidak ada data gaji bulan ini")
+            row += 1
+            
+        self._write_total_row(ws, row, {10: float(total_upah)})
+        
+        self._set_column_widths(ws)
+        ws.freeze_panes = "A3"
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
 

@@ -26,6 +26,7 @@ const NAV_ITEMS = [
     ]
   },
   { href: "/jadwal", icon: "📅", label: "AI Jadwal" },
+  { href: "/karyawan", icon: "👥", label: "Karyawan" },
   { href: "/settings", icon: "⚙️", label: "Pengaturan" },
   { href: "/import", icon: "📥", label: "Import Data" },
 ];

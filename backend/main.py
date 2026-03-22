@@ -18,18 +18,29 @@ from core.error_handlers import register_error_handlers
 from core.health import health_router
 from middleware.logging import RequestLoggingMiddleware
 from models.user import UserInDB
-from routers import auth as auth_router
-from routers import tenants as tenants_router
-from routers import schools as schools_router
-from routers import suppliers as suppliers_router
-from routers import products as products_router
-from routers import recipes as recipes_router
-from routers import mbg_settings as mbg_settings_router
-from routers import mbg as mbg_router
+from routers import (
+    auth as auth_router,
+    beneficiaries as beneficiaries_router,
+    budget as budget_router,
+    imports as imports_router,
+    mbg as mbg_router,
+    mbg_settings as mbg_settings_router,
+    payables as payables_router,
+    price_tracking as price_tracking_router,
+    products as products_router,
+    recipes as recipes_router,
+    reports as reports_router,
+    schedules as schedules_router,
+    schools as schools_router,
+    suppliers as suppliers_router,
+    tenants as tenants_router,
+    transactions as transactions_router,
+    employees as employees_router,
+    attendance as attendance_router,
+    payroll as payroll_router,
+    operational as operational_router,
+)
 from routers.mbg import delivery_router as mbg_delivery_router
-from routers import transactions as transactions_router
-from routers import reports as reports_router
-from routers import payables as payables_router
 from routers import price_tracking as price_tracking_router
 from routers import schedules as schedules_router
 from routers import imports as imports_router
@@ -141,6 +152,12 @@ app.include_router(schedules_router.router)
 app.include_router(imports_router.router)
 app.include_router(budget_router.router, prefix="/budget")
 app.include_router(beneficiaries_router.router)
+
+# Modul 20
+app.include_router(employees_router.router)
+app.include_router(attendance_router.router)
+app.include_router(payroll_router.router)
+app.include_router(operational_router.router)
 
 
 

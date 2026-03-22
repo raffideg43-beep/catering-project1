@@ -190,5 +190,188 @@ class PDFService:
             logger.error(f"Upload PDF nota MBG gagal: {e}")
             return None
 
+    def _create_payslip_pdf(self, employee: dict, period: dict, item: dict, tenant_name: str) -> bytes:
+        """Internal helper to create a single payslip PDF."""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A5
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (
+                SimpleDocTemplate, Table, TableStyle, Paragraph,
+                Spacer, HRFlowable,
+            )
+        except ImportError:
+            logger.error("ReportLab tidak terinstall")
+            return b""
+
+        buffer = io.BytesIO()
+        # A5 is nice for payslips
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A5,
+            leftMargin=1.5 * cm,
+            rightMargin=1.5 * cm,
+            topMargin=1.5 * cm,
+            bottomMargin=1.5 * cm,
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "title", parent=styles["Heading2"],
+            fontSize=12, alignment=1, spaceAfter=2,
+        )
+        sub_style = ParagraphStyle(
+            "sub", parent=styles["Normal"],
+            fontSize=9, alignment=1, spaceAfter=8,
+        )
+        normal = styles["Normal"]
+
+        story = [
+            Paragraph("<b>SLIP GAJI</b>", title_style),
+            Paragraph(tenant_name, sub_style),
+            HRFlowable(width="100%", thickness=1, color=colors.black),
+            Spacer(1, 0.3 * cm),
+        ]
+
+        # Info Table
+        info_data = [
+            ["Nama", f": {employee.get('name', '')}"],
+            ["Jabatan", f": {item.get('position_name', '')}"],
+            ["Periode", f": {period.get('name', '')}"],
+        ]
+        info_table = Table(info_data, colWidths=[3 * cm, 7 * cm])
+        info_table.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 0.4 * cm))
+
+        # Attendance Table
+        att_data = [
+            ["Hari Kerja", f": {item.get('working_days', 0)} hari"],
+            ["Hadir", f": {item.get('present_days', 0)} hari"],
+            ["Tidak Hadir", f": {item.get('absent_days', 0)} hari"],
+        ]
+        att_table = Table(att_data, colWidths=[3 * cm, 7 * cm])
+        att_table.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        story.append(att_table)
+        story.append(Spacer(1, 0.5 * cm))
+
+        # Financial Table
+        fin_data = [
+            ["Gaji/Hari", _fmt_rp(item.get('base_salary', 0))],
+            ["Gross", _fmt_rp(item.get('gross_amount', 0))],
+            ["Potongan", _fmt_rp(item.get('deductions', 0))],
+            ["TOTAL TERIMA", _fmt_rp(item.get('net_amount', 0))],
+        ]
+        fin_table = Table(fin_data, colWidths=[5 * cm, 5 * cm])
+        fin_table.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("LINEBELOW", (0, 2), (1, 2), 0.5, colors.black),
+            ("FONTNAME", (0, 3), (1, 3), "Helvetica-Bold"), # Bold for TOTAL
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(fin_table)
+        story.append(Spacer(1, 1.5 * cm))
+
+        # Signatures
+        ttd_data = [
+            ["Penerima", "Pemberi"],
+            ["", ""],
+            ["", ""],
+            ["(........................)", "(........................)"],
+        ]
+        ttd_table = Table(ttd_data, colWidths=[5 * cm, 5 * cm])
+        ttd_table.setStyle(TableStyle([
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(ttd_table)
+
+        doc.build(story)
+        return buffer.getvalue()
+
+    def generate_payslip(self, supabase, tenant_id: str, period_id: str, employee_id: str) -> Optional[bytes]:
+        """Generate single payslip PDF bytes."""
+        try:
+            # Get period
+            period_res = supabase.table("payroll_periods").select("*").eq("id", period_id).eq("tenant_id", tenant_id).execute()
+            periods = getattr(period_res, "data", None)
+            if not periods:
+                return None
+            period = periods[0]
+
+            # Get item
+            item_res = supabase.table("payroll_items").select("*").eq("period_id", period_id).eq("employee_id", employee_id).execute()
+            items = getattr(item_res, "data", None)
+            if not items:
+                return None
+            item = items[0]
+
+            # Get employee
+            emp_res = supabase.table("employees").select("*").eq("id", employee_id).execute()
+            emps = getattr(emp_res, "data", None)
+            if not emps:
+                return None
+            employee = emps[0]
+
+            # Get tenant name
+            tenant_res = supabase.table("tenants").select("name").eq("id", tenant_id).execute()
+            tenants = getattr(tenant_res, "data", None)
+            tenant_name = tenants[0]["name"] if tenants else "SPPG"
+
+            return self._create_payslip_pdf(employee, period, item, tenant_name)
+
+        except Exception as e:
+            logger.error(f"Generate payslip failed: {e}")
+            return None
+
+    def generate_payslip_batch(self, supabase, tenant_id: str, period_id: str) -> Optional[bytes]:
+        """Generate all payslips for a period as a ZIP file."""
+        try:
+            import zipfile
+
+            # Get period
+            period_res = supabase.table("payroll_periods").select("*").eq("id", period_id).eq("tenant_id", tenant_id).execute()
+            periods = getattr(period_res, "data", None)
+            if not periods:
+                return None
+            period = periods[0]
+
+            # Get items + employees
+            item_res = supabase.table("payroll_items").select("*, employees(*)").eq("period_id", period_id).execute()
+            items = getattr(item_res, "data", None) or []
+            
+            # Get tenant name
+            tenant_res = supabase.table("tenants").select("name").eq("id", tenant_id).execute()
+            tenants = getattr(tenant_res, "data", None)
+            tenant_name = tenants[0]["name"] if tenants else "SPPG"
+
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for item in items:
+                    emp = item.get("employees", {})
+                    # Create PDF
+                    pdf_bytes = self._create_payslip_pdf(emp, period, item, tenant_name)
+                    if pdf_bytes:
+                        name = emp.get("name", "Unknown").replace(" ", "_").lower()
+                        zf.writestr(f"payslip_{name}.pdf", pdf_bytes)
+
+            return zip_buffer.getvalue()
+
+        except Exception as e:
+            logger.error(f"Generate payslip batch failed: {e}")
+            return None
+
 
 pdf_service = PDFService()
