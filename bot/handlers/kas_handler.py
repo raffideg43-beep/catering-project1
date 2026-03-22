@@ -18,9 +18,9 @@ from telegram.ext import (
     filters,
 )
 
-from utils.api_client import api_get, api_post
-from utils.session import get_user_data
-from utils.formatter import format_rp
+from core.config import settings
+from utils.api_client import get_api_client
+from utils.session import get_role, get_token, is_authenticated
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,12 @@ def _fmt(v):
 
 async def kas_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handler untuk command /kas — tampilkan saldo kas dan ringkasan anggaran."""
-    user_data = get_user_data(context)
-    if not user_data:
+    if not is_authenticated(context):
         await update.message.reply_text("❌ Anda belum login. Ketik /start untuk login.")
         return ConversationHandler.END
 
-    token = user_data.get("token", "")
-    role = user_data.get("role", "kasir")
+    token = get_token(context) or ""
+    role = get_role(context) or "kasir"
 
     if role not in ("owner", "admin"):
         await update.message.reply_text("❌ Hanya owner dan admin yang bisa melihat saldo kas.")
@@ -54,7 +53,8 @@ async def kas_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("⏳ Mengambil data kas...")
 
     try:
-        resp = await api_get("/budget/summary", token=token)
+        api = get_api_client(settings.backend_url)
+        resp = await api.get("/budget/summary", token=token)
         data = resp.get("data", {}) if resp else {}
     except Exception as e:
         logger.error(f"Error fetching budget summary: {e}")
@@ -262,7 +262,8 @@ async def confirm_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     from datetime import date
     try:
-        resp = await api_post("/budget/fund-transfer", {
+        api = get_api_client(settings.backend_url)
+        resp = await api.post("/budget/fund-transfer", data={
             "from_account_id": from_id,
             "to_account_id": to_id,
             "amount": amount,
@@ -273,7 +274,7 @@ async def confirm_transfer(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if resp and resp.get("success"):
             # Refresh kas data
             try:
-                new_resp = await api_get("/budget/summary", token=token)
+                new_resp = await api.get("/budget/summary", token=token)
                 new_data = new_resp.get("data", {}) if new_resp else {}
                 new_kas = new_data.get("kas_balances", [])
                 bal_lines = "\n".join(
