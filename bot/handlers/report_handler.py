@@ -202,8 +202,7 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"Total Porsi : {_esc(str(mbg.get('total_portions', 0)))} porsi",
         f"Hari Kirim  : {_esc(str(mbg.get('total_delivery_days', 0)))} hari",
         f"Rata\\-rata  : {_esc(str(mbg.get('avg_portions_per_day', 0)))} porsi/hari",
-        f"Gross       : {_esc(_fmt_rp(mbg.get('revenue_gross')))}",
-        f"PPh 22      : _{_esc(mbg.get('pph22_note', ''))}_",
+        f"Pendapatan  : {_esc(_fmt_rp(mbg.get('revenue_gross')))}",
         "",
         "🛒 *Pengeluaran:*",
         f"Total       : {_esc(_fmt_rp(exp.get('total')))}",
@@ -371,7 +370,6 @@ async def piutang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"🏛️ *{_esc(r.get('debtor_name', '?'))}*",
             f"   {_esc(_fmt_rp(r.get('amount')))}",
             f"   Jatuh tempo: {_esc(due)}{over_note}",
-            f"   PPh 22: _{_esc(r.get('pph22_note', 'Belum dihitung'))}_",
         ]
 
     if count == 0:

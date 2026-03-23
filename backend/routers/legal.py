@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from core.database import get_supabase
 from models.user import UserInDB
-from middleware.auth import get_current_user, require_role
+from core.dependencies import get_current_user, require_role
 from services.spt_service import SPTService
 from services.export_service import ExportService
 

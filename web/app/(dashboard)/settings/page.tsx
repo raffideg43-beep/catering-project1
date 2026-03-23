@@ -7,8 +7,9 @@ import { TabSupplier } from "./components/TabSupplier";
 import { TabBahan } from "./components/TabBahan";
 import { TabAlokasi } from "./components/TabAlokasi";
 import { TabTelegram } from "./components/TabTelegram";
+import { TabImport } from "./components/TabImport";
 
-type TabType = "identitas" | "sekolah" | "supplier" | "bahan" | "alokasi" | "telegram";
+type TabType = "identitas" | "sekolah" | "supplier" | "bahan" | "alokasi" | "telegram" | "import";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("identitas");
@@ -20,6 +21,7 @@ export default function SettingsPage() {
     { id: "bahan", label: "Bahan & BOM" },
     { id: "alokasi", label: "Alokasi MBG" },
     { id: "telegram", label: "Telegram" },
+    { id: "import", label: "Import Data" },
   ];
 
   return (
@@ -52,6 +54,7 @@ export default function SettingsPage() {
         {activeTab === "bahan" && <TabBahan />}
         {activeTab === "alokasi" && <TabAlokasi />}
         {activeTab === "telegram" && <TabTelegram />}
+        {activeTab === "import" && <TabImport />}
       </div>
     </div>
   );

@@ -222,24 +222,6 @@ export default function TransactionDetailPage() {
                         <span className="text-gray-500">Subtotal</span>
                         <span className="font-medium">{formatRp(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500 flex items-center gap-1">
-                            PPh22
-                            <span className="text-xs text-gray-300 cursor-help" title="Dihitung saat generate Excel">ⓘ</span>
-                        </span>
-                        <span className={pph22 > 0 ? "font-medium" : "text-gray-300"}>
-                            {pph22 > 0 ? formatRp(pph22) : "Dihitung saat Excel"}
-                        </span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500 flex items-center gap-1">
-                            PPN
-                            <span className="text-xs text-gray-300 cursor-help" title="Dihitung saat generate Excel">ⓘ</span>
-                        </span>
-                        <span className={ppn > 0 ? "font-medium" : "text-gray-300"}>
-                            {ppn > 0 ? formatRp(ppn) : "Dihitung saat Excel"}
-                        </span>
-                    </div>
                     <div className="flex justify-between border-t border-gray-100 pt-2 font-bold text-base">
                         <span>Total</span>
                         <span>{formatRp(trx.total)}</span>

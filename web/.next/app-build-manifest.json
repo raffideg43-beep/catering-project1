@@ -15,15 +15,40 @@
       "static/chunks/main-app.js",
       "static/chunks/app/layout.js"
     ],
+    "/(dashboard)/dashboard/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/dashboard/page.js"
+    ],
     "/(dashboard)/anggaran/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(dashboard)/anggaran/page.js"
     ],
-    "/(dashboard)/anggaran/buku-kas/page": [
+    "/(dashboard)/pembukuan/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(dashboard)/anggaran/buku-kas/page.js"
+      "static/chunks/app/(dashboard)/pembukuan/page.js"
+    ],
+    "/(dashboard)/pembukuan/dokumen/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/pembukuan/dokumen/page.js"
+    ],
+    "/(dashboard)/karyawan/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/karyawan/page.js"
+    ],
+    "/(dashboard)/keuangan/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/keuangan/page.js"
+    ],
+    "/(dashboard)/insights/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(dashboard)/insights/page.js"
     ]
   }
 }

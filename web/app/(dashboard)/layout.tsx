@@ -4,43 +4,30 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isAuthenticated, clearToken } from "@/lib/auth";
 
-const NAV_ITEMS = [
+type NavItem = 
+  | { type: "divider", label: string }
+  | { href: string; icon: string; label: string; children?: { href: string; label: string }[] };
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
-  { 
-    href: "/anggaran", icon: "📊", label: "Anggaran",
-    children: [
-      { href: "/anggaran", label: "📊 Overview" },
-      { href: "/anggaran/buku-kas", label: "📒 Buku Kas" },
-    ]
-  },
-  { 
-    href: "/pembukuan", icon: "📋", label: "Pembukuan",
-    children: [
-      { href: "/pembukuan", label: "📊 Overview" },
-      { href: "/pembukuan/dokumen", label: "📄 Dokumen Legal" },
-    ]
-  },
+  
+  { type: "divider", label: "OPERASIONAL" },
+  { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
   { href: "/mbg", icon: "🍱", label: "MBG" },
-  {
-    href: "/stok", icon: "📦", label: "Stok",
-    children: [
-      { href: "/stok", label: "📦 Stok Utama" },
-      { href: "/stok/riwayat", label: "📋 Riwayat" },
-    ]
-  },
-  { href: "/piutang", icon: "💰", label: "Piutang" },
-  { href: "/hutang", icon: "💸", label: "Hutang" },
-  {
-    href: "/harga", icon: "📈", label: "Track Harga",
-    children: [
-      { href: "/harga", label: "📊 Overview" },
-      { href: "/harga/insight", label: "🤖 AI Insight" },
-    ]
-  },
-  { href: "/jadwal", icon: "📅", label: "AI Jadwal" },
+  { href: "/stok", icon: "📦", label: "Stok", children: [{ href: "/stok", label: "📦 Stok Utama" }, { href: "/stok/riwayat", label: "📋 Riwayat" }] },
+  
+  { type: "divider", label: "KEUANGAN" },
+  { href: "/keuangan", icon: "💳", label: "Piutang & Hutang" },
+  { href: "/anggaran", icon: "📊", label: "Anggaran" },
+  
+  { type: "divider", label: "SDM" },
   { href: "/karyawan", icon: "👥", label: "Karyawan" },
+  
+  { type: "divider", label: "ANALITIK" },
+  { href: "/insights", icon: "📈", label: "Insights" },
+  
+  { type: "divider", label: "LAINNYA" },
   { href: "/settings", icon: "⚙️", label: "Pengaturan" },
-  { href: "/import", icon: "📥", label: "Import Data" },
 ];
 
 export default function DashboardLayout({
@@ -110,38 +97,49 @@ export default function DashboardLayout({
 
       {/* Nav */}
       <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
-        {NAV_ITEMS.map(item => {
-          const active = isActive(item.href);
-          const hasChildren = (item as any).children && (!collapsed || mobile);
-          return (
-            <div key={item.href}>
-              <a
-                href={item.href}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${active
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-300 hover:bg-gray-800 hover:text-white"}
-                `}
-              >
-                <span className="text-base flex-shrink-0">{item.icon}</span>
-                {(!collapsed || mobile) && <span>{item.label}</span>}
-              </a>
-              {hasChildren && active && (
-                <div className="ml-8 mt-0.5 space-y-0.5">
-                  {((item as any).children as { href: string; label: string }[]).map(child => (
-                    <a key={child.href} href={child.href}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
-                        ${pathname === child.href || pathname.startsWith(child.href + "/")
-                          ? "bg-blue-500 text-white"
-                          : "text-gray-400 hover:bg-gray-700 hover:text-white"}`}>
-                      {child.label}
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
+        {NAV_ITEMS.map((item, index) => {
+          if ("type" in item && item.type === "divider") {
+            if (collapsed && !mobile) return <div key={`div-${index}`} className="my-2 border-b border-gray-700 w-8 mx-auto" />;
+            return (
+              <div key={`div-${index}`} className="px-4 py-2 mt-4 text-xs font-semibold text-gray-400 tracking-wider">
+                {item.label}
+              </div>
+            );
+          }
+          if ("href" in item) {
+            const active = isActive(item.href);
+            const hasChildren = item.children && (!collapsed || mobile);
+            return (
+              <div key={item.href}>
+                <a
+                  href={item.href}
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                    ${active
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-300 hover:bg-gray-800 hover:text-white"}
+                  `}
+                >
+                  <span className="text-base flex-shrink-0">{item.icon}</span>
+                  {(!collapsed || mobile) && <span>{item.label}</span>}
+                </a>
+                {hasChildren && active && (
+                  <div className="ml-8 mt-0.5 space-y-0.5">
+                    {item.children!.map(child => (
+                      <a key={child.href} href={child.href}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                          ${pathname === child.href || pathname.startsWith(child.href + "/")
+                            ? "bg-blue-500 text-white"
+                            : "text-gray-400 hover:bg-gray-700 hover:text-white"}`}>
+                        {child.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return null;
         })}
       </nav>
 
@@ -159,7 +157,8 @@ export default function DashboardLayout({
   );
 
   // Current page title from nav
-  const currentPage = NAV_ITEMS.find(n => isActive(n.href))?.label ?? "Dashboard";
+  const currentPageItem = NAV_ITEMS.find(n => "href" in n && isActive(n.href));
+  const currentPage = currentPageItem && "label" in currentPageItem ? currentPageItem.label : "Dashboard";
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

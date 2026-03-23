@@ -467,7 +467,7 @@ export default function PembukuanPage() {
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50 border-b border-gray-100">
                                     <tr>
-                                        {["Tanggal", "Supplier", "Items", "Total", "Kategori", "PPh22", "PPN", "Status", "Aksi"].map((h) => (
+                                        {["Tanggal", "Supplier", "Items", "Total", "Kategori", "Status", "Aksi"].map((h) => (
                                             <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
                                         ))}
                                     </tr>
@@ -484,12 +484,6 @@ export default function PembukuanPage() {
                                                 <td className="px-4 py-3 font-medium text-gray-800 max-w-[140px] truncate">{trx.nama_toko || "—"}</td>
                                                 <td className="px-4 py-3 text-center text-gray-500">{trx.items_count ?? "—"}</td>
                                                 <td className="px-4 py-3 font-semibold whitespace-nowrap">{formatRp(trx.total)}</td>
-                                                <td className="px-4 py-3 text-gray-500 whitespace-nowrap" title={pph22 === 0 ? "Dihitung saat Excel" : ""}>
-                                                    {pph22 > 0 ? formatRp(pph22) : <span className="text-gray-300">—</span>}
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-500 whitespace-nowrap" title={ppn === 0 ? "Dihitung saat Excel" : ""}>
-                                                    {ppn > 0 ? formatRp(ppn) : <span className="text-gray-300">—</span>}
-                                                </td>
                                                 <td className="px-4 py-3">
                                                     {(() => {
                                                         const cat = trx.juknis_category || "lainnya";
