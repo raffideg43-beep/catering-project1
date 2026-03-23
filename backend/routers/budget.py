@@ -188,7 +188,7 @@ async def add_disbursement(
             "current_balance": 0,
         }).execute()
 
-    await KasService.record_disbursement(
+    KasService.record_disbursement(
         tenant_id=tid,
         disbursement_id=disb["id"],
         amount=Decimal(str(body.amount)),
@@ -227,7 +227,7 @@ async def fund_transfer(
         raise HTTPException(400, "Kas asal dan tujuan tidak boleh sama")
 
     try:
-        transfer_data = await KasService.transfer(
+        transfer_data = KasService.transfer(
             tenant_id=tid,
             from_account_id=body.from_account_id,
             to_account_id=body.to_account_id,
@@ -295,7 +295,7 @@ async def fund_return(
 
     if ret_id:
         try:
-            await KasService.record_return_to_gov(
+            KasService.record_return_to_gov(
                 tenant_id=tid,
                 return_id=ret_id,
                 amount=Decimal(str(body.amount)),
@@ -329,7 +329,7 @@ async def get_kas_accounts(
     """List semua kas accounts + saldo realtime dari kas_ledger."""
     return {
         "success": True,
-        "data": await KasService.get_all_balances(current_user.tenant_id, get_supabase()),
+        "data": KasService.get_all_balances(current_user.tenant_id, get_supabase()),
     }
 
 
@@ -353,7 +353,7 @@ async def create_kas_account(
         
     acc = rows[0]
     if body.initial_balance > 0:
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id=current_user.tenant_id,
             kas_account_id=acc["id"],
             entry_type="debit",
@@ -385,7 +385,7 @@ async def get_kas_ledger(
     sd = date.fromisoformat(start_date) if start_date else None
     ed = date.fromisoformat(end_date) if end_date else None
     
-    entries = await KasService.get_ledger(tid, supabase, kas_account_id, sd, ed, limit)
+    entries = KasService.get_ledger(tid, supabase, kas_account_id, sd, ed, limit)
     
     resp_data = {"entries": entries}
     
@@ -393,7 +393,7 @@ async def get_kas_ledger(
         acc_resp = supabase.table("kas_accounts").select("*").eq("id", kas_account_id).eq("tenant_id", tid).execute()
         if acc_resp.data:
             acc = acc_resp.data[0]
-            curr_bal = await KasService.get_balance(kas_account_id, tid, supabase)
+            curr_bal = KasService.get_balance(kas_account_id, tid, supabase)
             acc["current_balance"] = float(curr_bal)
             resp_data["account"] = acc
 

@@ -283,7 +283,7 @@ async def confirm_transaction(
             trx_dt = date.today()
             
         try:
-            await KasService.record_expense(
+            KasService.record_expense(
                 tenant_id=current_user.tenant_id,
                 transaction_id=trx_id,
                 amount=Decimal(str(trx.get("total", "0.00"))),
@@ -1049,7 +1049,7 @@ async def create_manual_transaction(
             trx_dt = date.today()
             
         try:
-            await KasService.record_expense(
+            KasService.record_expense(
                 tenant_id=current_user.tenant_id,
                 transaction_id=trx_id,
                 amount=grand_total,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
 type Tab = "Karyawan" | "Jabatan" | "Absensi" | "Penggajian";
 
@@ -61,13 +62,11 @@ function KaryawanTab() {
     try {
       setLoading(true);
       const [empRes, posRes] = await Promise.all([
-        fetch("/api/employees"),
-        fetch("/api/employees/positions")
+        apiGet("/employees"),
+        apiGet("/employees/positions")
       ]);
-      const empData = await empRes.json();
-      const posData = await posRes.json();
-      if (empData.success) setEmployees(empData.data);
-      if (posData.success) setPositions(posData.data);
+      setEmployees(empRes.data || []);
+      setPositions(posRes.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -88,28 +87,23 @@ function KaryawanTab() {
     if (!reqData.join_date) delete reqData.join_date;
 
     try {
-      const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShowModal(false);
-        fetchData();
+      if (formData.id) {
+        await apiPut(`/employees/${formData.id}`, reqData);
       } else {
-        alert(data.detail || "Gagal menyimpan");
+        await apiPost("/employees", reqData);
       }
-    } catch (err) {
-      alert("Terjadi kesalahan jaringan");
+      setShowModal(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Gagal menyimpan");
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Nonaktifkan karyawan ini?")) return;
     try {
-      const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) fetchData();
+      await apiDelete(`/employees/${id}`);
+      fetchData();
     } catch (err) {}
   };
 
@@ -223,9 +217,8 @@ function JabatanTab() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/employees/positions");
-      const data = await res.json();
-      if (data.success) setPositions(data.data);
+      const res = await apiGet("/employees/positions");
+      setPositions(res.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
@@ -233,17 +226,16 @@ function JabatanTab() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const method = formData.id ? "PUT" : "POST";
-    const url = formData.id ? `/api/employees/positions/${formData.id}` : "/api/employees/positions";
     try {
-      const res = await fetch(url, {
-        method, headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({...formData, base_salary: Number(formData.base_salary)})
-      });
-      const data = await res.json();
-      if (data.success) { setShowModal(false); fetchData(); }
-      else { alert(data.detail); }
-    } catch (err) { alert("Error"); }
+      const payload = {...formData, base_salary: Number(formData.base_salary)};
+      if (formData.id) {
+        await apiPut(`/employees/positions/${formData.id}`, payload);
+      } else {
+        await apiPost("/employees/positions", payload);
+      }
+      setShowModal(false); 
+      fetchData();
+    } catch (err: any) { alert(err.response?.data?.detail || "Error"); }
   };
 
   return (
@@ -326,12 +318,11 @@ function AbsensiTab() {
   const fetchAttendance = async (dateParam?: string) => {
     try {
       setLoading(true);
-      const url = `/api/attendance/week${dateParam ? `?week_start=${dateParam}` : ""}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) {
-        setData(json.data);
-        if (!dateParam) setWeekStart(json.data.week_start);
+      const url = `/attendance/week${dateParam ? `?week_start=${dateParam}` : ""}`;
+      const res = await apiGet(url);
+      if (res) {
+        setData(res.data || {days: [], employees: []});
+        if (!dateParam && res.data?.week_start) setWeekStart(res.data.week_start);
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -383,15 +374,9 @@ function AbsensiTab() {
     if (changes.length === 0) return;
     try {
       setSaving(true);
-      const res = await fetch("/api/attendance/batch", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ records: changes })
-      });
-      const json = await res.json();
-      if (json.success) {
-        setChanges([]);
-        fetchAttendance(weekStart); // refresh
-      }
+      await apiPost("/attendance/batch", { records: changes });
+      setChanges([]);
+      fetchAttendance(weekStart); // refresh
     } catch (err) { alert("Error"); } finally { setSaving(false); }
   };
 
@@ -478,9 +463,8 @@ function PenggajianTab() {
   const fetchPeriods = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/payroll/periods");
-      const data = await res.json();
-      if (data.success) setPeriods(data.data);
+      const res = await apiGet("/payroll/periods");
+      setPeriods(res.data || []);
     } catch (err) {} finally { setLoading(false); }
   };
 
@@ -489,36 +473,31 @@ function PenggajianTab() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/payroll/periods", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, working_days: parseInt(formData.working_days) })
-      });
-      const data = await res.json();
-      if (data.success) { setShowModal(false); fetchPeriods(); }
-      else alert(data.detail);
+      const reqData = { ...formData, working_days: parseInt(formData.working_days) };
+      await apiPost("/payroll/periods", reqData);
+      setShowModal(false);
+      fetchPeriods();
     } catch (err) { alert("Error"); }
   };
 
   const loadDetails = async (id: string) => {
     try {
-      const res = await fetch(`/api/payroll/periods/${id}`);
-      const data = await res.json();
-      if (data.success) {
-        setSelectedPeriod(data.data.period);
-        setPeriodItems(data.data.items);
-      }
+      const res = await apiGet(`/payroll/periods/${id}`);
+      setSelectedPeriod(res.data?.period);
+      setPeriodItems(res.data?.items || []);
     } catch (err) {}
   };
 
   const handleAction = async (id: string, action: "approve" | "pay") => {
     if (!confirm(`Yakin untuk ${action} periode ini?`)) return;
     try {
-      const res = await fetch(`/api/payroll/periods/${id}/${action}`, { method: action === "pay" ? "POST" : "PUT" });
-      const data = await res.json();
-      if (data.success) {
-        fetchPeriods();
-        if (selectedPeriod?.id === id) loadDetails(id);
-      } else { alert(data.detail); }
+      if (action === "pay") {
+        await apiPost(`/payroll/periods/${id}/pay`);
+      } else {
+        await apiPut(`/payroll/periods/${id}/${action}`);
+      }
+      fetchPeriods();
+      if (selectedPeriod?.id === id) loadDetails(id);
     } catch (err) {}
   };
 

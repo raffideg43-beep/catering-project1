@@ -155,7 +155,7 @@ async def create_operational_cost(
     # 3. Double entry Kas
     if trx_id and float(body.amount) > 0:
         try:
-            await KasService.record_expense(
+            KasService.record_expense(
                 tenant_id=tid,
                 transaction_id=trx_id,
                 amount=Decimal(str(body.amount)),

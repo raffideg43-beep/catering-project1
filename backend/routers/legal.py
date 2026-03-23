@@ -20,21 +20,21 @@ class StatusUpdateRequest(BaseModel):
     status: str
 
 @router.post("/spt/generate", dependencies=[Depends(require_role(["owner"]))])
-async def generate_spt(
+def generate_spt(
     req: GenerateRequest,
     current_user: UserInDB = Depends(get_current_user)
 ):
     """Generate SPT PDF and save to storage & legal_documents."""
     supabase = get_supabase()
     try:
-        res = await SPTService.generate_spt(current_user.tenant_id, req.year, req.month, supabase)
+        res = SPTService.generate_spt(current_user.tenant_id, req.year, req.month, supabase)
         return {"success": True, "file_url": res["file_url"], "doc_number": res["doc_number"]}
     except Exception as e:
         logger.error(f"Generate SPT Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/bap/generate", dependencies=[Depends(require_role(["owner"]))])
-async def generate_bap(
+def generate_bap(
     req: GenerateRequest,
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -42,7 +42,7 @@ async def generate_bap(
     supabase = get_supabase()
     
     from services.kas_service import KasService
-    balances = await KasService.get_all_balances(current_user.tenant_id, supabase)
+    balances = KasService.get_all_balances(current_user.tenant_id, supabase)
     total_balance = sum(b.get("current_balance", 0) for b in balances)
     
     # Check returns in ledger
@@ -63,14 +63,14 @@ async def generate_bap(
         }
         
     try:
-        res = await SPTService.generate_bap(current_user.tenant_id, req.year, req.month, supabase)
+        res = SPTService.generate_bap(current_user.tenant_id, req.year, req.month, supabase)
         return {"success": True, "file_url": res["file_url"], "doc_number": res["doc_number"]}
     except Exception as e:
         logger.error(f"Generate BAP Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/documents", dependencies=[Depends(require_role(["owner", "admin"]))])
-async def get_documents(
+def get_documents(
     year: Optional[int] = None,
     month: Optional[int] = None,
     doc_type: Optional[str] = None,
@@ -90,7 +90,7 @@ async def get_documents(
     return {"success": True, "data": getattr(res, "data", None) or []}
 
 @router.put("/documents/{doc_id}/status", dependencies=[Depends(require_role(["owner"]))])
-async def update_doc_status(
+def update_doc_status(
     doc_id: str,
     req: StatusUpdateRequest,
     current_user: UserInDB = Depends(get_current_user)
@@ -108,7 +108,7 @@ async def update_doc_status(
     return {"success": True, "data": res.data[0]}
 
 @router.post("/excel-dinas/generate", dependencies=[Depends(require_role(["owner", "admin"]))])
-async def generate_excel_dinas(
+def generate_excel_dinas(
     req: GenerateRequest,
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -116,7 +116,7 @@ async def generate_excel_dinas(
     supabase = get_supabase()
     svc = ExportService()
     try:
-        url = await svc.regenerate_monthly_excel(current_user.tenant_id, req.year, req.month, supabase)
+        url = svc.regenerate_monthly_excel(current_user.tenant_id, req.year, req.month, supabase)
         if url:
             # Upsert legal doc for Excel Dinas tracking
             SPTService._upsert_legal_doc(supabase, current_user.tenant_id, "excel_dinas", req.year, req.month, url)

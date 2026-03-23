@@ -4,7 +4,7 @@ from models.user import UserInDB  # Import to get typing or use generic str
 
 class KasService:
     @staticmethod
-    async def get_balance(kas_account_id: str, tenant_id: str, supabase, as_of_date: date = None) -> Decimal:
+    def get_balance(kas_account_id: str, tenant_id: str, supabase, as_of_date: date = None) -> Decimal:
         """
         Ambil saldo kas pada tanggal tertentu.
         Default = saldo sekarang (today).
@@ -27,7 +27,7 @@ class KasService:
         return Decimal(str(result.data[0]["balance_after"]))
 
     @staticmethod
-    async def get_all_balances(tenant_id: str, supabase) -> list:
+    def get_all_balances(tenant_id: str, supabase) -> list:
         """Return saldo semua kas accounts."""
         accounts = (
             supabase.table("kas_accounts")
@@ -39,7 +39,7 @@ class KasService:
         
         result = []
         for account in accounts.data:
-            balance = await KasService.get_balance(account["id"], tenant_id, supabase)
+            balance = KasService.get_balance(account["id"], tenant_id, supabase)
             result.append({
                 **account,
                 "current_balance": float(balance)
@@ -47,7 +47,7 @@ class KasService:
         return result
 
     @staticmethod
-    async def record_entry(
+    def record_entry(
         tenant_id: str,
         kas_account_id: str,
         entry_type: str,  # "debit" | "credit"
@@ -62,7 +62,7 @@ class KasService:
         """
         Catat 1 baris di kas_ledger. Hitung balance_after otomatis.
         """
-        current_balance = await KasService.get_balance(kas_account_id, tenant_id, supabase)
+        current_balance = KasService.get_balance(kas_account_id, tenant_id, supabase)
         
         if entry_type == "debit":
             balance_after = current_balance + amount
@@ -102,7 +102,7 @@ class KasService:
         return entry.data[0]
 
     @staticmethod
-    async def transfer(
+    def transfer(
         tenant_id: str,
         from_account_id: str,
         to_account_id: str,
@@ -115,7 +115,7 @@ class KasService:
         """
         Double entry transfer antar kas.
         """
-        from_balance = await KasService.get_balance(from_account_id, tenant_id, supabase)
+        from_balance = KasService.get_balance(from_account_id, tenant_id, supabase)
         if from_balance < amount:
             raise ValueError(f"Saldo tidak cukup. Tersedia: Rp {from_balance}")
         
@@ -137,13 +137,13 @@ class KasService:
         to_acc = supabase.table("kas_accounts").select("name").eq("id", to_account_id).execute().data[0]
 
         # Record 1: keluar dari kas asal
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id, from_account_id, "credit", amount, "transfer", transfer_id,
             f"Transfer ke {to_acc['name']}: {notes}", transfer_date, created_by, supabase
         )
         
         # Record 2: masuk ke kas tujuan
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id, to_account_id, "debit", amount, "transfer", transfer_id,
             f"Transfer dari {from_acc['name']}: {notes}", transfer_date, created_by, supabase
         )
@@ -151,7 +151,7 @@ class KasService:
         return transfer.data[0]
 
     @staticmethod
-    async def record_disbursement(
+    def record_disbursement(
         tenant_id: str,
         disbursement_id: str,
         amount: Decimal,
@@ -166,13 +166,13 @@ class KasService:
             raise ValueError("Akun VA Bank belum disetup.")
         va_account_id = va_res.data[0]["id"]
         
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id, va_account_id, "debit", amount, "disbursement", disbursement_id,
             f"Pencairan dana pemerintah (Ref: {reference_number})", disbursement_date, created_by, supabase
         )
 
     @staticmethod
-    async def record_expense(
+    def record_expense(
         tenant_id: str,
         transaction_id: str,
         amount: Decimal,
@@ -185,13 +185,13 @@ class KasService:
     ):
         """Catat pengeluaran (belanja/ops/gaji) dari kas tertentu."""
         # reference_type bisa "expense" atau "payroll"
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id, kas_account_id, "credit", amount, reference_type, transaction_id,
             description, expense_date, created_by, supabase
         )
 
     @staticmethod
-    async def record_return_to_gov(
+    def record_return_to_gov(
         tenant_id: str,
         return_id: str,
         amount: Decimal,
@@ -205,13 +205,13 @@ class KasService:
             raise ValueError("Akun VA Bank belum disetup.")
         va_account_id = va_res.data[0]["id"]
         
-        await KasService.record_entry(
+        KasService.record_entry(
             tenant_id, va_account_id, "credit", amount, "return_to_gov", return_id,
             "Pengembalian sisa dana ke Kas Negara", return_date, created_by, supabase
         )
 
     @staticmethod
-    async def get_ledger(
+    def get_ledger(
         tenant_id: str,
         supabase,
         kas_account_id: str = None,

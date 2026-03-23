@@ -26,12 +26,12 @@ def _rp(val):
 
 class SPTService:
     @staticmethod
-    async def _get_tenant(tenant_id: str, supabase):
+    def _get_tenant(tenant_id: str, supabase):
         res = supabase.table("tenants").select("*").eq("id", tenant_id).execute()
         return res.data[0] if getattr(res, "data", None) else {}
 
     @staticmethod
-    async def _upload_to_storage(supabase, tenant_id: str, filename: str, pdf_bytes: bytes) -> str:
+    def _upload_to_storage(supabase, tenant_id: str, filename: str, pdf_bytes: bytes) -> str:
         path = f"{tenant_id}/dokumen/{filename}"
         bucket = "mbg-excel" # Menggunakan bucket yang sama dengan export
         import os
@@ -54,9 +54,9 @@ class SPTService:
         return supabase.storage.from_(bucket).get_public_url(path)
 
     @staticmethod
-    async def generate_spt(tenant_id: str, year: int, month: int, supabase) -> str:
+    def generate_spt(tenant_id: str, year: int, month: int, supabase) -> str:
         """Generate PDF SPT dan upload, return file URL."""
-        tenant = await SPTService._get_tenant(tenant_id, supabase)
+        tenant = SPTService._get_tenant(tenant_id, supabase)
         slug = tenant.get("slug", "sppg")
         owner_name = tenant.get("owner_name", "-")
         address = tenant.get("address", "-")
@@ -211,15 +211,15 @@ class SPTService:
         pdf_bytes = buffer.getvalue()
         
         filename = f"spt_{year}_{month:02d}.pdf"
-        file_url = await SPTService._upload_to_storage(supabase, tenant_id, filename, pdf_bytes)
+        file_url = SPTService._upload_to_storage(supabase, tenant_id, filename, pdf_bytes)
         
         # Upsert
         SPTService._upsert_legal_doc(supabase, tenant_id, "spt", year, month, file_url)
         return {"file_url": file_url, "doc_number": no_spt}
 
     @staticmethod
-    async def generate_bap(tenant_id: str, year: int, month: int, supabase) -> str:
-        tenant = await SPTService._get_tenant(tenant_id, supabase)
+    def generate_bap(tenant_id: str, year: int, month: int, supabase) -> str:
+        tenant = SPTService._get_tenant(tenant_id, supabase)
         slug = tenant.get("slug", "sppg")
         owner_name = tenant.get("owner_name", "-")
         address = tenant.get("address", "-")
@@ -234,7 +234,7 @@ class SPTService:
             last = date(year, month + 1, 1) - datetime.timedelta(days=1)
             
         # Get Kas Balances
-        balances = await KasService.get_all_balances(tenant_id, supabase)
+        balances = KasService.get_all_balances(tenant_id, supabase)
         saldo_akhir = sum(b["current_balance"] for b in balances)
         
         # We need total income and expenses for the period
@@ -332,7 +332,7 @@ class SPTService:
         pdf_bytes = buffer.getvalue()
         
         filename = f"bap_{year}_{month:02d}.pdf"
-        file_url = await SPTService._upload_to_storage(supabase, tenant_id, filename, pdf_bytes)
+        file_url = SPTService._upload_to_storage(supabase, tenant_id, filename, pdf_bytes)
         
         # Upsert
         SPTService._upsert_legal_doc(supabase, tenant_id, "bap", year, month, file_url)

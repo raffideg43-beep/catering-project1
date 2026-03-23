@@ -46,7 +46,7 @@ class ExportService:
 
     # ─── Public: dipanggil dari BackgroundTasks atau endpoint ────────────────
 
-    async def regenerate_monthly_excel(
+    def regenerate_monthly_excel(
         self,
         tenant_id: str,
         year: int,
@@ -543,9 +543,7 @@ class ExportService:
         total_days = len({d["delivery_date"] for d in deliveries})
         price_pp = Decimal(str(data["price_per_portion"]))
         revenue_gross = price_pp * total_portions
-        pph22 = (revenue_gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
-        revenue_net = revenue_gross - pph22
-
+        revenue_net = revenue_gross
         exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
         exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
@@ -558,7 +556,6 @@ class ExportService:
             ("Total Hari Kirim",  f"{total_days} hari"),
             ("Total Transaksi",   f"{len(transactions)} nota"),
             ("Pendapatan Kotor",  float(revenue_gross)),
-            ("PPh 22 (1,5%)",    float(pph22)),
             ("Pendapatan Bersih", float(revenue_net)),
             ("Pengeluaran Bahan Pangan", float(exp_bahan)),
             ("Pengeluaran Insentif/Upah", float(exp_upah)),
@@ -591,11 +588,6 @@ class ExportService:
         ws[f"B{last_row}"] = float(total_hutang)
         ws[f"B{last_row}"].number_format = '"Rp "#,##0'
 
-        last_row += 2
-        ws[f"A{last_row}"] = "Catatan:"
-        ws[f"B{last_row}"] = "PPh 22 dipotong langsung oleh pemerintah"
-        ws[f"B{last_row}"].font = Font(italic=True, color="FF0000")
-
         self._set_column_widths(ws)
         ws.freeze_panes = "A6"
 
@@ -621,7 +613,7 @@ class ExportService:
         ws["A1"].alignment = Alignment(horizontal="center")
 
         penyerahan_headers = ["No", "Tanggal", "Sekolah", "Menu", "Porsi",
-                              "Harga/Porsi", "Gross", "PPh22 (1,5%)", "Bersih"]
+                              "Harga/Porsi", "Gross", "Bersih"]
         self._write_headers(ws, 2, penyerahan_headers)
 
         # Build menu lookup
@@ -635,7 +627,7 @@ class ExportService:
                 pass
 
         row = 3
-        total_gross = total_pph22 = total_bersih = Decimal("0")
+        total_gross = total_bersih = Decimal("0")
         price_pp = Decimal(str(data["price_per_portion"]))
 
         for n, d in enumerate(data.get("deliveries", []), 1):
@@ -644,11 +636,9 @@ class ExportService:
             del_date = d.get("delivery_date", "")
             menu_name = menu_by_date.get(del_date, d.get("menu_name", "—"))
             gross = price_pp * portions
-            pph22 = (gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            bersih = gross - pph22
+            bersih = gross
 
             total_gross  += gross
-            total_pph22  += pph22
             total_bersih += bersih
 
             ws.cell(row, 1, n)
@@ -658,8 +648,7 @@ class ExportService:
             ws.cell(row, 5, portions)
             ws.cell(row, 6, float(price_pp)).number_format = '"Rp "#,##0'
             ws.cell(row, 7, float(gross)).number_format = '"Rp "#,##0'
-            ws.cell(row, 8, float(pph22)).number_format = '"Rp "#,##0'
-            ws.cell(row, 9, float(bersih)).number_format = '"Rp "#,##0'
+            ws.cell(row, 8, float(bersih)).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
             row += 1
 
@@ -671,7 +660,7 @@ class ExportService:
         # Total penyerahan
         self._write_total_row(ws, row, {
             5: sum(d.get("portions_sent", 0) for d in data.get("deliveries", [])),
-            7: float(total_gross), 8: float(total_pph22), 9: float(total_bersih)
+            7: float(total_gross), 8: float(total_bersih)
         })
         row += 2
 
@@ -685,7 +674,7 @@ class ExportService:
         row += 1
 
         pembelian_headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
-                             "Harga Satuan", "Subtotal", "PPh22", "PPN",
+                             "Harga Satuan", "Subtotal",
                              "Total Bayar", "Metode Bayar", "Kategori Juknis", "Foto Nota"]
         self._write_headers(ws, row, pembelian_headers)
         row += 1
@@ -723,20 +712,18 @@ class ExportService:
                 ws.cell(row, 6, "")
                 ws.cell(row, 7, "")
                 ws.cell(row, 8, total_trx).number_format = '"Rp "#,##0'
-                ws.cell(row, 9, 0)
-                ws.cell(row, 10, 0)
-                ws.cell(row, 11, total_trx).number_format = '"Rp "#,##0'
-                ws.cell(row, 12, method)
+                ws.cell(row, 9, total_trx).number_format = '"Rp "#,##0'
+                ws.cell(row, 10, method)
                 jcat = trx.get("juknis_category", "")
-                ws.cell(row, 13, jcat or "lainnya")
+                ws.cell(row, 11, jcat or "lainnya")
                 photo_url = trx.get("photo_url")
                 if photo_url:
                     from openpyxl.styles import Font as _F
-                    cell = ws.cell(row, 14, "Lihat Foto")
+                    cell = ws.cell(row, 12, "Lihat Foto")
                     cell.hyperlink = photo_url
                     cell.font = _F(color="0563C1", underline="single")
                 else:
-                    ws.cell(row, 14, "")
+                    ws.cell(row, 12, "")
                 tot_sub += _d(trx.get("total"))
                 tot_pay += _d(trx.get("total"))
                 self._alt_row(ws, row, 2)
@@ -750,13 +737,9 @@ class ExportService:
                 sat  = item.get("unit", "pcs")
                 harga = float(_d(item.get("price")))
                 subtotal = _d(item.get("subtotal")) or (_d(item.get("qty")) * _d(item.get("price")))
-                pph22 = (subtotal * pph22_rate).quantize(Decimal("0.01")) if is_pkp else Decimal("0")
-                ppn   = (subtotal * ppn_rate).quantize(Decimal("0.01")) if is_pkp else Decimal("0")
-                bayar = subtotal + ppn - pph22
+                bayar = subtotal
 
                 tot_sub += subtotal
-                tot_pph += pph22
-                tot_ppn += ppn
                 tot_pay += bayar
 
                 ws.cell(row, 1, n)
@@ -767,20 +750,18 @@ class ExportService:
                 ws.cell(row, 6, sat)
                 ws.cell(row, 7, harga).number_format = '"Rp "#,##0'
                 ws.cell(row, 8, float(subtotal)).number_format = '"Rp "#,##0'
-                ws.cell(row, 9, float(pph22)).number_format = '"Rp "#,##0'
-                ws.cell(row, 10, float(ppn)).number_format = '"Rp "#,##0'
-                ws.cell(row, 11, float(bayar)).number_format = '"Rp "#,##0'
-                ws.cell(row, 12, method)
+                ws.cell(row, 9, float(bayar)).number_format = '"Rp "#,##0'
+                ws.cell(row, 10, method)
                 jcat = trx.get("juknis_category", "")
-                ws.cell(row, 13, jcat or "lainnya")
+                ws.cell(row, 11, jcat or "lainnya")
                 photo_url = trx.get("photo_url")
                 if photo_url:
                     from openpyxl.styles import Font as _F
-                    cell = ws.cell(row, 14, "Lihat Foto")
+                    cell = ws.cell(row, 12, "Lihat Foto")
                     cell.hyperlink = photo_url
                     cell.font = _F(color="0563C1", underline="single")
                 else:
-                    ws.cell(row, 14, "")
+                    ws.cell(row, 12, "")
                 self._alt_row(ws, row, 2)
                 row += 1
 
@@ -790,8 +771,7 @@ class ExportService:
             row += 1
 
         self._write_total_row(ws, row, {
-            8: float(tot_sub), 9: float(tot_pph),
-            10: float(tot_ppn), 11: float(tot_pay),
+            8: float(tot_sub), 9: float(tot_pay),
         })
 
         self._set_column_widths(ws)

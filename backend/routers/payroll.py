@@ -283,7 +283,7 @@ async def pay_payroll_period(
             
             # KasService Double Entry
             try:
-                await KasService.record_expense(
+                KasService.record_expense(
                     tenant_id=tid,
                     transaction_id=trx_id,
                     amount=Decimal(str(net)),
