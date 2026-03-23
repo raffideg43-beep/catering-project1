@@ -307,7 +307,6 @@ def get_monthly_report(
                 "total_portions": total_portions,
                 "total_delivery_days": total_delivery_days,
                 "revenue_gross": str(revenue_gross),
-                "pph22_note": "Dihitung saat generate laporan",
                 "avg_portions_per_day": avg_ppd,
             },
             "expenses": {
@@ -320,7 +319,6 @@ def get_monthly_report(
                 "revenue": str(revenue_gross),
                 "expenses": str(exp_total),
                 "gross_profit": str(gross_profit),
-                "note": "Estimasi sebelum PPh22",
             },
             "stock_summary": {
                 "low_stock_count": len(low_items),
@@ -453,7 +451,6 @@ def get_receivables_report(
             "id": r.get("id"),
             "debtor_name": r.get("debtor_name"),
             "amount": str(_d(r.get("amount"))),
-            "pph22_note": "Belum dihitung",
             "due_date": due,
             "created_at": r.get("created_at", "")[:10],
             "status": r.get("status"),
@@ -605,7 +602,7 @@ async def download_excel(
 
     # Generate (sync — user menunggu)
     svc = ExportService()
-    file_url = await svc.regenerate_monthly_excel(tid, y, m, supabase)
+    file_url = svc.regenerate_monthly_excel(tid, y, m, supabase)
 
     if not file_url:
         raise HTTPException(500, detail="Gagal generate Excel. Cek server logs.")
@@ -643,7 +640,7 @@ async def regenerate_excel(
     m = month or today.month
 
     svc = ExportService()
-    file_url = await svc.regenerate_monthly_excel(tid, y, m, supabase)
+    file_url = svc.regenerate_monthly_excel(tid, y, m, supabase)
 
     if not file_url:
         raise HTTPException(500, detail="Gagal generate Excel. Cek server logs.")

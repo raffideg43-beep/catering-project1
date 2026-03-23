@@ -521,7 +521,6 @@ class ExportService:
         from openpyxl.styles import Font, PatternFill, Alignment
         logger.info(f"Fill ringkasan: transactions={len(data.get('transactions', []))}, deliveries={len(data.get('deliveries', []))}")
 
-        pph22_rate = Decimal("0.015")
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
 
@@ -595,7 +594,6 @@ class ExportService:
 
     def _fill_bulanan(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
-        pph22_rate = Decimal("0.015")
         ppn_rate   = Decimal("0.11")
         logger.info(
             f"Fill bulanan: {len(data.get('deliveries', []))} deliveries, "
@@ -833,7 +831,6 @@ class ExportService:
     def _fill_laporan_pemerintah(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
         logger.info(f"Fill laporan pemerintah")
-        pph22_rate = Decimal("0.015")
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
 
@@ -855,7 +852,6 @@ class ExportService:
         total_days = len({d["delivery_date"] for d in deliveries})
         price_pp = Decimal(str(data["price_per_portion"]))
         revenue_gross = price_pp * total_portions
-        pph22 = (revenue_gross * pph22_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
 
         ws["A7"] = "Logistik & Distribusi"
         ws["A7"].font = Font(bold=True, size=11)
@@ -899,12 +895,11 @@ class ExportService:
         ws.cell(17, 4, "Belum tercatat")
         ws.cell(17, 5, "—")
 
-        # Section D: Detail Pajak
-        ws["A19"] = "Detail Pajak"
+        # Section D: Detail Pendapatan
+        ws["A19"] = "Detail Pendapatan"
         ws["A19"].font = Font(bold=True, size=11)
         ws["A20"] = "Pendapatan Bruto"; ws["B20"] = float(revenue_gross); ws["B20"].number_format = '"Rp "#,##0'
-        ws["A21"] = "PPh 22 (1,5%)"; ws["B21"] = float(pph22); ws["B21"].number_format = '"Rp "#,##0'
-        ws["A22"] = "Pendapatan Netto"; ws["B22"] = float(revenue_gross - pph22); ws["B22"].number_format = '"Rp "#,##0'
+        ws["A21"] = "Pendapatan Netto"; ws["B21"] = float(revenue_gross); ws["B21"].number_format = '"Rp "#,##0'
 
         self._set_column_widths(ws)
 
@@ -1162,9 +1157,8 @@ class ExportService:
             "month": month,
             "status": status,
             "last_updated": now,
+            "file_url": file_url or "",
         }
-        if file_url:
-            row["file_url"] = file_url
         if error_message:
             row["error_message"] = error_message
 

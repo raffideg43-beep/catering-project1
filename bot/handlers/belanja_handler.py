@@ -208,6 +208,10 @@ async def input_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     supplier = context.user_data.get("manual_supplier")
 
     # ─── Juknis kategori auto-detect ────────────────────────────────
+    import sys
+    import os
+    if "backend" not in sys.path:
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
     from services.juknis_service import auto_categorize
     juknis_cat = auto_categorize([i["nama_item"] for i in items])
     juknis_labels = {

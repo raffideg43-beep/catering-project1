@@ -300,8 +300,10 @@ async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if low_items:
         lines.append(f"\n⚠️ *MENIPIS \\({low_count} item\\):*")
         for p in low_items[:10]:
+            sq = p.get("stock_qty_display", p.get("stock_qty", 0))
+            sm = p.get("stock_min_display", p.get("stock_min", 0))
             lines.append(
-                f"• {_esc(p['name'])}: {_esc(str(p['stock_qty']))}/{_esc(str(p['stock_min']))} "
+                f"• {_esc(p['name'])}: {_esc(str(sq))}/{_esc(str(sm))} "
                 f"{_esc(p['unit'])} ⚠️"
             )
 
@@ -309,7 +311,8 @@ async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append("\n✅ *STOK AMAN:*")
         show = safe_items[:20 - len(low_items)]
         for p in show:
-            lines.append(f"• {_esc(p['name'])}: {_esc(str(p['stock_qty']))} {_esc(p['unit'])}")
+            sq = p.get("stock_qty_display", p.get("stock_qty", 0))
+            lines.append(f"• {_esc(p['name'])}: {_esc(str(sq))} {_esc(p['unit'])}")
 
     if total > 20:
         shown = min(len(low_items), 10) + min(len(safe_items), 20 - len(low_items))
