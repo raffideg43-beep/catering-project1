@@ -1,4 +1,7 @@
 {
-  "/(dashboard)/page": "app/(dashboard)/page.js",
-  "/(dashboard)/stok/page": "app/(dashboard)/stok/page.js"
+  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
+  "/(dashboard)/pembukuan/page": "app/(dashboard)/pembukuan/page.js",
+  "/(dashboard)/insights/page": "app/(dashboard)/insights/page.js",
+  "/(dashboard)/karyawan/page": "app/(dashboard)/karyawan/page.js",
+  "/(dashboard)/anggaran/page": "app/(dashboard)/anggaran/page.js"
 }

@@ -33,7 +33,7 @@ class SPTService:
     @staticmethod
     def _upload_to_storage(supabase, tenant_id: str, filename: str, pdf_bytes: bytes) -> str:
         path = f"{tenant_id}/dokumen/{filename}"
-        bucket = "mbg-excel" # Menggunakan bucket yang sama dengan export
+        bucket = "nota-photos"
         import os
         from supabase import Client
         try:
@@ -202,7 +202,7 @@ class SPTService:
         
         text_y -= 3*cm
         c.drawString(3*cm, text_y, "(...........................)")
-        c.drawString(A4[0] - 6*cm, f"( {owner_name} )")
+        c.drawString(A4[0] - 6*cm, text_y, f"( {owner_name} )")
         text_y -= 0.6*cm
         c.drawString(3*cm, text_y, "NIP:")
         c.drawString(A4[0] - 6*cm, f"NIK: {nik}")

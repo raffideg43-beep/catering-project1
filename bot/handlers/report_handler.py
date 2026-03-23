@@ -222,7 +222,6 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"Pendapatan  : {_esc(_fmt_rp(pe.get('revenue')))}",
         f"Pengeluaran : {_esc(_fmt_rp(pe.get('expenses')))}",
         f"Gross Profit: {_esc(_fmt_rp(pe.get('gross_profit')))}",
-        f"⚠️ _{_esc(pe.get('note', ''))}_",
     ]
 
     low_count = stk.get("low_stock_count", 0)

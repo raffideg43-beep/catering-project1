@@ -135,7 +135,7 @@ export function TabSekolah() {
 
     // ── Beneficiary actions ──
 
-    const benTotal = schoolBens.reduce((s, b) => s + (b.jumlah || 0), 0);
+    const benTotal = schoolBens.reduce((s, b) => s + (Number(b.jumlah) || 0), 0);
 
     const saveBeneficiaries = async () => {
         if (!editingId) return;
@@ -159,7 +159,11 @@ export function TabSekolah() {
         let typeId = addTypeId;
 
         // If creating new type
-        if (addNewName.trim() && !addTypeId) {
+        if (addTypeId === "__new__" || (addNewName.trim() && !addTypeId)) {
+            if (!addNewName.trim()) {
+                alert("Silakan masukkan nama jenis baru");
+                return;
+            }
             try {
                 const res = await apiPost("/beneficiary-types", { name: addNewName.trim(), sort_order: benTypes.length });
                 typeId = res?.data?.id;
@@ -387,12 +391,10 @@ export function TabSekolah() {
                                             </div>
 
                                             {/* Save beneficiaries button */}
-                                            {schoolBens.length > 0 && (
-                                                <button type="button" onClick={saveBeneficiaries} disabled={saving}
-                                                    className="w-full mt-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
-                                                    {saving ? "Menyimpan..." : `💾 Simpan Penerima Manfaat (Total: ${benTotal} porsi)`}
-                                                </button>
-                                            )}
+                                            <button type="button" onClick={saveBeneficiaries} disabled={saving}
+                                                className="w-full mt-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                                                {saving ? "Menyimpan..." : `💾 Simpan Penerima Manfaat (Total: ${benTotal} porsi)`}
+                                            </button>
                                         </>
                                     )}
                                 </div>

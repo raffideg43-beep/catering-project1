@@ -120,6 +120,60 @@ rq worker ocr_queue --url redis://localhost:6379
 
 ---
 
+## Quick Deploy
+
+### Prerequisites
+- GitHub account
+- Railway account (railway.app)
+- Vercel account (vercel.com)
+- Supabase project (sudah ada)
+- Telegram Bot Token (sudah ada)
+- Gemini API Key (sudah ada)
+
+### Deploy Steps
+
+1. Push ke GitHub
+   git remote add origin https://github.com/USERNAME/REPO.git
+   git push -u origin master
+
+2. Railway — Redis
+   New Project → Add Service → Database → Redis
+   Catat REDIS_URL
+
+3. Railway — Backend
+   New Service → GitHub Repo
+   Root: backend
+   Add ENV vars dari backend/.env.example
+   Generate Domain → catat URL
+
+4. Railway — OCR Worker
+   New Service → GitHub Repo (sama)
+   Root: backend
+   Start Command: rq worker ocr_queue --url $REDIS_URL
+   Copy ENV vars dari backend
+
+5. Railway — Bot
+   New Service → GitHub Repo (sama)
+   Root: bot
+   Add ENV vars dari bot/.env.example
+
+6. Vercel — Web
+   New Project → Import GitHub Repo
+   Root: web
+   Add ENV vars dari web/.env.example
+   Deploy → catat URL
+
+7. Update ENV setelah dapat semua URL
+   Backend: WEB_URL + BACKEND_URL
+   Bot: BACKEND_URL
+   Web: NEXT_PUBLIC_BACKEND_URL
+
+8. Test
+   GET https://your-backend.railway.app/health
+   → harus return {"status": "ok"}
+
+---
+
 ## Deploy Production (Ringkasan)
 
 | Service  | Rekomendasi Platform           |

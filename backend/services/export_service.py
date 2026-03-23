@@ -312,6 +312,10 @@ class ExportService:
         )
         school_beneficiaries = getattr(sb_res, "data", None) or []
 
+        # Budget Summary
+        from services.budget_service import budget_service
+        budget_summary = budget_service.get_monthly_summary(tenant_id, year, month)
+
         return {
             "tenant": tenant,
             "first": first,
@@ -330,6 +334,7 @@ class ExportService:
             "payroll_items": payroll_items,
             "kas_ledger": kas_ledger,
             "school_beneficiaries": school_beneficiaries,
+            "budget_summary": budget_summary,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -477,30 +482,32 @@ class ExportService:
         
         deliveries = data.get("deliveries", [])
         transactions = data.get("transactions", [])
-        total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
-        price_pp = Decimal(str(data.get("price_per_portion", 15000)))
-        revenue_gross = price_pp * total_portions
+        budget = data.get("budget_summary", {})
+        
+        # Gunakan Pencairan aktual dari budget_service alih-alih estimasi porsi
+        total_disbursed = Decimal(budget.get("total_disbursed", 0))
         
         exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
         exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
         total_exp = exp_bahan + exp_upah + exp_ops
         
-        target_bahan = revenue_gross * Decimal("0.80")
-        target_upah = revenue_gross * Decimal("0.15")
-        target_ops = revenue_gross * Decimal("0.05")
+        # Target mengikuti persentase dari Pagu/Pencairan aktual
+        target_bahan = total_disbursed * Decimal("0.80")
+        target_upah = total_disbursed * Decimal("0.15")
+        target_ops = total_disbursed * Decimal("0.05")
         
         def pct(aktual, target):
             return f"{round(float(aktual/target*100), 1)}%" if target > 0 else "0%"
             
         rows_data = [
-            ("Dana Masuk (Pencairan MBG)", revenue_gross, revenue_gross, 0, "100%"), # Assuming pencairan follows portions
+            ("Dana Masuk (Pencairan MBG)", total_disbursed, total_disbursed, 0, "100%"),
             ("-", "-", "-", "-", "-"),
             ("Bahan Pangan (80%)", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
             ("Insentif/Upah (15%)", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
             ("Operasional (5%)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
             ("-", "-", "-", "-", "-"),
-            ("Total Pengeluaran", revenue_gross, total_exp, revenue_gross - total_exp, pct(total_exp, revenue_gross))
+            ("Total Pengeluaran", total_disbursed, total_exp, total_disbursed - total_exp, pct(total_exp, total_disbursed))
         ]
         
         row = 4
@@ -538,11 +545,18 @@ class ExportService:
         # Kalkulasi ringkasan
         deliveries = data["deliveries"]
         transactions = data["transactions"]
+        budget = data.get("budget_summary", {})
         total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
         total_days = len({d["delivery_date"] for d in deliveries})
         price_pp = Decimal(str(data["price_per_portion"]))
-        revenue_gross = price_pp * total_portions
-        revenue_net = revenue_gross
+        
+        # Pagu dan Dana Pencairan (Real dari UI Anggaran)
+        pagu_amount = Decimal(budget.get("pagu_amount", 0))
+        total_disbursed = Decimal(budget.get("total_disbursed", 0))
+        sisa_anggaran = Decimal(budget.get("sisa_anggaran", 0))
+
+        # Menghitung estimasi jika menggunakan portion based vs actual pencairan
+        revenue_net = total_disbursed
         exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
         exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
@@ -551,16 +565,17 @@ class ExportService:
         gross_profit = revenue_net - total_exp
 
         rows = [
-            ("Total Porsi MBG",   f"{total_portions:,} porsi"),
+            ("Pagu Anggaran",     float(pagu_amount)),
+            ("Dana Masuk / Cair", float(total_disbursed)),
+            ("Sisa Anggaran",     float(sisa_anggaran)),
+            ("Total Porsi (Terkirim)", f"{total_portions:,} porsi"),
             ("Total Hari Kirim",  f"{total_days} hari"),
             ("Total Transaksi",   f"{len(transactions)} nota"),
-            ("Pendapatan Kotor",  float(revenue_gross)),
-            ("Pendapatan Bersih", float(revenue_net)),
             ("Pengeluaran Bahan Pangan", float(exp_bahan)),
             ("Pengeluaran Insentif/Upah", float(exp_upah)),
             ("Pengeluaran Operasional", float(exp_ops)),
             ("Total Pengeluaran", float(total_exp)),
-            ("Laba Kotor",        float(gross_profit)),
+            ("Laba Kotor / Sisa Dana", float(gross_profit)),
         ]
 
         ws["A5"] = "Keterangan"; ws["B5"] = "Jumlah"
