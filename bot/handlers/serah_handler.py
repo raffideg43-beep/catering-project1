@@ -329,11 +329,13 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         warn_note = f"\n⚠️ _{_esc(warning)}_" if warning else ""
 
+        pdf_msg = "📄 Draft nota PDF disiapkan" if has_pdf else "📄 PDF tidak tersedia \\(ReportLab\\)"
+        
         await query.edit_message_text(
             f"✅ *Penyerahan dikonfirmasi\\!*\n\n"
             f"🍱 *{total_p} porsi* ke {total_s} sekolah\n"
             f"💰 Piutang: {_esc(_fmt_rp(total_rev))}\n"
-            f"{'📄 Draft nota PDF disiapkan' if has_pdf else '📄 PDF tidak tersedia \\(ReportLab\\)'}\n"
+            f"{pdf_msg}\n"
             f"📊 Excel sedang diperbarui\\.\\.\\."
             f"{warn_note}",
             reply_markup=InlineKeyboardMarkup([[
