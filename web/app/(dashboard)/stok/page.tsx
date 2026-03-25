@@ -532,57 +532,64 @@ export default function StokPage() {
                 </Link>
             </div>
 
-            {/* Modal History */}
+            {/* Modal History + Price Chart */}
             {modalProduct && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
                     onClick={() => setModalProduct(null)}>
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col"
                         onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-gray-100 flex justify-between items-start">
                             <div>
                                 <h2 className="font-bold text-gray-900">{modalProduct.name}</h2>
-                                <p className="text-sm text-gray-500">Riwayat Perubahan Stok</p>
+                                <p className="text-sm text-gray-500">Riwayat Harga & Stok</p>
                             </div>
                             <button onClick={() => setModalProduct(null)} className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
                         </div>
-                        <div className="flex-1 overflow-auto p-5">
-                            {histLoading ? (
-                                <div className="flex justify-center py-8">
-                                    <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                                </div>
-                            ) : history.length === 0 ? (
-                                <p className="text-center text-gray-400 py-8">Belum ada riwayat</p>
-                            ) : (
-                                <table className="w-full text-sm">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            {["Tanggal", "Perubahan", "Saldo", "Alasan", "Notes"].map(h => (
-                                                <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium text-xs">{h}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {history.map((h, i) => {
-                                            const delta = parseFloat(h.change_qty);
-                                            return (
-                                                <tr key={h.id} className={`border-b border-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
-                                                    <td className="px-3 py-1.5 whitespace-nowrap text-gray-500 text-xs">
-                                                        {new Date(h.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                                                    </td>
-                                                    <td className={`px-3 py-1.5 font-semibold ${delta >= 0 ? "text-green-700" : "text-red-500"}`}>
-                                                        {delta >= 0 ? "+" : ""}{delta.toLocaleString("id-ID")} {modalProduct.unit}
-                                                    </td>
-                                                    <td className="px-3 py-1.5 font-medium">
-                                                        {parseFloat(h.running_balance).toLocaleString("id-ID")} {modalProduct.unit}
-                                                    </td>
-                                                    <td className="px-3 py-1.5 text-gray-600 text-xs">{h.reason || "—"}</td>
-                                                    <td className="px-3 py-1.5 text-gray-400 text-xs">{h.notes || "—"}</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            )}
+                        <div className="flex-1 overflow-auto p-5 space-y-6">
+                            {/* ═══ PRICE CHART ═══ */}
+                            <PriceChartSection productId={modalProduct.id} unit={modalProduct.display_unit || modalProduct.unit} />
+
+                            {/* ═══ STOCK HISTORY TABLE ═══ */}
+                            <div>
+                                <h3 className="font-semibold text-gray-800 mb-3">📦 Riwayat Perubahan Stok</h3>
+                                {histLoading ? (
+                                    <div className="flex justify-center py-8">
+                                        <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                    </div>
+                                ) : history.length === 0 ? (
+                                    <p className="text-center text-gray-400 py-8">Belum ada riwayat</p>
+                                ) : (
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                {["Tanggal", "Perubahan", "Saldo", "Alasan", "Notes"].map(h => (
+                                                    <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium text-xs">{h}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {history.map((h, i) => {
+                                                const delta = parseFloat(h.change_qty);
+                                                return (
+                                                    <tr key={h.id} className={`border-b border-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
+                                                        <td className="px-3 py-1.5 whitespace-nowrap text-gray-500 text-xs">
+                                                            {new Date(h.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                                        </td>
+                                                        <td className={`px-3 py-1.5 font-semibold ${delta >= 0 ? "text-green-700" : "text-red-500"}`}>
+                                                            {delta >= 0 ? "+" : ""}{delta.toLocaleString("id-ID")} {modalProduct.unit}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 font-medium">
+                                                            {parseFloat(h.running_balance).toLocaleString("id-ID")} {modalProduct.unit}
+                                                        </td>
+                                                        <td className="px-3 py-1.5 text-gray-600 text-xs">{h.reason || "—"}</td>
+                                                        <td className="px-3 py-1.5 text-gray-400 text-xs">{h.notes || "—"}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -686,6 +693,175 @@ export default function StokPage() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+
+// ─── PRICE CHART SECTION ──────────────────────────────────────────────────────
+function PriceChartSection({ productId, unit }: { productId: string; unit: string }) {
+    const [period, setPeriod] = useState("3m");
+    const [data, setData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        apiGet(`/price-tracking/${productId}?period=${period}`)
+            .then(r => { if (!cancelled) setData(r?.data ?? null); })
+            .catch(() => { if (!cancelled) setData(null); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [productId, period]);
+
+    if (loading) {
+        return (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5">
+                <h3 className="font-semibold text-gray-800 mb-3">📈 Track Harga</h3>
+                <div className="flex justify-center py-8">
+                    <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            </div>
+        );
+    }
+
+    const chartData: { date: string; avg_price: number }[] = data?.chart_data ?? [];
+    const stats = data?.stats ?? {};
+
+    return (
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-800">📈 Track Harga</h3>
+                <div className="flex gap-1">
+                    {["1m", "3m", "12m"].map(p => (
+                        <button key={p} onClick={() => setPeriod(p)}
+                            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${period === p ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-100"}`}>
+                            {p === "1m" ? "1 Bulan" : p === "3m" ? "3 Bulan" : "1 Tahun"}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {chartData.length === 0 ? (
+                <p className="text-center text-gray-400 py-6 text-sm">
+                    Belum ada data harga pada periode ini. Konfirmasi nota belanja untuk mulai tracking.
+                </p>
+            ) : (
+                <>
+                    {/* Stats row */}
+                    <div className="grid grid-cols-4 gap-3 mb-4">
+                        {[
+                            { label: "Terendah", value: stats.min_price, color: "text-green-700" },
+                            { label: "Tertinggi", value: stats.max_price, color: "text-red-600" },
+                            { label: "Rata-rata", value: stats.avg_price, color: "text-blue-700" },
+                            { label: "Volatilitas", value: `${stats.price_volatility ?? 0}%`, color: "text-orange-600", isText: true },
+                        ].map(s => (
+                            <div key={s.label} className="bg-white rounded-lg p-3 text-center shadow-sm">
+                                <p className="text-xs text-gray-500">{s.label}</p>
+                                <p className={`font-bold text-sm ${s.color}`}>
+                                    {s.isText ? s.value : formatRp(s.value || "0")}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* SVG Chart */}
+                    <PriceChart data={chartData} />
+                </>
+            )}
+        </div>
+    );
+}
+
+
+// ─── SVG PRICE CHART ──────────────────────────────────────────────────────────
+function PriceChart({ data }: { data: { date: string; avg_price: number }[] }) {
+    if (data.length < 2) {
+        return (
+            <div className="bg-white rounded-lg p-4 text-center text-gray-400 text-sm">
+                Data minimal 2 titik untuk grafik
+            </div>
+        );
+    }
+
+    const W = 600, H = 200, PAD_LEFT = 70, PAD_RIGHT = 20, PAD_TOP = 20, PAD_BOTTOM = 40;
+    const chartW = W - PAD_LEFT - PAD_RIGHT;
+    const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+    const prices = data.map(d => d.avg_price);
+    const minP = Math.min(...prices) * 0.95;
+    const maxP = Math.max(...prices) * 1.05;
+    const rangeP = maxP - minP || 1;
+
+    const points = data.map((d, i) => ({
+        x: PAD_LEFT + (i / (data.length - 1)) * chartW,
+        y: PAD_TOP + chartH - ((d.avg_price - minP) / rangeP) * chartH,
+        price: d.avg_price,
+        date: d.date,
+    }));
+
+    const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+    const areaPath = `${linePath} L${points[points.length - 1].x},${PAD_TOP + chartH} L${points[0].x},${PAD_TOP + chartH} Z`;
+
+    // Y-axis labels
+    const ySteps = 4;
+    const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => {
+        const val = minP + (rangeP / ySteps) * i;
+        return { y: PAD_TOP + chartH - (i / ySteps) * chartH, label: `Rp ${Math.round(val / 1000)}k` };
+    });
+
+    // X-axis labels (show at most 6)
+    const xStep = Math.max(1, Math.floor(data.length / 6));
+    const xLabels = data.filter((_, i) => i % xStep === 0 || i === data.length - 1).map((d, idx, arr) => ({
+        x: PAD_LEFT + (data.indexOf(d) / (data.length - 1)) * chartW,
+        label: new Date(d.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+    }));
+
+    const isUp = prices[prices.length - 1] >= prices[0];
+
+    return (
+        <div className="bg-white rounded-lg p-3 shadow-sm">
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                {/* Grid lines */}
+                {yLabels.map((yl, i) => (
+                    <g key={i}>
+                        <line x1={PAD_LEFT} y1={yl.y} x2={W - PAD_RIGHT} y2={yl.y}
+                            stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="4 4" />
+                        <text x={PAD_LEFT - 8} y={yl.y + 4} textAnchor="end"
+                            className="fill-gray-400" fontSize="10">{yl.label}</text>
+                    </g>
+                ))}
+
+                {/* X labels */}
+                {xLabels.map((xl, i) => (
+                    <text key={i} x={xl.x} y={H - 8} textAnchor="middle"
+                        className="fill-gray-400" fontSize="10">{xl.label}</text>
+                ))}
+
+                {/* Gradient fill */}
+                <defs>
+                    <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={isUp ? "#ef4444" : "#22c55e"} stopOpacity="0.3" />
+                        <stop offset="100%" stopColor={isUp ? "#ef4444" : "#22c55e"} stopOpacity="0.02" />
+                    </linearGradient>
+                </defs>
+
+                {/* Area */}
+                <path d={areaPath} fill="url(#priceGrad)" />
+
+                {/* Line */}
+                <path d={linePath} fill="none" stroke={isUp ? "#ef4444" : "#22c55e"}
+                    strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+
+                {/* Dots */}
+                {points.map((p, i) => (
+                    <g key={i}>
+                        <circle cx={p.x} cy={p.y} r="3.5" fill="white"
+                            stroke={isUp ? "#ef4444" : "#22c55e"} strokeWidth="2" />
+                        <title>{`${p.date}: Rp ${p.price.toLocaleString("id-ID")}`}</title>
+                    </g>
+                ))}
+            </svg>
         </div>
     );
 }
