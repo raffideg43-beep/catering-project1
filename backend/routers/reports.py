@@ -536,16 +536,11 @@ def get_payables_report(
             except Exception:
                 pass
         amount = _d(r.get("amount"))
-        # Fields don't exist in DB schema
-        pph22  = Decimal("0")
-        ppn    = Decimal("0")
         payables.append({
             "id": r.get("id"),
             "supplier_name": r.get("supplier_name"),
             "amount": str(amount),
-            "pph22_amount": str(pph22),
-            "ppn_amount": str(ppn),
-            "total_bayar": str(amount + ppn - pph22),
+            "total_bayar": str(amount),
             "due_date": due,
             "created_at": r.get("created_at", "")[:10],
             "status": r.get("status"),

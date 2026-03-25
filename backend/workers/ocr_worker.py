@@ -91,16 +91,12 @@ def process_ocr_job(
 
     # ─── 2. Update header transaksi dari hasil OCR ───────────────────────────
     total_ocr = _to_decimal(ocr_result.get("total") or ocr_result.get("subtotal_nota", 0))
-    ppn_amount = _to_decimal(ocr_result.get("ppn_amount", 0))
-    subtotal_ocr = _to_decimal(ocr_result.get("subtotal_nota", 0)) or total_ocr
-    diskon = _to_decimal(ocr_result.get("diskon", 0))
-
     trx_update = {
         "nama_toko": ocr_result.get("nama_toko"),
         "ref_number": ocr_result.get("no_nota"),
         "date": ocr_result.get("tanggal") or date.today().isoformat(),
         "subtotal": str(subtotal_ocr),
-        "ppn_amount": str(ppn_amount),
+        "ppn_amount": "0.00",
         "pph22_amount": "0.00",
         "discount": str(diskon),
         "total": str(total_ocr),
@@ -414,17 +410,13 @@ def run_ocr_in_background(
 
     # ─── 2. Update header transaksi dari hasil OCR ───────────────────────────
     total_ocr = _to_decimal(ocr_result.get("total") or ocr_result.get("subtotal_nota", 0))
-    ppn_amount = _to_decimal(ocr_result.get("ppn_amount", 0))
-    subtotal_ocr = _to_decimal(ocr_result.get("subtotal_nota", 0)) or total_ocr
-    diskon = _to_decimal(ocr_result.get("diskon", 0))
-
     trx_update = {
         "nama_toko": ocr_result.get("nama_toko"),
         "ref_number": ocr_result.get("no_nota"),
         "date": ocr_result.get("tanggal") or date.today().isoformat(),
         "subtotal": str(subtotal_ocr),
-        "ppn_amount": str(ppn_amount),
-        "pph22_amount": "0.00",          # PPh22 dihitung saat generate laporan
+        "ppn_amount": "0.00",
+        "pph22_amount": "0.00",
         "discount": str(diskon),
         "total": str(total_ocr),
         "payment_method": ocr_result.get("payment_method"),

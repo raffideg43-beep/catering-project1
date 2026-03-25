@@ -213,7 +213,7 @@ async def confirm_transaction(
         if qty <= 0:
             continue
         try:
-            # Update HPP
+            # Update Harga
             if item.get("price"):
                 supabase.table("products").update({
                     "harga": str(item.get("price"))
@@ -1023,7 +1023,7 @@ async def create_manual_transaction(
                 logger.error(f"Auto-create gagal untuk '{product_name}': {e}")
                 stok_errors.append(f"Gagal auto-create produk '{product_name}': {e}")
         
-        # Ambil HPP dari produk jika ketemu
+        # Ambil Harga dari produk jika ketemu
         harga_snapshot = str(harga)
         if product_id:
             prod_resp = (
@@ -1053,7 +1053,7 @@ async def create_manual_transaction(
         # Update stok jika ada product_id
         if product_id:
             try:
-                # Update HPP
+                # Update Harga
                 supabase.table("products").update({
                     "harga": str(harga)
                 }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()

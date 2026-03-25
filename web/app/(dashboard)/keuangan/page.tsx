@@ -21,7 +21,7 @@ interface Receivable {
     id: string;
     debtor_name: string;
     amount: string;
-    pph22_note: string;
+
     due_date?: string;
     created_at: string;
     status: string;
@@ -126,7 +126,7 @@ function PiutangTab() {
                             <tbody>
                                 {sorted.map((r, i) => {
                                     const amount = parseFloat(r.amount || "0");
-                                    const pph22Display = "—";
+
                                     const bersihDisplay = formatRp(amount);
                                     const due = r.due_date
                                         ? new Date(r.due_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })
@@ -160,8 +160,7 @@ interface Payable {
     id: string;
     supplier_name: string;
     amount: string;
-    pph22_amount: string;
-    ppn_amount: string;
+
     total_bayar: string;
     due_date?: string;
     created_at: string;

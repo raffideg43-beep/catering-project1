@@ -40,8 +40,7 @@ interface TransactionDetail {
     source?: string;
     photo_url?: string;
     total: string;
-    pph22_amount?: string;
-    ppn_amount?: string;
+
     is_pkp?: boolean;
     items: TransactionItem[];
     stock_history?: StockHistoryEntry[];
@@ -126,8 +125,7 @@ export default function TransactionDetailPage() {
         );
     }
 
-    const pph22 = parseFloat(trx.pph22_amount || "0");
-    const ppn = parseFloat(trx.ppn_amount || "0");
+
     const subtotal = trx.items.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
 
     return (

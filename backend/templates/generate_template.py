@@ -47,7 +47,6 @@ def main() -> None:
     headers3 = [
         "Bulan",
         "Pendapatan Bruto",
-        "PPh22",
         "Pendapatan Bersih",
         "Total Bahan",
         "Total Upah",
@@ -89,7 +88,6 @@ def main() -> None:
         "Item",
         "Qty",
         "Harga",
-        "PPN",
         "Total",
         "Foto",
     ]

@@ -153,7 +153,7 @@ export default function DashboardPage() {
                 <StatCard
                     title="Laba Estimasi"
                     value={monthly ? formatRp(monthly.profit_estimate.gross_profit) : "—"}
-                    subtitle="Sebelum PPh22"
+                    subtitle="Bulan ini"
                     icon="📊"
                 />
             </div>

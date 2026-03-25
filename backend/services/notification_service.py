@@ -106,7 +106,7 @@ class NotificationService:
         tanggal = trx.get("date", "")
         no_nota = trx.get("ref_number") or "-"
         total = _fmt_rp(trx.get("total", 0))
-        ppn = _fmt_rp(trx.get("ppn_amount", 0))
+
 
         lines = [
             "✅ *Nota berhasil dibaca\\!*",
@@ -115,8 +115,7 @@ class NotificationService:
             f"🧾 No: {_esc(no_nota)}  |  💰 Total: {_esc(total)}",
         ]
 
-        if trx.get("ppn_amount", 0) > 0:
-            lines.append(f"⚡ PPN: {_esc(ppn)} \\(akan direkonsiliasi di laporan\\)")
+
 
         lines += ["", f"📦 *{len(items)} item:*"]
 

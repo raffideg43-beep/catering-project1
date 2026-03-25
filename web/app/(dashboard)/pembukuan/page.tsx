@@ -13,8 +13,7 @@ interface Transaction {
     total: string;
     status: string;
     payment_method: string;
-    pph22_amount?: string;
-    ppn_amount?: string;
+
     items_count?: number;
     juknis_category?: string;
     created_at: string;
@@ -468,8 +467,7 @@ export default function PembukuanPage() {
                                 </thead>
                                 <tbody>
                                     {transactions.map((trx, i) => {
-                                        const pph22 = parseFloat(trx.pph22_amount || "0");
-                                        const ppn = parseFloat(trx.ppn_amount || "0");
+
                                         return (
                                             <tr key={trx.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                                 <td className="px-4 py-3 whitespace-nowrap text-gray-600">

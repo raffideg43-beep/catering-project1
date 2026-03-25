@@ -42,8 +42,6 @@ class Settings(BaseSettings):
 
     # --- MBG settings (sesuai MASTER_PLAN v1.7) ---
     mbg_price_per_portion: int = 15000
-    mbg_pph22_rate: float = 0.015
-    mbg_ppn_rate: float = 0.11
     mbg_food_allocation: float = 0.80
     mbg_labor_allocation: float = 0.15
     mbg_ops_allocation: float = 0.05

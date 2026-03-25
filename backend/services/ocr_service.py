@@ -49,7 +49,6 @@ Return HANYA JSON valid tanpa teks lain:
   ],
   "subtotal_nota": 0,
   "diskon": 0,
-  "ppn_amount": 0,
   "total": 0,
   "catatan": null,
   "ocr_confidence": 0.95,

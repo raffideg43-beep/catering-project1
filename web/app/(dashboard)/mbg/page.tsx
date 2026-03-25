@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/stat-card";
 
 const MONTHS_FULL = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-const PPH22_RATE = 0.015;
+
 
 function formatRp(val: string | number): string {
     const n = typeof val === "string" ? parseFloat(val) || 0 : val || 0;
@@ -74,8 +74,6 @@ export default function MbgPage() {
 
     const totalPortions = summaries.reduce((s, d) => s + (d.total_portions || 0), 0);
     const totalGross = totalPortions * pricePerPortion;
-    const totalPph22 = totalGross * PPH22_RATE;
-    const totalBersih = totalGross - totalPph22;
 
     return (
         <div className="space-y-5">
@@ -136,7 +134,7 @@ export default function MbgPage() {
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        {["Tanggal", "Menu", "Sekolah", "Total Porsi", "Gross", "PPh22 (1,5%)", "Bersih", "PDF"].map(h => (
+                                        {["Tanggal", "Menu", "Sekolah", "Total Porsi", "Gross", "PDF"].map(h => (
                                             <th key={h} className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">{h}</th>
                                         ))}
                                     </tr>
@@ -144,8 +142,6 @@ export default function MbgPage() {
                                 <tbody>
                                     {summaries.map((s, i) => {
                                         const gross = s.total_portions * pricePerPortion;
-                                        const pph22 = gross * PPH22_RATE;
-                                        const bersih = gross - pph22;
                                         const isExp = expanded[s.date];
                                         const d = new Date(s.date);
                                         return (
@@ -159,9 +155,7 @@ export default function MbgPage() {
                                                     <td className="px-4 py-2.5 text-gray-600">{s.menu_name || "—"}</td>
                                                     <td className="px-4 py-2.5 text-center">{s.schools_count || (s.deliveries?.length ?? "—")}</td>
                                                     <td className="px-4 py-2.5 font-semibold">{s.total_portions.toLocaleString("id-ID")}</td>
-                                                    <td className="px-4 py-2.5 text-right">{formatRp(gross)}</td>
-                                                    <td className="px-4 py-2.5 text-right text-red-500">{formatRp(pph22)}</td>
-                                                    <td className="px-4 py-2.5 text-right text-green-700 font-semibold">{formatRp(bersih)}</td>
+                                                    <td className="px-4 py-2.5 text-right font-semibold">{formatRp(gross)}</td>
                                                     <td className="px-4 py-2.5">
                                                         {s.pdf_draft_url
                                                             ? <a href={s.pdf_draft_url} target="_blank" rel="noopener noreferrer"
@@ -189,8 +183,6 @@ export default function MbgPage() {
                                         <td className="px-4 py-2.5 font-bold" colSpan={3}>TOTAL</td>
                                         <td className="px-4 py-2.5 font-bold">{totalPortions.toLocaleString("id-ID")}</td>
                                         <td className="px-4 py-2.5 font-bold text-right">{formatRp(totalGross)}</td>
-                                        <td className="px-4 py-2.5 font-bold text-right text-red-500">{formatRp(totalPph22)}</td>
-                                        <td className="px-4 py-2.5 font-bold text-right text-green-700">{formatRp(totalBersih)}</td>
                                         <td />
                                     </tr>
                                 </tfoot>
