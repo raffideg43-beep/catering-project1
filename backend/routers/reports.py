@@ -342,7 +342,7 @@ def get_stock_report(
 
     q = (
         supabase.table("products")
-        .select("id, name, category, unit, stock_qty, stock_min, hpp, is_active, conversion_factor")
+        .select("id, name, category, unit, stock_qty, stock_min, harga, is_active, conversion_factor")
         .eq("tenant_id", tid)
         .eq("is_active", True)
     )
@@ -377,7 +377,7 @@ def get_stock_report(
             "stock_qty_display": stk_display,
             "stock_min": float(stk_min),
             "stock_min_display": min_display,
-            "hpp": str(_d(p.get("hpp"))),
+            "harga": str(_d(p.get("harga"))),
             "is_low_stock": is_low,
             "conversion_factor": factor,
         })

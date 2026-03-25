@@ -158,7 +158,7 @@ def process_ocr_job(
             "qty": str(qty_base),
             "unit": satuan,
             "price": str(harga),
-            "hpp_snapshot": str(harga),
+            "harga_snapshot": str(harga),
             "has_ppn": has_ppn,
             "subtotal": str(sub),
         }
@@ -478,7 +478,7 @@ def run_ocr_in_background(
             "qty": str(qty),
             "unit": satuan,
             "price": str(harga),
-            "hpp_snapshot": str(harga),
+            "harga_snapshot": str(harga),
             "has_ppn": has_ppn,
             "subtotal": str(sub),
         }

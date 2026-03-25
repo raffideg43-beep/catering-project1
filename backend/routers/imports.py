@@ -384,7 +384,7 @@ async def execute_import(
                     "name": nama_bahan,
                     "category": "bahan_baku",
                     "unit": satuan,
-                    "hpp": str(harga),
+                    "harga": str(harga),
                     "sell_price": "0.00",
                     "stock_min": "0",
                     "stock_qty": "0",
@@ -462,7 +462,7 @@ async def execute_import(
                 "qty": str(qty),
                 "unit": satuan,
                 "price": str(harga),
-                "hpp_snapshot": str(harga),
+                "harga_snapshot": str(harga),
                 "subtotal": str(subtotal),
                 "has_ppn": False,
             }).execute()
@@ -474,7 +474,7 @@ async def execute_import(
                 supabase.table("price_history").insert({
                     "product_id": product_id,
                     "tenant_id": tid,
-                    "price_type": "hpp",
+                    "price_type": "harga",
                     "new_price": str(harga),
                     "effective_date": tanggal_str,
                     "notes": "Import historis",

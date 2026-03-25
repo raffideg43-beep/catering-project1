@@ -210,7 +210,7 @@ class ExportService:
         # Products + stock history
         prod_resp = (
             supabase.table("products")
-            .select("id, name, category, unit, display_unit, conversion_factor, hpp, stock_qty, stock_min")
+            .select("id, name, category, unit, display_unit, conversion_factor, harga, stock_qty, stock_min")
             .eq("tenant_id", tenant_id)
             .eq("is_active", True)
             .order("category")
@@ -817,22 +817,22 @@ class ExportService:
         
         for n, p in enumerate(valid_products, 1):
             pid = p.get("id", "")
-            hpp = _d(p.get("hpp"))
+            harga = _d(p.get("harga"))
             stk_akhir = _d(p.get("stock_qty"))
             masuk  = in_by_prod.get(pid, Decimal("0"))
             keluar = out_by_prod.get(pid, Decimal("0"))
             stk_awal = stk_akhir - masuk + keluar
             factor = float(p.get("conversion_factor") or 1) or 1
             
-            # Nilai stok is based on display unit qty * hpp
+            # Nilai stok is based on display unit qty * harga
             stk_akhir_display = float(stk_akhir) / factor
-            nilai = stk_akhir_display * float(hpp)
+            nilai = stk_akhir_display * float(harga)
 
             ws.cell(row, 1, n)
             ws.cell(row, 2, p.get("name"))
             ws.cell(row, 3, p.get("category"))
             ws.cell(row, 4, p.get("display_unit") or p.get("unit"))
-            ws.cell(row, 5, float(hpp)).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, float(harga)).number_format = '"Rp "#,##0'
             ws.cell(row, 6, round(float(stk_awal) / factor, 3))
             ws.cell(row, 7, round(float(masuk) / factor, 3))
             ws.cell(row, 8, round(float(keluar) / factor, 3))

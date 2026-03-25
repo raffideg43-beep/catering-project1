@@ -17,7 +17,7 @@ class TransactionItemCreate(BaseModel):
     qty: Decimal
     unit: str = "pcs"
     price: Decimal
-    hpp_snapshot: Optional[Decimal] = None
+    harga_snapshot: Optional[Decimal] = None
     has_ppn: bool = False
     subtotal: Decimal
     kategori: Optional[str] = None         # kategori dari OCR
@@ -34,7 +34,7 @@ class TransactionItemResponse(BaseModel):
     qty: Decimal
     unit: str
     price: Decimal
-    hpp_snapshot: Optional[Decimal] = None
+    harga_snapshot: Optional[Decimal] = None
     has_ppn: bool = False
     subtotal: Decimal
     created_at: str

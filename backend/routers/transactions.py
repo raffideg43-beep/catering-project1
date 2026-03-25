@@ -216,7 +216,7 @@ async def confirm_transaction(
             # Update HPP
             if item.get("price"):
                 supabase.table("products").update({
-                    "hpp": str(item.get("price"))
+                    "harga": str(item.get("price"))
                 }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
 
             # Get conversion factor
@@ -1011,7 +1011,7 @@ async def create_manual_transaction(
                     "display_unit": satuan,
                     "conversion_factor": float(c_factor),
                     "is_active": True,
-                    "hpp": str(harga),
+                    "harga": str(harga),
                     "sell_price": "0.00",
                     "stock_min": "0",
                     "stock_qty": "0" 
@@ -1024,18 +1024,18 @@ async def create_manual_transaction(
                 stok_errors.append(f"Gagal auto-create produk '{product_name}': {e}")
         
         # Ambil HPP dari produk jika ketemu
-        hpp_snapshot = str(harga)
+        harga_snapshot = str(harga)
         if product_id:
             prod_resp = (
                 supabase.table("products")
-                .select("hpp")
+                .select("harga")
                 .eq("id", product_id)
                 .single()
                 .execute()
             )
-            hpp_val = (getattr(prod_resp, "data", None) or {}).get("hpp")
-            if hpp_val:
-                hpp_snapshot = str(hpp_val)
+            harga_val = (getattr(prod_resp, "data", None) or {}).get("harga")
+            if harga_val:
+                harga_snapshot = str(harga_val)
 
         supabase.table("transaction_items").insert({
             "transaction_id": trx_id,
@@ -1045,7 +1045,7 @@ async def create_manual_transaction(
             "qty": str(qty),
             "unit": satuan,
             "price": str(harga),
-            "hpp_snapshot": hpp_snapshot,
+            "harga_snapshot": harga_snapshot,
             "subtotal": str(subtotal),
             "has_ppn": False,
         }).execute()
@@ -1055,7 +1055,7 @@ async def create_manual_transaction(
             try:
                 # Update HPP
                 supabase.table("products").update({
-                    "hpp": str(harga)
+                    "harga": str(harga)
                 }).eq("id", product_id).eq("tenant_id", current_user.tenant_id).execute()
 
                 # Get conversion factor

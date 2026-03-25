@@ -93,7 +93,7 @@ def create_product(
                 "base_unit": base,
                 "display_unit": disp_unit,
                 "conversion_factor": factor,
-                "hpp": float(body.hpp),
+                "harga": float(body.harga),
                 "sell_price": float(body.sell_price),
                 "stock_qty": stock_qty_base,
                 "stock_min": stock_min_base,
@@ -113,13 +113,13 @@ def create_product(
     product_id = data[0]["id"]
 
     # Insert price history
-    if body.hpp > 0:
+    if body.harga > 0:
         supabase.table("price_history").insert(
             {
                 "tenant_id": current_user.tenant_id,
                 "product_id": product_id,
-                "price_type": "hpp",
-                "new_price": float(body.hpp),
+                "price_type": "harga",
+                "new_price": float(body.harga),
                 "effective_date": "today()",
             }
         ).execute()
@@ -158,8 +158,8 @@ def update_product(
         update_data["category"] = body.category
     if body.unit is not None:
         update_data["unit"] = body.unit
-    if body.hpp is not None:
-        update_data["hpp"] = float(body.hpp)
+    if body.harga is not None:
+        update_data["harga"] = float(body.harga)
     if body.sell_price is not None:
         update_data["sell_price"] = float(body.sell_price)
     if body.stock_min is not None:
@@ -182,13 +182,13 @@ def update_product(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
     # Track price change
-    if body.hpp is not None:
+    if body.harga is not None:
         supabase.table("price_history").insert(
             {
                 "tenant_id": current_user.tenant_id,
                 "product_id": product_id,
-                "price_type": "hpp",
-                "new_price": float(body.hpp),
+                "price_type": "harga",
+                "new_price": float(body.harga),
                 "changed_by": current_user.id,
             }
         ).execute()
@@ -234,7 +234,7 @@ def get_stock_projection(
     # ── Ambil semua produk aktif ──────────────────────────────────────────
     prod_resp = (
         supabase.table("products")
-        .select("id, name, unit, base_unit, display_unit, conversion_factor, stock_qty, stock_min, hpp")
+        .select("id, name, unit, base_unit, display_unit, conversion_factor, stock_qty, stock_min, harga")
         .eq("tenant_id", tid)
         .eq("is_active", True)
         .neq("category", "produk_jadi")
@@ -373,7 +373,7 @@ def get_stock_projection(
             "sufficient": sufficient,
             "shortage": round(shortage_disp, 3),
             "status": stat,
-            "hpp": p.get("hpp"),
+            "harga": p.get("harga"),
             "display_unit": disp_unit,
         })
 

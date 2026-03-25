@@ -11,7 +11,7 @@ interface Product {
   id: string; name: string; category: string; unit: string;
   base_unit?: string; display_unit?: string; conversion_factor?: number;
   stock_qty: number; stock_qty_display?: number; stock_min: number; stock_min_display?: number;
-  hpp: number; sell_price: number;
+  harga: number; sell_price: number;
 }
 
 interface ComponentItem {
@@ -148,7 +148,7 @@ export function TabBahan() {
     const existing = findProductByName(name);
     if (existing) return existing.id;
     // Create new
-    const payload = { name: name.trim(), category: "bahan_baku", display_unit: unit || "kg", unit: unit || "kg", hpp: 0, sell_price: 0, stock_min: 0, stock_qty: 0 };
+    const payload = { name: name.trim(), category: "bahan_baku", display_unit: unit || "kg", unit: unit || "kg", harga: 0, sell_price: 0, stock_min: 0, stock_qty: 0 };
     const res = await apiPost("/products", payload);
     return res?.data?.id;
   };
@@ -362,7 +362,7 @@ export function TabBahan() {
     setSaving(true);
     try {
       // 1. Create Menu Product
-      const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, hpp: 0, sell_price: 0, stock_min: 0 });
+      const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, harga: 0, sell_price: 0, stock_min: 0 });
       const menuId = prodRes?.data?.id;
       if (!menuId) throw new Error("Gagal membuat menu");
 

@@ -20,7 +20,7 @@ interface Product {
     display_unit?: string;
     base_unit?: string;
     conversion_factor?: number;
-    hpp: string;
+    harga: string;
     stock_qty: number;
     stock_qty_display?: number;
     stock_min: number;
@@ -196,15 +196,15 @@ export default function StokPage() {
             return sortAsc ? aq - bq : bq - aq;
         }
         if (sortCol === "nilai") {
-            const av = (a.stock_qty_display ?? a.stock_qty) * parseFloat(a.hpp || "0");
-            const bv = (b.stock_qty_display ?? b.stock_qty) * parseFloat(b.hpp || "0");
+            const av = (a.stock_qty_display ?? a.stock_qty) * parseFloat(a.harga || "0");
+            const bv = (b.stock_qty_display ?? b.stock_qty) * parseFloat(b.harga || "0");
             return sortAsc ? av - bv : bv - av;
         }
         return 0;
     });
 
     const lowCount = items.filter(p => (p.stock_qty_display ?? p.stock_qty) <= (p.stock_min_display ?? p.stock_min)).length;
-    const totalNilai = items.reduce((s, p) => s + (p.stock_qty_display ?? p.stock_qty) * parseFloat(p.hpp || "0"), 0);
+    const totalNilai = items.reduce((s, p) => s + (p.stock_qty_display ?? p.stock_qty) * parseFloat(p.harga || "0"), 0);
 
     const handleSort = (col: typeof sortCol) => {
         if (sortCol === col) setSortAsc(a => !a);
@@ -239,8 +239,8 @@ export default function StokPage() {
             const min = p.stock_min_display ?? p.stock_min;
             rows.push([
                 p.name, p.category ?? "", p.display_unit || p.unit,
-                p.hpp, String(qty), String(min),
-                String(Math.round(qty * parseFloat(p.hpp || "0"))),
+                p.harga, String(qty), String(min),
+                String(Math.round(qty * parseFloat(p.harga || "0"))),
             ]);
         });
         const csv = rows.map(r => r.join(",")).join("\n");
@@ -460,7 +460,7 @@ export default function StokPage() {
                             <tbody>
                                 {sorted.map((p, i) => {
                                     const qty = p.stock_qty_display ?? p.stock_qty;
-                                    const nilai = qty * parseFloat(p.hpp || "0");
+                                    const nilai = qty * parseFloat(p.harga || "0");
                                     const st = getStockStatus(qty, p.stock_min_display ?? p.stock_min);
                                     return (
                                         <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
@@ -470,7 +470,7 @@ export default function StokPage() {
                                             </td>
                                             <td className="px-4 py-2.5 text-gray-500 text-xs">{p.category || "—"}</td>
                                             <td className="px-4 py-2.5 text-gray-500">{p.display_unit || p.unit}</td>
-                                            <td className="px-4 py-2.5 text-right">{formatRp(p.hpp)}</td>
+                                            <td className="px-4 py-2.5 text-right">{formatRp(p.harga)}</td>
                                             <td className="px-4 py-2.5 text-right font-semibold">{(p.stock_qty_display ?? p.stock_qty).toLocaleString("id-ID")}</td>
                                             <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">
                                                 {editingMinStockId === p.id ? (
