@@ -342,7 +342,7 @@ def get_stock_report(
 
     q = (
         supabase.table("products")
-        .select("id, name, category, unit, stock_qty, stock_min, harga, is_active, conversion_factor")
+        .select("*")
         .eq("tenant_id", tid)
         .eq("is_active", True)
     )
@@ -368,6 +368,9 @@ def get_stock_report(
         stk_display = float(stk / Decimal(str(factor))) if factor else float(stk)
         min_display = float(stk_min / Decimal(str(factor))) if factor else float(stk_min)
 
+        # Support both column names: harga (after migration) or hpp (before migration)
+        price_val = p.get("harga") if p.get("harga") is not None else p.get("hpp")
+
         items.append({
             "id": p.get("id"),
             "name": p.get("name"),
@@ -377,7 +380,7 @@ def get_stock_report(
             "stock_qty_display": stk_display,
             "stock_min": float(stk_min),
             "stock_min_display": min_display,
-            "harga": str(_d(p.get("harga"))),
+            "harga": str(_d(price_val)),
             "is_low_stock": is_low,
             "conversion_factor": factor,
         })
