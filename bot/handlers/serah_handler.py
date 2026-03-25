@@ -243,7 +243,7 @@ async def serah_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     api = get_api_client(settings.backend_url)
     try:
         settings_resp = await api.get("/mbg/allocation-settings", token=token)
-        alloc_set = (settings_resp or {}).get("data", {})
+        alloc_set = (settings_resp or {}).get("data") or {}
     except Exception:
         alloc_set = {}
 
