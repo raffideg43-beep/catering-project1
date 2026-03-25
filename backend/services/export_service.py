@@ -795,7 +795,7 @@ class ExportService:
     def _fill_stok(self, ws, data: dict) -> None:
         logger.info(f"Fill stok: {len(data.get('products', []))} products, {len(data.get('stock_history', []))} history records")
         headers = ["No", "Nama Bahan", "Kategori", "Satuan",
-                   "HPP", "Stok Awal Bulan", "Masuk", "Keluar",
+                   "Harga", "Stok Awal Bulan", "Masuk", "Keluar",
                    "Stok Akhir", "Nilai Stok"]
         self._write_headers(ws, 1, headers)
 
@@ -812,8 +812,8 @@ class ExportService:
 
         row = 2
         
-        # Filter out 'produk_jadi' so only raw materials and packaging are listed
-        valid_products = [p for p in data.get("products", []) if p.get("category") != "produk_jadi"]
+        # Filter out 'produk_jadi' and 'komponen' so only raw materials and packaging are listed
+        valid_products = [p for p in data.get("products", []) if p.get("category") not in ("produk_jadi", "komponen")]
         
         for n, p in enumerate(valid_products, 1):
             pid = p.get("id", "")

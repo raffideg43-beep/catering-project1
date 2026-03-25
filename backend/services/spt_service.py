@@ -205,7 +205,7 @@ class SPTService:
         c.drawString(A4[0] - 6*cm, text_y, f"( {owner_name} )")
         text_y -= 0.6*cm
         c.drawString(3*cm, text_y, "NIP:")
-        c.drawString(A4[0] - 6*cm, f"NIK: {nik}")
+        c.drawString(A4[0] - 6*cm, text_y, f"NIK: {nik}")
         
         c.save()
         pdf_bytes = buffer.getvalue()
