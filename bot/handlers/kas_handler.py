@@ -123,7 +123,7 @@ async def kas_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     buttons = []
     if len(kas_balances) >= 2:
         buttons.append([InlineKeyboardButton("↔️ Transfer Kas", callback_data="kas_transfer_start")])
-    buttons.append([InlineKeyboardButton("📊 Detail di Web", url="http://localhost:3000/anggaran")])
+    buttons.append([InlineKeyboardButton("📊 Detail di Web", url=f"{settings.web_url}/anggaran")])
 
     await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(buttons))
     return KAS_MENU
