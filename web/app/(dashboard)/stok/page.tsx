@@ -41,7 +41,9 @@ interface ProjectionItem {
     product_id: string;
     name: string;
     unit: string;
+    display_unit?: string;
     stock_qty: number;
+    stock_qty_display?: number;
     stock_min: number;
     daily_usage: number;
     days_remaining: number;
