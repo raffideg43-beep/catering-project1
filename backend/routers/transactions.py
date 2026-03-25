@@ -734,6 +734,96 @@ def get_batch_status(
     }
 
 
+# ─── PUT /transactions/{trx_id}/items/bulk ───────────────────────────────────
+
+@router.put(
+    "/{trx_id}/items/bulk",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+)
+def update_transaction_items_bulk(
+    trx_id: str,
+    body: List[Dict[str, Any]],
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Replace ALL items for a transaction (Bulk text edit).
+    Recalculates total and subtotal for the transaction.
+    """
+    supabase = get_supabase()
+
+    # Check lock
+    trx_resp = (
+        supabase.table("transactions")
+        .select("is_locked, tenant_id")
+        .eq("id", trx_id)
+        .eq("tenant_id", current_user.tenant_id)
+        .single()
+        .execute()
+    )
+    trx = getattr(trx_resp, "data", None)
+    if not trx:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
+    if trx.get("is_locked"):
+        raise HTTPException(status_code=403, detail="Transaksi terkunci")
+
+    if not body:
+        raise HTTPException(status_code=422, detail="Daftar item tidak boleh kosong")
+
+    # 1. Parse and validate new items
+    new_items = []
+    total_amount = Decimal("0.00")
+    for b in body:
+        qty = b.get("qty")
+        harga = b.get("harga_satuan") or b.get("price")
+        nama = b.get("nama_item") or b.get("product_name") or "Item"
+        satuan = b.get("satuan") or b.get("unit") or "pcs"
+        
+        if qty is None or harga is None:
+            raise HTTPException(status_code=422, detail="qty dan harga wajib diisi untuk semua item")
+        try:
+            qty_dec = Decimal(str(qty))
+            harga_dec = Decimal(str(harga))
+            if qty_dec <= 0 or harga_dec < 0:
+                raise ValueError
+        except Exception:
+            raise HTTPException(status_code=422, detail="qty dan harga harus angka positif")
+            
+        subtotal = (qty_dec * harga_dec).quantize(Decimal("0.01"))
+        total_amount += subtotal
+        
+        # Note: We don't have product_id mapping here. For manual text edits, 
+        # it is safer to leave product_id as null, or we could run JuknisService match again. 
+        # But for speed, let's just insert them raw. They will be treated as raw items.
+        # Sesuai plan: user edit raw text, product mapping might be lost unless matched.
+        new_items.append({
+            "transaction_id": trx_id,
+            "tenant_id": current_user.tenant_id,
+            "product_name": str(nama),
+            "qty": str(qty_dec),
+            "unit": str(satuan),
+            "price": str(harga_dec),
+            "subtotal": str(subtotal),
+        })
+
+    # 2. Delete existing items
+    supabase.table("transaction_items").delete().eq("transaction_id", trx_id).execute()
+
+    # 3. Insert new items
+    supabase.table("transaction_items").insert(new_items).execute()
+
+    # 4. Update Header Transaksi
+    supabase.table("transactions").update({
+        "total": str(total_amount),
+        "subtotal": str(total_amount),
+    }).eq("id", trx_id).eq("tenant_id", current_user.tenant_id).execute()
+
+    return {
+        "success": True, 
+        "message": "Seluruh item berhasil diupdate",
+        "new_total": str(total_amount)
+    }
+
 # ─── PUT /transactions/{trx_id}/items/{item_id} ──────────────────────────────
 
 @router.put(

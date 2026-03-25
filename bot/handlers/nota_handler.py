@@ -362,27 +362,44 @@ async def edit_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     items = trx.get("items", [])
     nama_toko = trx.get("nama_toko") or "Nota"
 
+    # Bulk text edit approach
     context.user_data["editing_trx_id"] = trx_id
-    context.user_data["editing_items"] = items
+    context.user_data["editing_mode"] = "bulk"
+    context.user_data.pop("editing_item_id", None)
 
-    buttons = []
-    for idx, item in enumerate(items):
-        qty = float(item.get("qty", 0))
+    lines = []
+    for item in items:
+        qty = item.get("qty", 0)
+        try:
+            qty_num = float(qty)
+            if qty_num == int(qty_num): qty = int(qty_num)
+        except:
+            pass
         sat = item.get("unit", "pcs")
-        harga = f"Rp {int(item.get('price', 0)):,}".replace(",", ".")
-        nama = item.get("product_name", "?")[:20]
-        conf = " ⚠️" if item.get("needs_confirmation") else ""
-        buttons.append([
-            InlineKeyboardButton(
-                f"✏️ {nama}{conf}: {qty}{sat} {harga}",
-                callback_data=f"edit_item_{trx_id}_{idx}",
-            )
-        ])
+        harga = item.get('price', 0)
+        try:
+            harga = int(float(harga))
+        except:
+            pass
+        nama = item.get("product_name", "?")
+        lines.append(f"{nama} {qty} {sat} {harga}")
 
-    buttons.append([InlineKeyboardButton("← Kembali", callback_data=f"back_nota_{trx_id}")])
+    raw_text = "\n".join(lines)
+
+    msg = (
+        f"Gagal deteksi beberapa bahan atau ada typo?\n\n"
+        f"📝 *Edit Massal Nota — {_esc(nama_toko)}*\n\n"
+        f"Ini hasil bacaan OCR \\(Total: {len(items)} item\\)\\.\n"
+        f"Copy\\-paste teks di bawah, perbaiki yang salah, "
+        f"lalu kirim balik ke saya di chat ini:\n\n"
+        f"```text\n{_esc(raw_text)}\n```\n\n"
+        f"Atau abaikan jika sudah benar\\."
+    )
+
+    buttons = [[InlineKeyboardButton("✅ Konfirmasi Nota", callback_data=f"confirm_{trx_id}")]]
 
     await query.edit_message_text(
-        f"✏️ *Edit Nota — {_esc(nama_toko)}*\n\nPilih item yang ingin diedit \\({len(items)} item\\):",
+        msg,
         reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode="MarkdownV2",
     )
@@ -595,69 +612,69 @@ def _parse_edit_input(text: str) -> tuple[float, float] | None:
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Tangkap teks bebas untuk edit item inline.
-    Hanya aktif jika context.user_data["editing_item_id"] ada.
-    Format input: "qty harga" — contoh: "10 13500"
+    Tangkap teks bebas untuk edit item massal OCR.
+    Hanya aktif jika context.user_data["editing_mode"] == "bulk".
     """
     if not update.message or not update.message.text:
         return
 
-    item_id = context.user_data.get("editing_item_id")
     trx_id = context.user_data.get("editing_trx_id")
-    if not item_id or not trx_id:
-        return  # tidak dalam mode edit, abaikan
-
-    text = update.message.text.strip()
-    parsed_values = _parse_edit_input(text)
-
-    if parsed_values is None:
-        await update.message.reply_text(
-            "❌ Format salah atau nilai tidak valid\\.\n"
-            "Gunakan: `qty harga`\nContoh: `10 13500`\n"
-            "Qty dan harga harus angka positif\\.",
-            parse_mode="MarkdownV2",
-        )
+    mode = context.user_data.get("editing_mode")
+    
+    if not trx_id or mode != "bulk":
         return
 
-    qty, harga = parsed_values
+    text = update.message.text.strip()
+    
+    # parse lines
+    from handlers.belanja_handler import _parse_item_line
+    lines = text.split("\n")
+    parsed_items = []
+    for line in lines:
+        if not line.strip(): continue
+        item = _parse_item_line(line)
+        if not item:
+            await update.message.reply_text(
+                f"❌ Format salah di baris:\n`{_esc(line)}`\n"
+                f"Pastikan format: `nama qty satuan harga`",
+                parse_mode="MarkdownV2"
+            )
+            return
+        parsed_items.append(item)
+
+    if not parsed_items:
+        await update.message.reply_text("❌ Teks kosong atau format salah.")
+        return
+
+    msg = await update.message.reply_text("⏳ Menyimpan perubahan...")
 
     token = get_token(context)
     api = get_api_client(settings.backend_url)
 
     try:
         resp = await api.put(
-            f"/transactions/{trx_id}/items/{item_id}",
+            f"/transactions/{trx_id}/items/bulk",
             token=token,
-            json={"qty": qty, "harga_satuan": harga},
+            json=parsed_items,
         )
     except Exception as e:
         from utils.api_client import APIError
         if isinstance(e, APIError) and e.status_code in (401, 403): raise e
-        await update.message.reply_text(format_error(f"Gagal update item: {e}"))
-        return
-
-    if not resp or not resp.get("success"):
-        await update.message.reply_text(format_error((resp or {}).get("detail", "Update gagal")))
+        await msg.edit_text(format_error(f"Gagal update: {e}"))
         return
 
     # Clear editing state
-    context.user_data.pop("editing_item_id", None)
+    context.user_data.pop("editing_mode", None)
+    context.user_data.pop("editing_trx_id", None)
 
-    data = resp.get("data", {})
     new_total = resp.get("new_total", "?")
-    subtotal = float(qty) * float(harga)
-    nama = data.get("product_name", "Item")
-    sat = data.get("unit", "pcs")
-
     def fmt(v): return f"Rp {int(float(v)):,}".replace(",", ".")
 
-    await update.message.reply_text(
-        f"✅ *Item diupdate\\!*\n\n"
-        f"{_esc(nama)}: {_esc(str(qty))}{_esc(sat)} × "
-        f"{_esc(fmt(harga))} \\= {_esc(fmt(subtotal))}\n"
+    await msg.edit_text(
+        f"✅ *{len(parsed_items)} Item berhasil diupdate!*\n\n"
         f"💰 Total nota baru: *{_esc(fmt(new_total))}*",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✏️ Edit Item Lain",  callback_data=f"edit_{trx_id}"),
+            InlineKeyboardButton("✏️ Edit Ulang",  callback_data=f"edit_{trx_id}"),
             InlineKeyboardButton("✅ Konfirmasi Nota", callback_data=f"confirm_{trx_id}"),
         ]]),
         parse_mode="MarkdownV2",
