@@ -227,9 +227,10 @@ function JabatanTab() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {...formData, base_salary: Number(formData.base_salary)};
-      if (formData.id) {
-        await apiPut(`/employees/positions/${formData.id}`, payload);
+      const { id, ...rest } = formData;
+      const payload = {...rest, base_salary: Number(formData.base_salary)};
+      if (id) {
+        await apiPut(`/employees/positions/${id}`, payload);
       } else {
         await apiPost("/employees/positions", payload);
       }

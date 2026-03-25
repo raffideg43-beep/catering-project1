@@ -211,6 +211,22 @@ def telegram_auto_login(body: TelegramAutoLoginRequest):
 
     user_row = users[0]
 
+    # Check user is_active (for SaaS billing enforcement)
+    if not user_row.get("is_active", True):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"success": False, "error": "Akun dinonaktifkan. Hubungi admin untuk info langganan."},
+        )
+
+    # Check tenant is_active
+    tenant_resp = supabase.table("tenants").select("is_active").eq("id", user_row["tenant_id"]).limit(1).execute()
+    tenant_rows = getattr(tenant_resp, "data", None) or []
+    if tenant_rows and not tenant_rows[0].get("is_active", True):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"success": False, "error": "Langganan tidak aktif. Hubungi admin untuk perpanjangan."},
+        )
+
     token = create_access_token(
         data={
             "user_id": user_row["id"],
