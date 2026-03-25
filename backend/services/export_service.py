@@ -811,15 +811,22 @@ class ExportService:
                 out_by_prod[pid] = out_by_prod.get(pid, Decimal("0")) + abs(delta)
 
         row = 2
-        for n, p in enumerate(data.get("products", []), 1):
+        
+        # Filter out 'produk_jadi' so only raw materials and packaging are listed
+        valid_products = [p for p in data.get("products", []) if p.get("category") != "produk_jadi"]
+        
+        for n, p in enumerate(valid_products, 1):
             pid = p.get("id", "")
             hpp = _d(p.get("hpp"))
             stk_akhir = _d(p.get("stock_qty"))
             masuk  = in_by_prod.get(pid, Decimal("0"))
             keluar = out_by_prod.get(pid, Decimal("0"))
             stk_awal = stk_akhir - masuk + keluar
-            nilai = stk_akhir * hpp
             factor = float(p.get("conversion_factor") or 1) or 1
+            
+            # Nilai stok is based on display unit qty * hpp
+            stk_akhir_display = float(stk_akhir) / factor
+            nilai = stk_akhir_display * float(hpp)
 
             ws.cell(row, 1, n)
             ws.cell(row, 2, p.get("name"))
@@ -829,8 +836,8 @@ class ExportService:
             ws.cell(row, 6, round(float(stk_awal) / factor, 3))
             ws.cell(row, 7, round(float(masuk) / factor, 3))
             ws.cell(row, 8, round(float(keluar) / factor, 3))
-            ws.cell(row, 9, round(float(stk_akhir) / factor, 3))
-            ws.cell(row, 10, float(nilai)).number_format = '"Rp "#,##0'
+            ws.cell(row, 9, round(stk_akhir_display, 3))
+            ws.cell(row, 10, round(nilai, 2)).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
             row += 1
 

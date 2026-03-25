@@ -16,6 +16,7 @@ interface Product {
     id: string;
     name: string;
     unit: string;
+    category?: string;
 }
 
 interface HistoryRow {
@@ -65,11 +66,11 @@ export default function RiwayatStokPage() {
     const [history, setHistory] = useState<HistoryRow[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Load all products for dropdown
+    // Load all raw material products for dropdown
     useEffect(() => {
         apiGet("/products").then(r => {
             const all: Product[] = r?.data?.items || r?.data || [];
-            setProducts(all.filter(p => p.name && p.unit));
+            setProducts(all.filter(p => p.name && p.unit && p.category !== "produk_jadi" && p.category !== "komponen"));
         }).catch(() => { });
     }, []);
 

@@ -233,7 +233,7 @@ export default function StokPage() {
     };
 
     const exportCsv = () => {
-        const rows = [["Nama", "Kategori", "Satuan", "HPP", "Stok Saat Ini", "Stok Min", "Nilai Stok"]];
+        const rows = [["Nama", "Kategori", "Satuan", "Harga", "Stok Saat Ini", "Stok Min", "Nilai Stok"]];
         sorted.forEach(p => {
             const qty = p.stock_qty_display ?? p.stock_qty;
             const min = p.stock_min_display ?? p.stock_min;
@@ -441,7 +441,7 @@ export default function StokPage() {
                                         { key: "name", label: "Nama" },
                                         { key: null, label: "Kategori" },
                                         { key: null, label: "Satuan" },
-                                        { key: null, label: "HPP" },
+                                        { key: null, label: "Harga" },
                                         { key: "stock_qty", label: "Stok Saat Ini" },
                                         { key: null, label: "Stok Min" },
                                         { key: "status", label: "Status" },
