@@ -812,11 +812,8 @@ class ExportService:
 
         row = 2
         
-        # Filter out 'produk_jadi', 'komponen', 'bom', and 'resep' so only raw materials and packaging are listed
-        valid_products = [
-            p for p in data.get("products", []) 
-            if str(p.get("category") or "").lower() not in ("produk_jadi", "komponen", "bom", "resep")
-        ]
+        # Filter out 'produk_jadi' and 'komponen' so only raw materials and packaging are listed
+        valid_products = [p for p in data.get("products", []) if p.get("category") not in ("produk_jadi", "komponen")]
         
         for n, p in enumerate(valid_products, 1):
             pid = p.get("id", "")
@@ -967,11 +964,6 @@ class ExportService:
                 continue
 
             for item in trx_items:
-                # Filter out BOM/Resep categories from transaction history
-                cat = str(item.get("category") or "").lower()
-                if cat in ("produk_jadi", "komponen", "bom", "resep"):
-                    continue
-                
                 n += 1
                 nama = item.get("product_name", "?")
                 qty = float(_d(item.get("qty")))

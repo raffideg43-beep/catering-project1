@@ -126,8 +126,6 @@ function PiutangTab() {
                             <tbody>
                                 {sorted.map((r, i) => {
                                     const amount = parseFloat(r.amount || "0");
-
-                                    const bersihDisplay = formatRp(amount);
                                     const due = r.due_date
                                         ? new Date(r.due_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })
                                         : "—";

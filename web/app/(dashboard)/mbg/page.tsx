@@ -155,7 +155,7 @@ export default function MbgPage() {
                                                     <td className="px-4 py-2.5 text-gray-600">{s.menu_name || "—"}</td>
                                                     <td className="px-4 py-2.5 text-center">{s.schools_count || (s.deliveries?.length ?? "—")}</td>
                                                     <td className="px-4 py-2.5 font-semibold">{s.total_portions.toLocaleString("id-ID")}</td>
-                                                    <td className="px-4 py-2.5 text-right font-semibold">{formatRp(gross)}</td>
+                                                    <td className="px-4 py-2.5 text-right">{formatRp(gross)}</td>
                                                     <td className="px-4 py-2.5">
                                                         {s.pdf_draft_url
                                                             ? <a href={s.pdf_draft_url} target="_blank" rel="noopener noreferrer"
@@ -169,7 +169,7 @@ export default function MbgPage() {
                                                             🏫 {school.school_name}
                                                         </td>
                                                         <td className="px-4 py-1.5 text-xs text-center">{school.portions_sent}</td>
-                                                        <td colSpan={3} />
+                                                        <td colSpan={1} />
                                                         <td className="px-4 py-1.5 text-xs text-gray-400">{school.status}</td>
                                                     </tr>
                                                 ))}

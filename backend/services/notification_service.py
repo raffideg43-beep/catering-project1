@@ -107,15 +107,12 @@ class NotificationService:
         no_nota = trx.get("ref_number") or "-"
         total = _fmt_rp(trx.get("total", 0))
 
-
         lines = [
             "✅ *Nota berhasil dibaca\\!*",
             "",
             f"📅 {tanggal}  |  🏪 {_esc(nama_toko)}",
             f"🧾 No: {_esc(no_nota)}  |  💰 Total: {_esc(total)}",
         ]
-
-
 
         lines += ["", f"📦 *{len(items)} item:*"]
 

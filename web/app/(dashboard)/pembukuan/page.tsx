@@ -467,7 +467,6 @@ export default function PembukuanPage() {
                                 </thead>
                                 <tbody>
                                     {transactions.map((trx, i) => {
-
                                         return (
                                             <tr key={trx.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                                 <td className="px-4 py-3 whitespace-nowrap text-gray-600">

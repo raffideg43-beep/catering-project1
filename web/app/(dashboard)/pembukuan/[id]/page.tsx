@@ -41,7 +41,6 @@ interface TransactionDetail {
     photo_url?: string;
     total: string;
 
-    is_pkp?: boolean;
     items: TransactionItem[];
     stock_history?: StockHistoryEntry[];
 }
@@ -124,7 +123,6 @@ export default function TransactionDetailPage() {
             </div>
         );
     }
-
 
     const subtotal = trx.items.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
 

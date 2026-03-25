@@ -57,9 +57,6 @@ class SPTService:
     def generate_spt(tenant_id: str, year: int, month: int, supabase) -> str:
         """Generate PDF SPT dan upload, return file URL."""
         tenant = SPTService._get_tenant(tenant_id, supabase)
-        if not tenant:
-            raise ValueError(f"Tenant {tenant_id} tidak ditemukan")
-        
         slug = tenant.get("slug", "sppg")
         owner_name = tenant.get("owner_name", "-")
         address = tenant.get("address", "-")
@@ -67,10 +64,6 @@ class SPTService:
         nik = tenant.get("owner_nik", tenant.get("nik", "-"))
         name = tenant.get("name", "SPPG")
         city = tenant.get("city", "Kota")
-        
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Generating SPT for {name} ({tenant_id}) {year}-{month}")
         
         # Hitung data summary
         first = date(year, month, 1)
@@ -107,12 +100,7 @@ class SPTService:
         target_ops = pencairan * Decimal("0.05")
         
         def pct(aktual, target):
-            if target <= 0:
-                return "0%"
-            try:
-                return f"{round(float(aktual/target*100), 1)}%"
-            except Exception:
-                return "0%"
+            return f"{round(float(aktual/target*100), 1)}%" if target > 0 else "0%"
             
         sisa_dana = pencairan - total_exp
         
