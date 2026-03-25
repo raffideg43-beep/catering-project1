@@ -121,7 +121,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.reply_text(
                     f"{format_error(error_msg)}\n\n"
                     f"Minta kode baru di:\n"
-                    f"{app_settings.web_url}/settings/telegram",  # type: ignore[attr-defined]
+                    f"{app_settings.web_url}/settings",  # type: ignore[attr-defined]
                 )
                 return
         except Exception as e:
@@ -131,7 +131,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(
                 f"{format_error(str(e))}\n\n"
                 f"Minta kode baru di:\n"
-                f"{app_settings.web_url}/settings/telegram",  # type: ignore[attr-defined]
+                f"{app_settings.web_url}/settings",  # type: ignore[attr-defined]
             )
             return
 
