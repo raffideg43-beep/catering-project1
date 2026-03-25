@@ -125,8 +125,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 return
         except Exception as e:
-            from utils.api_client import APIError
-            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
+            from utils.api_client import APIError
+            if isinstance(e, APIError) and e.status_code in (401, 403): raise e
             logger.error(f"Linking error: {e}")
             await update.message.reply_text(
                 f"{format_error(str(e))}\n\n"
@@ -134,6 +134,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"{app_settings.web_url}/settings",  # type: ignore[attr-defined]
             )
             return
+
+    # Auto-login via telegram_id (e.g. after Railway redeploy wipes session pickle)
+    if update.effective_user:
+        try:
+            auto_resp = await api_client.post(
+                "/tenants/telegram-auto-login",
+                data={"telegram_id": update.effective_user.id},
+            )
+            if auto_resp.get("success"):
+                data = auto_resp.get("data", {})
+                user = data.get("user", {})
+                token = data.get("access_token", "")
+
+                await save_session(
+                    context,
+                    token=token,
+                    tenant_id=user.get("tenant_id", ""),
+                    user_name=user.get("name", ""),
+                    user_role=user.get("role", ""),
+                )
+
+                await update.message.reply_text(
+                    f"👋 Selamat datang kembali, {user.get('name', 'User')}!\n\n"
+                    f"Role: {user.get('role', 'Unknown')}\n\n"
+                    "Apa yang ingin kamu lakukan?",
+                    reply_markup=get_main_menu(),
+                )
+                return
+        except Exception:
+            pass  # Auto-login failed, show normal welcome
 
     # Belum auth, tampilkan sambutan
     await update.message.reply_text(

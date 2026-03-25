@@ -186,3 +186,50 @@ def link_telegram_account(body: TelegramLinkRequest):
             "user": user_resp,
         },
     }
+
+
+class TelegramAutoLoginRequest(BaseModel):
+    telegram_id: int
+
+
+@router.post("/telegram-auto-login", response_model=Dict[str, Any])
+def telegram_auto_login(body: TelegramAutoLoginRequest):
+    """Auto-login user by their already-linked telegram_id.
+    Called by the bot when session is lost (e.g. after Railway redeploy)
+    but the user's telegram_id is already linked in the database.
+    """
+    supabase = get_supabase()
+
+    response = supabase.table("users").select("*").eq("telegram_id", body.telegram_id).limit(1).execute()
+    users = getattr(response, "data", None) or []
+
+    if not users:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"success": False, "error": "Telegram belum terhubung"},
+        )
+
+    user_row = users[0]
+
+    token = create_access_token(
+        data={
+            "user_id": user_row["id"],
+            "tenant_id": user_row["tenant_id"],
+        }
+    )
+
+    user_resp = UserResponse(
+        id=user_row["id"],
+        name=user_row["name"],
+        email=user_row["email"],
+        role=user_row["role"],
+        tenant_id=user_row["tenant_id"],
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "access_token": token,
+            "user": user_resp,
+        },
+    }
