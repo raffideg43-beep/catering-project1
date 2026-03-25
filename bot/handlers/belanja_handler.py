@@ -208,12 +208,18 @@ async def input_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     supplier = context.user_data.get("manual_supplier")
 
     # ─── Juknis kategori auto-detect ────────────────────────────────
-    import sys
-    import os
-    if "backend" not in sys.path:
-        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
-    from services.juknis_service import auto_categorize
-    juknis_cat = auto_categorize([i["nama_item"] for i in items])
+    _KEYWORD_MAP = {
+        "bahan_pangan": ["beras", "ayam", "daging", "ikan", "telur", "tahu", "tempe", "sayur", "buah", "minyak", "tepung", "gula", "garam", "bumbu", "santan", "susu", "pisang", "wortel", "bayam", "kol", "kentang", "tomat", "bawang", "cabai", "kecap", "merica", "lada", "kunyit", "jahe", "serai", "daun", "kangkung", "terong", "pare", "labu", "udang", "cumi", "tuna", "lele", "nila", "sarden", "kornet", "sosis", "nugget", "bakso", "keju", "mentega", "margarin", "roti", "mie"],
+        "operasional": ["gas", "lpg", "listrik", "bensin", "solar", "bbm", "sewa", "plastik", "kemasan", "kardus", "sabun", "tissue", "deterjen", "tisu", "sarung", "masker", "galon", "atk", "kertas", "tinta", "piring", "sendok", "garpu", "mangkok", "gelas", "wadah", "aluminium", "serbet", "lap", "sapu", "pel"],
+        "insentif": ["upah", "gaji", "honor", "insentif", "transport", "makan", "ongkos", "relawan", "tunjangan", "bonus", "lembur"]
+    }
+    
+    combined = " ".join([i["nama_item"] for i in items]).lower()
+    juknis_cat = "lainnya"
+    for cat, kws in _KEYWORD_MAP.items():
+        if any(kw in combined for kw in kws):
+            juknis_cat = cat
+            break
     juknis_labels = {
         "bahan_pangan": "🥦 Bahan Pangan",
         "operasional": "⚙️ Operasional",
