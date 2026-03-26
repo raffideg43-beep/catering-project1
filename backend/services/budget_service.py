@@ -92,10 +92,10 @@ class BudgetService:
         alloc = alloc_rows[0] if alloc_rows else {}
         price_pp = _d(alloc.get("price_per_portion", 15000))
 
-        # ── Total porsi bulan ini ──
+        # ── Total porsi bulan ini (dan aggregasi target per porsi) ──
         ba_resp = (
             supabase.table("mbg_budget_allocations")
-            .select("total_portions")
+            .select("total_portions, budget_raw_material, budget_food, operational_salary, budget_labor, operational_fuel, operational_utilities, budget_ops, budget_kitchen_rent")
             .eq("tenant_id", tenant_id)
             .gte("date", first.isoformat())
             .lte("date", last.isoformat())
@@ -103,19 +103,23 @@ class BudgetService:
         )
         ba_rows = getattr(ba_resp, "data", None) or []
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
-        total_revenue = Decimal(str(total_porsi)) * price_pp
+        
+        target_bahan = sum(_d(r.get("budget_raw_material", r.get("budget_food", 0))) for r in ba_rows)
+        target_upah = sum(_d(r.get("operational_salary", r.get("budget_labor", 0))) for r in ba_rows)
+        
+        target_ops_fuel = sum(_d(r.get("operational_fuel", r.get("budget_ops", 0))) for r in ba_rows)
+        target_ops_util = sum(_d(r.get("operational_utilities", 0)) for r in ba_rows)
+        target_ops = target_ops_fuel + target_ops_util
+        
+        target_rent = sum(_d(r.get("budget_kitchen_rent", 0)) for r in ba_rows)
 
-        target_bahan = total_revenue * Decimal("0.80")
-        target_upah = total_revenue * Decimal("0.15")
-        target_ops = total_revenue * Decimal("0.05")
-
-        def _breakdown(cat_key: str, target: Decimal, target_pct: int):
+        def _breakdown(cat_key: str, target: Decimal, label: str):
             real = realisasi.get(cat_key, Decimal("0"))
             pct = float(real / target * 100) if target > 0 else 0
             return {
                 "realisasi": str(real),
                 "target": str(target),
-                "target_pct": target_pct,
+                "label": label,
                 "pct": round(pct, 1),
                 "over_budget": real > target,
             }
@@ -152,9 +156,16 @@ class BudgetService:
             ),
             "kas_balances": kas_balances,
             "juknis_breakdown": {
-                "bahan_pangan": _breakdown("bahan_pangan", target_bahan, 80),
-                "insentif": _breakdown("insentif", target_upah, 15),
-                "operasional": _breakdown("operasional", target_ops, 5),
+                "bahan_pangan": _breakdown("bahan_pangan", target_bahan, "Bahan Pangan"),
+                "insentif": _breakdown("insentif", target_upah, "Gaji & Upah"),
+                "operasional": _breakdown("operasional", target_ops, "Operasional"),
+                "sewa_dapur": {
+                    "realisasi": "0.00",
+                    "target": str(target_rent),
+                    "label": "Sewa Dapur (Laba Bersih)",
+                    "pct": 0.0,
+                    "over_budget": False,
+                }
             },
             "disbursements": [
                 {

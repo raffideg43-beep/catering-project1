@@ -15,7 +15,7 @@ const fmtRp = (v: string | number) => {
 const MONTHS = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 /* ─── Types ─── */
-interface JuknisBreakdown { realisasi: string; target: string; target_pct: number; pct: number; over_budget: boolean; }
+interface JuknisBreakdown { realisasi: string; target: string; label: string; pct: number; over_budget: boolean; }
 interface KasBalance { id: string; name: string; type: string; balance: string; }
 interface Disbursement { id: string; date: string; amount: string; reference_number: string | null; notes: string | null; }
 
@@ -23,7 +23,7 @@ interface BudgetSummary {
     year: number; month: number; pagu_amount: string; total_disbursed: string;
     total_spent: string; sisa_anggaran: string; pct_terpakai: number; total_porsi: number;
     avg_harga_porsi: string; kas_balances: KasBalance[];
-    juknis_breakdown: { bahan_pangan: JuknisBreakdown; insentif: JuknisBreakdown; operasional: JuknisBreakdown; };
+    juknis_breakdown: Record<string, JuknisBreakdown>;
     disbursements: Disbursement[]; fund_return: any;
 }
 
@@ -256,19 +256,14 @@ function OverviewTab() {
                     </div>
 
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi Alokasi 80:15:5</h2>
+                        <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi Alokasi Anggaran (Per Porsi)</h2>
                         <div className="space-y-4">
-                            {([
-                                { key: "bahan_pangan" as const, label: "🥦 Bahan Pangan", pct: 80 },
-                                { key: "insentif" as const, label: "👷 Insentif / Upah", pct: 15 },
-                                { key: "operasional" as const, label: "⚙️ Operasional", pct: 5 },
-                            ]).map(cat => {
-                                const bd = data.juknis_breakdown[cat.key];
+                            {Object.values(data.juknis_breakdown).map((bd, idx) => {
                                 const barPct = Math.min(bd.pct, 150);
                                 return (
-                                    <div key={cat.key}>
+                                    <div key={idx}>
                                         <div className="flex justify-between text-sm mb-1">
-                                            <span className="font-medium text-gray-700">{cat.label} (Target {cat.pct}%)</span>
+                                            <span className="font-medium text-gray-700">{bd.label}</span>
                                             <span className={bd.over_budget ? "text-red-600 font-bold" : "text-gray-600"}>
                                                 {fmtRp(bd.realisasi)} / {fmtRp(bd.target)} — {bd.pct}%
                                             </span>
