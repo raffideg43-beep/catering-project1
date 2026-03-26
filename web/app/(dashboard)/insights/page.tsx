@@ -48,16 +48,11 @@ function TrendBadge({ pct, trend }: { pct: number; trend: string }) {
 }
 
 function HargaTab() {
+    const router = useRouter();
     const [items, setItems] = useState<PriceItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [aiSummary, setAiSummary] = useState<AISummary | null>(null);
     const [aiLoading, setAiLoading] = useState(true);
-
-    // Detail modal state
-    const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [detailLoading, setDetailLoading] = useState(false);
-    const [detail, setDetail] = useState<any>(null);
-    const [detailPeriod, setDetailPeriod] = useState("3m");
 
     useEffect(() => {
         apiGet("/price-tracking/overview").then(r => {
@@ -68,19 +63,6 @@ function HargaTab() {
             setAiSummary(r?.data ?? null);
         }).catch(() => { }).finally(() => setAiLoading(false));
     }, []);
-
-    const openDetail = async (productId: string, period: string = "3m") => {
-        setSelectedId(productId);
-        setDetailLoading(true);
-        setDetailPeriod(period);
-        try {
-            const r = await apiGet(`/price-tracking/${productId}?period=${period}`);
-            setDetail(r?.data ?? null);
-        } catch { setDetail(null); }
-        setDetailLoading(false);
-    };
-
-    const closeDetail = () => { setSelectedId(null); setDetail(null); };
 
     const highAlert = aiSummary?.alerts?.find(a => a.level === "high");
 
@@ -130,11 +112,11 @@ function HargaTab() {
                             <tbody>
                                 {items.map((item, i) => (
                                     <tr key={item.product_id}
-                                        onClick={() => openDetail(item.product_id)}
-                                        className={`border-b border-gray-50 hover:bg-purple-50 cursor-pointer transition-colors ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
+                                        onClick={() => router.push(`/insights/track/${item.product_id}`)}
+                                        className={`border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
                                         <td className="px-4 py-2.5">
-                                            <span className="font-medium text-purple-700 hover:underline">
-                                                {item.product_name}
+                                            <span className="font-medium text-blue-700 hover:underline">
+                                                {item.product_name} →
                                             </span>
                                         </td>
                                         <td className="px-4 py-2.5 text-gray-500">{item.unit}</td>
@@ -165,153 +147,6 @@ function HargaTab() {
                     </div>
                 )}
             </div>
-
-            {/* ═══ DETAIL MODAL + CHART ════════════════════════════════ */}
-            {selectedId && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-                    onClick={closeDetail}>
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
-                        onClick={e => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="p-5 border-b border-gray-100 flex justify-between items-start">
-                            <div>
-                                <h2 className="font-bold text-lg text-gray-900">
-                                    📈 {detail?.product_name || "Loading..."}
-                                </h2>
-                                <p className="text-sm text-gray-500 mt-0.5">
-                                    Riwayat harga per {detail?.unit || "unit"}
-                                </p>
-                            </div>
-                            <button onClick={closeDetail} className="text-gray-400 hover:text-gray-700 text-xl">✕</button>
-                        </div>
-
-                        {/* Period tabs */}
-                        <div className="px-5 pt-3 flex gap-2">
-                            {[
-                                { key: "1m", label: "1 Bulan" },
-                                { key: "3m", label: "3 Bulan" },
-                                { key: "12m", label: "1 Tahun" },
-                            ].map(p => (
-                                <button key={p.key}
-                                    onClick={() => openDetail(selectedId, p.key)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${detailPeriod === p.key
-                                        ? "bg-purple-600 text-white"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                                    {p.label}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 overflow-auto p-5 space-y-5">
-                            {detailLoading ? (
-                                <div className="flex justify-center py-12">
-                                    <div className="w-6 h-6 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                                </div>
-                            ) : !detail ? (
-                                <p className="text-center text-gray-400 py-8">Gagal memuat data</p>
-                            ) : (
-                                <>
-                                    {/* Stats cards */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        <div className="bg-green-50 rounded-xl p-3">
-                                            <span className="text-xs text-gray-500">Harga Terendah</span>
-                                            <p className="font-bold text-green-700">{formatRp(detail.stats?.min_price || 0)}</p>
-                                        </div>
-                                        <div className="bg-red-50 rounded-xl p-3">
-                                            <span className="text-xs text-gray-500">Harga Tertinggi</span>
-                                            <p className="font-bold text-red-700">{formatRp(detail.stats?.max_price || 0)}</p>
-                                        </div>
-                                        <div className="bg-blue-50 rounded-xl p-3">
-                                            <span className="text-xs text-gray-500">Rata-rata</span>
-                                            <p className="font-bold text-blue-700">{formatRp(detail.stats?.avg_price || 0)}</p>
-                                        </div>
-                                        <div className="bg-purple-50 rounded-xl p-3">
-                                            <span className="text-xs text-gray-500">Volatilitas</span>
-                                            <p className="font-bold text-purple-700">{detail.stats?.price_volatility || 0}%</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Bar Chart */}
-                                    {detail.chart_data && detail.chart_data.length > 0 ? (
-                                        <div>
-                                            <h3 className="font-semibold text-gray-800 text-sm mb-3">📊 Grafik Harga</h3>
-                                            <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
-                                                {(() => {
-                                                    const chartData = detail.chart_data;
-                                                    const maxPrice = Math.max(...chartData.map((d: any) => d.avg_price));
-                                                    const minPrice = Math.min(...chartData.map((d: any) => d.avg_price));
-                                                    const chartHeight = 160;
-                                                    const range = maxPrice - minPrice || 1;
-
-                                                    return (
-                                                        <div className="flex items-end gap-1 min-w-fit" style={{ height: chartHeight + 40 }}>
-                                                            {chartData.map((d: any, idx: number) => {
-                                                                const pct = ((d.avg_price - minPrice) / range);
-                                                                const barH = Math.max(8, pct * chartHeight);
-                                                                const dateLabel = new Date(d.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
-                                                                return (
-                                                                    <div key={idx} className="flex flex-col items-center gap-1 group" style={{ minWidth: chartData.length > 20 ? 20 : 36 }}>
-                                                                        <div className="opacity-0 group-hover:opacity-100 text-xs text-gray-700 font-medium whitespace-nowrap bg-white px-1.5 py-0.5 rounded shadow-sm transition-opacity">
-                                                                            {formatRp(d.avg_price)}
-                                                                        </div>
-                                                                        <div
-                                                                            className="w-full rounded-t transition-all bg-gradient-to-t from-purple-600 to-purple-400 hover:from-purple-700 hover:to-purple-500"
-                                                                            style={{ height: barH }}
-                                                                            title={`${d.date}: ${formatRp(d.avg_price)}`}
-                                                                        />
-                                                                        <span className="text-[10px] text-gray-400 -rotate-45 origin-top-left whitespace-nowrap">
-                                                                            {dateLabel}
-                                                                        </span>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-center text-gray-400 text-sm py-4">Belum ada data grafik</p>
-                                    )}
-
-                                    {/* Supplier comparison */}
-                                    {detail.suppliers_comparison && detail.suppliers_comparison.length > 0 && (
-                                        <div>
-                                            <h3 className="font-semibold text-gray-800 text-sm mb-3">🏪 Perbandingan Supplier</h3>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-sm">
-                                                    <thead className="bg-gray-50">
-                                                        <tr>
-                                                            {["Supplier", "Rata-rata", "Termurah", "Termahal", "Jumlah Beli"].map(h => (
-                                                                <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium text-xs">{h}</th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {detail.suppliers_comparison.map((s: any, i: number) => (
-                                                            <tr key={i} className={`border-b border-gray-50 ${i === 0 ? "bg-green-50/50" : ""}`}>
-                                                                <td className="px-3 py-2 font-medium">
-                                                                    {s.supplier_name}
-                                                                    {i === 0 && <span className="ml-1 text-green-600 text-xs">🏆</span>}
-                                                                </td>
-                                                                <td className="px-3 py-2 font-semibold">{formatRp(s.avg_price)}</td>
-                                                                <td className="px-3 py-2 text-green-700">{formatRp(s.min_price)}</td>
-                                                                <td className="px-3 py-2 text-red-600">{formatRp(s.max_price)}</td>
-                                                                <td className="px-3 py-2 text-gray-500">{s.purchase_count}x</td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
