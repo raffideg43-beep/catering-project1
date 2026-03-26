@@ -48,11 +48,12 @@ def _fetch_items(supabase, tid: str, product_id: Optional[str], since_date: str)
     # kita ambil transactions confirmed dulu, lalu ambil itemnya.
     trx_resp = (
         supabase.table("transactions")
-        .select("id, date, supplier_id")
+        .select("id, date, supplier_id, created_at")
         .eq("tenant_id", tid)
         .eq("status", "confirmed")
         .eq("type", "expense")
         .gte("date", since_date)
+        .order("created_at")
         .execute()
     )
     trx_rows = getattr(trx_resp, "data", None) or []
@@ -74,11 +75,15 @@ def _fetch_items(supabase, tid: str, product_id: Optional[str], since_date: str)
     items_resp = items_q.execute()
     items = getattr(items_resp, "data", None) or []
 
-    # Enrich dengan date + supplier_id dari transaksi
+    # Enrich dengan date + supplier_id + created_at dari transaksi
     for item in items:
         trx = trx_map.get(item.get("transaction_id"), {})
         item["date"] = trx.get("date")
         item["supplier_id"] = trx.get("supplier_id")
+        item["created_at"] = trx.get("created_at", "")
+
+    # Sort items globally by created_at
+    items.sort(key=lambda x: x.get("created_at", ""))
 
     return items
 
@@ -423,6 +428,8 @@ def get_product_price_history(
     # Group by date
     from collections import defaultdict
     by_date: Dict[str, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    latest_daily_price: Dict[str, float] = {}
+    
     for item in items:
         d = item.get("date", "")[:10]
         sid = item.get("supplier_id") or "unknown"
@@ -430,26 +437,27 @@ def get_product_price_history(
         qty = float(_d(item.get("qty")))
         if price > 0:
             by_date[d][sid].append({"price": price, "qty": qty})
+            # Karena items sudah di-sort ASC, update terus berarti nilainya selalu yang terakhir (latest)
+            latest_daily_price[d] = price
 
     chart_data = []
     for d in sorted(by_date.keys()):
         day_sup = by_date[d]
-        all_prices = [p["price"] for sup_list in day_sup.values() for p in sup_list]
-        avg_price = sum(all_prices) / len(all_prices) if all_prices else 0
+        final_price = latest_daily_price.get(d, 0)
 
         by_supplier = []
         for sid, plist in day_sup.items():
-            avg = sum(p["price"] for p in plist) / len(plist)
+            latest = plist[-1]["price"]
             total_qty = sum(p["qty"] for p in plist)
             by_supplier.append({
                 "supplier_name": supplier_names.get(sid, "Tanpa Supplier"),
-                "price": round(avg, 2),
+                "price": round(latest, 2),
                 "qty": round(total_qty, 3),
             })
 
         chart_data.append({
             "date": d,
-            "avg_price": round(avg_price, 2),
+            "avg_price": round(final_price, 2),
             "by_supplier": by_supplier,
         })
 
