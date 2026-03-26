@@ -476,15 +476,6 @@ async def konfirmasi_serah(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         [InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback")],
                     ])
                 )
-    else:
-        await query.edit_message_text(
-            "❌ *Gagal koneksi ke server*\n\nSilakan coba lagi nanti\\.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
-            ]]),
-            parse_mode="MarkdownV2",
-        )
-
     return ConversationHandler.END
 
 
