@@ -105,9 +105,10 @@ class BudgetService:
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
         total_revenue = Decimal(str(total_porsi)) * price_pp
 
-        target_bahan = total_revenue * Decimal("0.80")
-        target_upah = total_revenue * Decimal("0.15")
-        target_ops = total_revenue * Decimal("0.05")
+        # Targets based on actual disbursed funds (Dana Cair) instead of revenue estimation
+        target_bahan = total_disbursed * Decimal("0.80")
+        target_upah = total_disbursed * Decimal("0.15")
+        target_ops = total_disbursed * Decimal("0.05")
 
         def _breakdown(cat_key: str, target: Decimal, target_pct: int):
             real = realisasi.get(cat_key, Decimal("0"))

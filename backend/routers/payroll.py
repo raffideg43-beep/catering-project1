@@ -288,22 +288,19 @@ async def pay_payroll_period(
     )
     items = getattr(items_res, "data", None) or []
     
-    for item in items:
-        emp_name = item.get("employees", {}).get("name", "Unknown")
-        net = float(item["net_amount"])
-        if net <= 0:
-            continue
-            
-        # Insert transaction
+    total_net = sum(float(item["net_amount"]) for item in items if float(item["net_amount"]) > 0)
+    
+    if total_net > 0:
+        # Insert 1 consolidated transaction
         txn_res = supabase.table("transactions").insert({
             "tenant_id": tid,
             "type": "expense",
             "source": "payroll",
             "juknis_category": "insentif",
             "kas_account_id": kas_account_id,
-            "total": net,
+            "total": total_net,
             "date": today_str,
-            "notes": f"Gaji {emp_name} - {period['name']}",
+            "notes": f"Pembayaran Gaji Karyawan - {period['name']}",
             "status": "confirmed",
             "recorded_by": current_user.id
         }).execute()
@@ -311,27 +308,33 @@ async def pay_payroll_period(
         txn_data = getattr(txn_res, "data", None)
         if txn_data:
             trx_id = txn_data[0]["id"]
-            # Update item with transaction_id
-            supabase.table("payroll_items").update({
-                "transaction_id": trx_id
-            }).eq("id", item["id"]).execute()
             
-            # KasService Double Entry
+            # Update all paid items with this single transaction_id
+            paid_item_ids = [item["id"] for item in items if float(item["net_amount"]) > 0]
+            if paid_item_ids:
+                # Supabase Python client .in_() has limits if list is too large, 
+                # but usually employees < 1000 so it should be fine.
+                for i in range(0, len(paid_item_ids), 100):
+                    batch = paid_item_ids[i:i+100]
+                    supabase.table("payroll_items").update({
+                        "transaction_id": trx_id
+                    }).in_("id", batch).execute()
+                
+            # KasService Double Entry (1 entry for the whole payroll)
             try:
                 KasService.record_expense(
                     tenant_id=tid,
                     transaction_id=trx_id,
-                    amount=Decimal(str(net)),
+                    amount=Decimal(str(total_net)),
                     kas_account_id=kas_account_id,
-                    description=f"Gaji {emp_name} - {period['name']}",
+                    description=f"Pembayaran Gaji Karyawan - {period['name']}",
                     expense_date=today_dt,
                     created_by=current_user.id,
                     supabase=supabase,
                     reference_type="payroll"
                 )
             except ValueError as e:
-                # Revert period status if failed? Usually better to raise directly
-                raise HTTPException(status_code=400, detail=f"Gagal membayar {emp_name}: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Gagal mencatat kas: {str(e)}")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
                 
