@@ -458,6 +458,8 @@ function PenggajianTab() {
   const [showModal, setShowModal] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<any>(null); // For detail view
   const [periodItems, setPeriodItems] = useState<any[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<any[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   
   const [formData, setFormData] = useState({ name: "", start_date: "", end_date: "", working_days: "20" });
 
@@ -469,16 +471,35 @@ function PenggajianTab() {
     } catch (err) {} finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchPeriods(); }, []);
+  useEffect(() => { 
+    fetchPeriods(); 
+    apiGet("/employees").then(res => {
+      const active = (res.data || []).filter((e: any) => e.is_active);
+      setActiveEmployees(active);
+    }).catch(() => {});
+  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedEmployees.length === 0) {
+      alert("Pilih minimal 1 karyawan");
+      return;
+    }
     try {
-      const reqData = { ...formData, working_days: parseInt(formData.working_days) };
+      const reqData = { ...formData, working_days: parseInt(formData.working_days), employee_ids: selectedEmployees };
       await apiPost("/payroll/periods", reqData);
       setShowModal(false);
       fetchPeriods();
-    } catch (err) { alert("Error"); }
+    } catch (err: any) { alert(err.response?.data?.detail || "Gagal membuat periode"); }
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Batal dan hapus periode draft ini?")) return;
+    try {
+      await apiDelete(`/payroll/periods/${id}`);
+      fetchPeriods();
+    } catch (err: any) { alert(err.response?.data?.detail || "Error menghapus periode, pastikan status draft"); }
   };
 
   const loadDetails = async (id: string) => {
@@ -571,7 +592,10 @@ function PenggajianTab() {
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-gray-800">Daftar Periode Penggajian</h2>
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer">
+        <button onClick={() => {
+          setSelectedEmployees(activeEmployees.map(e => e.id));
+          setShowModal(true);
+        }} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer">
           <span>➕ Buat Periode Baru</span>
         </button>
       </div>
@@ -599,8 +623,13 @@ function PenggajianTab() {
                   </span>
                 </td>
                 <td className="py-3 px-4 font-medium">Rp {Number(p.total_amount).toLocaleString('id-ID')}</td>
-                <td className="py-3 px-4 text-center text-gray-400 text-lg">
-                  📄
+                <td className="py-3 px-4 text-center text-lg">
+                  <span className="text-gray-400">📄</span>
+                  {p.status === 'draft' && (
+                    <button onClick={(e) => handleDelete(p.id, e)} className="ml-2 text-red-500 hover:text-red-700 cursor-pointer" title="Hapus Draft">
+                      🗑️
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -621,6 +650,27 @@ function PenggajianTab() {
                 <div><label className="block text-sm font-medium mb-1">Selesai</label><input required type="date" value={formData.end_date} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full p-2 border rounded-lg text-sm" /></div>
               </div>
               <div><label className="block text-sm font-medium mb-1">Target Hari Kerja (Max Hadir)</label><input required type="number" value={formData.working_days} onChange={e => setFormData({...formData, working_days: e.target.value})} className="w-full p-2 border rounded-lg" /></div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Pilih Karyawan</label>
+                <div className="max-h-32 overflow-y-auto border rounded-lg p-2 space-y-1 bg-gray-50 text-sm">
+                  {activeEmployees.map(emp => (
+                    <label key={emp.id} className="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-100 rounded">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedEmployees.includes(emp.id)}
+                        onChange={(e) => {
+                           if(e.target.checked) setSelectedEmployees([...selectedEmployees, emp.id]);
+                           else setSelectedEmployees(selectedEmployees.filter(id => id !== emp.id));
+                        }} 
+                      />
+                      <span>{emp.name} ({emp.position_name || "Tanpa Jabatan"})</span>
+                    </label>
+                  ))}
+                  {activeEmployees.length === 0 && <div className="text-gray-500 italic p-1">Belum ada karyawan aktif.</div>}
+                </div>
+              </div>
+
               <div className="flex justify-end space-x-2 pt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg cursor-pointer">Batal</button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">Generate</button>

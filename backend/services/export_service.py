@@ -267,12 +267,11 @@ class ExportService:
         operational_costs = getattr(ops_resp, "data", None) or []
 
         # Payroll Items
-        # Period date must overlap or we just get items by date?
-        # Actually, period has start_date / end_date. Just fetch periods and their items.
         period_resp = (
             supabase.table("payroll_periods")
             .select("id, name, start_date")
             .eq("tenant_id", tenant_id)
+            .neq("status", "draft")
             .gte("start_date", first.isoformat())
             .lt("start_date", (last + timedelta(days=1)).isoformat())
             .execute()

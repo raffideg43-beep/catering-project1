@@ -100,6 +100,7 @@ class PayrollPeriodCreate(BaseModel):
     end_date: date
     working_days: int
     notes: Optional[str] = None
+    employee_ids: Optional[list[str]] = None
 
 
 class OperationalCostCreate(BaseModel):

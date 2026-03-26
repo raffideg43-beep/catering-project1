@@ -28,17 +28,20 @@ def create_payroll_period(
     supabase = get_supabase()
 
     # 1. Get active employees
-    emp_res = (
+    query = (
         supabase.table("employees")
-        .select("id, position_id, job_positions(name, base_salary)")
+        .select("id, position_id, job_positions(name, base_salary, salary_type)")
         .eq("tenant_id", current_user.tenant_id)
         .eq("is_active", True)
-        .execute()
     )
+    if body.employee_ids:
+        query = query.in_("id", body.employee_ids)
+        
+    emp_res = query.execute()
     employees = getattr(emp_res, "data", None) or []
     
     if not employees:
-        raise HTTPException(status_code=400, detail="Tidak ada karyawan aktif untuk digaji")
+        raise HTTPException(status_code=400, detail="Tidak ada karyawan aktif untuk digaji pada periode ini")
 
     # 2. Get attendances for the period
     att_res = (
@@ -65,10 +68,16 @@ def create_payroll_period(
         pos = emp.get("job_positions") or {}
         pos_name = pos.get("name", "Tanpa Jabatan")
         base_salary = pos.get("base_salary", 0)
+        salary_type = pos.get("salary_type", "harian")
         
         absent_days = absent_counts.get(emp["id"], 0)
         present_days = max(0, body.working_days - absent_days)
-        gross_amount = present_days * base_salary
+        
+        if salary_type == "bulanan":
+            gross_amount = base_salary
+        else:
+            gross_amount = present_days * base_salary
+            
         net_amount = gross_amount # deductions = 0 for now
         
         total_amount += net_amount
@@ -108,6 +117,32 @@ def create_payroll_period(
     supabase.table("payroll_items").insert(items_to_insert).execute()
 
     return {"success": True, "data": period}
+
+
+@router.delete("/periods/{period_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+def delete_payroll_period(
+    period_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Delete a draft payroll period."""
+    supabase = get_supabase()
+    
+    # Verify period is draft
+    period_res = supabase.table("payroll_periods").select("status").eq("id", period_id).eq("tenant_id", current_user.tenant_id).execute()
+    periods = getattr(period_res, "data", None) or []
+    
+    if not periods:
+        raise HTTPException(status_code=404, detail="Periode tidak ditemukan")
+        
+    if periods[0]["status"] != "draft":
+        raise HTTPException(status_code=400, detail="Hanya periode draft yang bisa dibatalkan/dihapus")
+        
+    # Delete cascade or delete items then period
+    supabase.table("payroll_items").delete().eq("period_id", period_id).execute()
+    supabase.table("payroll_periods").delete().eq("id", period_id).execute()
+    
+    return {"success": True, "message": "Periode berhasil dihapus"}
+
 
 
 @router.get("/periods", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
