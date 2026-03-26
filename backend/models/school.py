@@ -9,6 +9,7 @@ class SchoolCreate(BaseModel):
     contact_name: Optional[str] = None
     default_portions: int = 0
     notes: Optional[str] = None
+    mbg_allocation_type: Optional[str] = "large"
 
 
 class SchoolUpdate(BaseModel):
@@ -17,6 +18,7 @@ class SchoolUpdate(BaseModel):
     contact_name: Optional[str] = None
     default_portions: Optional[int] = None
     notes: Optional[str] = None
+    mbg_allocation_type: Optional[str] = None
 
 
 class SchoolResponse(BaseModel):
@@ -28,4 +30,5 @@ class SchoolResponse(BaseModel):
     default_portions: int
     is_active: bool
     notes: Optional[str] = None
+    mbg_allocation_type: Optional[str] = None
     created_at: str

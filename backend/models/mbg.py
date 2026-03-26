@@ -85,13 +85,11 @@ class StockShortageDetail(BaseModel):
 
 class AllocationResult(BaseModel):
     total_revenue: float
-    price_per_portion: float
-    budget_food: float
-    budget_labor: float
-    budget_ops: float
-    food_pct: float
-    labor_pct: float
-    ops_pct: float
+    total_portions: int
+    budget_raw_material: float
+    budget_operational: float
+    budget_kitchen_rent: float
+    allocation_type: str
 
 
 class DeliverySummaryResponse(BaseModel):

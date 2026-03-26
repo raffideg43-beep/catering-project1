@@ -315,6 +315,17 @@ class ExportService:
         from services.budget_service import budget_service
         budget_summary = budget_service.get_monthly_summary(tenant_id, year, month)
 
+        # Budget Allocations (for exact per-portion reporting)
+        ba_res = (
+            supabase.table("mbg_budget_allocations")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .gte("date", first.isoformat())
+            .lte("date", last.isoformat())
+            .execute()
+        )
+        budget_allocations = getattr(ba_res, "data", None) or []
+
         return {
             "tenant": tenant,
             "first": first,
@@ -334,6 +345,7 @@ class ExportService:
             "kas_ledger": kas_ledger,
             "school_beneficiaries": school_beneficiaries,
             "budget_summary": budget_summary,
+            "budget_allocations": budget_allocations,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -472,7 +484,7 @@ class ExportService:
         bulan_str = BULAN[month]
         
         ws.merge_cells("A1:E1")
-        ws["A1"] = f"REKAPITULASI JUKNIS 80:15:5 — {bulan_str} {year}"
+        ws["A1"] = f"REKAPITULASI ANGGARAN (PER PORSI) — {bulan_str} {year}"
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
         
@@ -491,10 +503,15 @@ class ExportService:
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
         total_exp = exp_bahan + exp_upah + exp_ops
         
-        # Target mengikuti persentase dari Pagu/Pencairan aktual
-        target_bahan = total_disbursed * Decimal("0.80")
-        target_upah = total_disbursed * Decimal("0.15")
-        target_ops = total_disbursed * Decimal("0.05")
+        # Target mengikuti data per-porsi dari budget_allocations aktual
+        budget_allocations = data.get("budget_allocations", [])
+        target_bahan = sum(_d(ba.get("budget_raw_material", ba.get("budget_food", 0))) for ba in budget_allocations)
+        target_upah = sum(_d(ba.get("operational_salary", ba.get("budget_labor", 0))) for ba in budget_allocations)
+        target_ops_fuel = sum(_d(ba.get("operational_fuel", ba.get("budget_ops", 0))) for ba in budget_allocations)
+        target_ops_util = sum(_d(ba.get("operational_utilities", 0)) for ba in budget_allocations)
+        target_ops = target_ops_fuel + target_ops_util
+        target_rent = sum(_d(ba.get("budget_kitchen_rent", 0)) for ba in budget_allocations)
+        target_total = target_bahan + target_upah + target_ops + target_rent
         
         def pct(aktual, target):
             return f"{round(float(aktual/target*100), 1)}%" if target > 0 else "0%"
@@ -502,11 +519,12 @@ class ExportService:
         rows_data = [
             ("Dana Masuk (Pencairan MBG)", total_disbursed, total_disbursed, 0, "100%"),
             ("-", "-", "-", "-", "-"),
-            ("Bahan Pangan (80%)", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
-            ("Insentif/Upah (15%)", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
-            ("Operasional (5%)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
+            ("A. Bahan Pangan (Raw Material)", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
+            ("B. Gaji & Upah Karyawan", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
+            ("C. Operasional (BBM & Listrik)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
+            ("D. Sewa Dapur (Laba Bersih)", target_rent, Decimal("0"), target_rent, "0%"),
             ("-", "-", "-", "-", "-"),
-            ("Total Pengeluaran", total_disbursed, total_exp, total_disbursed - total_exp, pct(total_exp, total_disbursed))
+            ("Total Keseluruhan", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total))
         ]
         
         row = 4
@@ -881,46 +899,58 @@ class ExportService:
         ws["A10"] = "Rata-rata Porsi/Hari"; ws["B10"] = round(total_portions / max(total_days, 1))
         ws["A11"] = "Jumlah Sekolah"; ws["B11"] = len({d.get("school_id") for d in deliveries})
 
-        # Section C: Komposisi Biaya 80:15:5
+        # Section C: Komposisi Biaya (Berdasarkan Alokasi Per Porsi)
         transactions = data.get("transactions", [])
         total_exp = sum(_d(t.get("total")) for t in transactions)
-        bahan_pct = float(total_exp / revenue_gross * 100) if revenue_gross > 0 else 0
-        target_bahan = float(revenue_gross) * 0.80
-        target_upah = float(revenue_gross) * 0.15
-        target_ops = float(revenue_gross) * 0.05
+        
+        budget_allocations = data.get("budget_allocations", [])
+        # Aggregate logic supporting both legacy 'budget_food' and new per-portion fields
+        target_bahan = sum(_d(ba.get("budget_raw_material", ba.get("budget_food", 0))) for ba in budget_allocations)
+        target_upah = sum(_d(ba.get("operational_salary", ba.get("budget_labor", 0))) for ba in budget_allocations)
+        target_ops_fuel = sum(_d(ba.get("operational_fuel", ba.get("budget_ops", 0))) for ba in budget_allocations)
+        target_ops_util = sum(_d(ba.get("operational_utilities", 0)) for ba in budget_allocations)
+        target_ops = target_ops_fuel + target_ops_util
+        target_rent = sum(_d(ba.get("budget_kitchen_rent", 0)) for ba in budget_allocations)
 
-        ws["A13"] = "Komposisi Biaya 80:15:5"
+        ws["A13"] = "Komposisi Biaya (Target vs Realisasi)"
         ws["A13"].font = Font(bold=True, size=11)
-        headers_biaya = ["Kategori", "Target (%)", "Target (Rp)", "Realisasi (Rp)", "Selisih"]
+        headers_biaya = ["Kategori", "Satuan Porsi", "Target (Rp)", "Realisasi (Rp)", "Selisih"]
         for i, h in enumerate(headers_biaya, 1):
             ws.cell(14, i, h).font = Font(bold=True)
 
-        # Bahan (80%)
-        ws.cell(15, 1, "Bahan Baku (80%)")
-        ws.cell(15, 2, "80%")
-        ws.cell(15, 3, target_bahan).number_format = '"Rp "#,##0'
+        # Bahan Baku
+        ws.cell(15, 1, "Bahan Baku Pangan")
+        ws.cell(15, 2, "Rp 10k / 8k")
+        ws.cell(15, 3, float(target_bahan)).number_format = '"Rp "#,##0'
         ws.cell(15, 4, float(total_exp)).number_format = '"Rp "#,##0'
-        ws.cell(15, 5, target_bahan - float(total_exp)).number_format = '"Rp "#,##0'
+        ws.cell(15, 5, float(target_bahan - total_exp)).number_format = '"Rp "#,##0'
 
-        # Upah (15%)
-        ws.cell(16, 1, "Upah Pekerja (15%)")
-        ws.cell(16, 2, "15%")
-        ws.cell(16, 3, target_upah).number_format = '"Rp "#,##0'
-        ws.cell(16, 4, "Belum tercatat")
+        # Upah Pekerja
+        ws.cell(16, 1, "Upah Pekerja (Gaji)")
+        ws.cell(16, 2, "Rp 1.500")
+        ws.cell(16, 3, float(target_upah)).number_format = '"Rp "#,##0'
+        ws.cell(16, 4, "Belum tercatat (Ops)")
         ws.cell(16, 5, "—")
 
-        # Operasional (5%)
-        ws.cell(17, 1, "Operasional (5%)")
-        ws.cell(17, 2, "5%")
-        ws.cell(17, 3, target_ops).number_format = '"Rp "#,##0'
-        ws.cell(17, 4, "Belum tercatat")
+        # Operasional (BBM, Listrik, Utility)
+        ws.cell(17, 1, "Operasional (BBM & Utility)")
+        ws.cell(17, 2, "Rp 1.500")
+        ws.cell(17, 3, float(target_ops)).number_format = '"Rp "#,##0'
+        ws.cell(17, 4, "Belum tercatat (Ops)")
         ws.cell(17, 5, "—")
 
+        # Sewa Dapur (Laba Bersih)
+        ws.cell(18, 1, "Sewa Dapur (Laba Bersih)")
+        ws.cell(18, 2, "Rp 2.000")
+        ws.cell(18, 3, float(target_rent)).number_format = '"Rp "#,##0'
+        ws.cell(18, 4, "—")
+        ws.cell(18, 5, float(target_rent)).number_format = '"Rp "#,##0'
+
         # Section D: Detail Pendapatan
-        ws["A19"] = "Detail Pendapatan"
-        ws["A19"].font = Font(bold=True, size=11)
-        ws["A20"] = "Pendapatan Bruto"; ws["B20"] = float(revenue_gross); ws["B20"].number_format = '"Rp "#,##0'
-        ws["A21"] = "Pendapatan Netto"; ws["B21"] = float(revenue_gross); ws["B21"].number_format = '"Rp "#,##0'
+        ws["A20"] = "Detail Pendapatan"
+        ws["A20"].font = Font(bold=True, size=11)
+        ws["A21"] = "Pendapatan Bruto"; ws["B21"] = float(revenue_gross); ws["B21"].number_format = '"Rp "#,##0'
+        ws["A22"] = "Pendapatan Netto"; ws["B22"] = float(revenue_gross); ws["B22"].number_format = '"Rp "#,##0'
 
         self._set_column_widths(ws)
 

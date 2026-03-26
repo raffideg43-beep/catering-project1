@@ -10,6 +10,7 @@ interface School {
     contact_name: string;
     default_portions: number;
     notes: string;
+    mbg_allocation_type?: string;
 }
 
 interface BeneficiaryType {
@@ -39,6 +40,7 @@ export function TabSekolah() {
         contact_name: "",
         default_portions: 0,
         notes: "",
+        mbg_allocation_type: "large",
     });
 
     // ── Beneficiary state ──
@@ -86,7 +88,7 @@ export function TabSekolah() {
 
     useEffect(() => { fetchSchools(); fetchBenTypes(); }, []);
 
-    const openForm = (school?: School) => {
+const openForm = (school?: School) => {
         if (school) {
             setEditingId(school.id);
             setFormData({
@@ -95,11 +97,12 @@ export function TabSekolah() {
                 contact_name: school.contact_name || "",
                 default_portions: school.default_portions,
                 notes: school.notes || "",
+                mbg_allocation_type: school.mbg_allocation_type || "large",
             });
             fetchSchoolBens(school.id);
         } else {
             setEditingId(null);
-            setFormData({ name: "", address: "", contact_name: "", default_portions: 0, notes: "" });
+            setFormData({ name: "", address: "", contact_name: "", default_portions: 0, notes: "", mbg_allocation_type: "large" });
             setSchoolBens([]);
         }
         setAddTypeId("");
@@ -255,6 +258,7 @@ export function TabSekolah() {
                             <tr className="border-b bg-gray-50">
                                 <th className="px-4 py-3 font-semibold text-gray-700">Nama Sekolah</th>
                                 <th className="px-4 py-3 font-semibold text-gray-700">Penanggung Jawab</th>
+                                <th className="px-4 py-3 font-semibold text-gray-700">Alokasi Anggaran</th>
                                 <th className="px-4 py-3 font-semibold text-gray-700">Default Porsi</th>
                                 <th className="px-4 py-3 font-semibold text-gray-700">Alamat</th>
                                 <th className="px-4 py-3 font-semibold text-gray-700">Aksi</th>
@@ -265,6 +269,11 @@ export function TabSekolah() {
                                 <tr key={s.id} className="border-b hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
                                     <td className="px-4 py-3 text-gray-600">{s.contact_name || "-"}</td>
+                                    <td className="px-4 py-3 text-gray-600">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${s.mbg_allocation_type === 'small' ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'}`}>
+                                            {s.mbg_allocation_type === 'small' ? 'Rp 13.000' : 'Rp 15.000'}
+                                        </span>
+                                    </td>
                                     <td className="px-4 py-3 text-gray-600 font-medium">{s.default_portions} porsi</td>
                                     <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">{s.address || "-"}</td>
                                     <td className="px-4 py-3 flex gap-2">
@@ -291,6 +300,17 @@ export function TabSekolah() {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Penanggung Jawab</label>
                                 <input type="text" value={formData.contact_name} onChange={e => setFormData({ ...formData, contact_name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tipe Alokasi Harga / Porsi</label>
+                                <select 
+                                    className="w-full px-4 py-2 border rounded-lg bg-white"
+                                    value={formData.mbg_allocation_type}
+                                    onChange={e => setFormData(prev => ({ ...prev, mbg_allocation_type: e.target.value }))}
+                                >
+                                    <option value="large">Paket Besar (Rp 15.000 / porsi)</option>
+                                    <option value="small">Paket Kecil (Rp 13.000 / porsi)</option>
+                                </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

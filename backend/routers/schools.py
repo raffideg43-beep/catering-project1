@@ -11,6 +11,7 @@ from core.database import get_supabase
 from core.dependencies import get_current_user, require_role
 from models.school import SchoolCreate, SchoolResponse, SchoolUpdate
 from models.user import UserInDB
+from datetime import datetime
 
 router = APIRouter(prefix="/schools", tags=["schools"])
 
@@ -74,6 +75,7 @@ def create_school(
                 "contact_name": body.contact_name,
                 "default_portions": body.default_portions,
                 "notes": body.notes,
+                "mbg_allocation_type": body.mbg_allocation_type or "large",
                 "is_active": True,
             }
         )
@@ -110,6 +112,8 @@ def update_school(
         update_data["default_portions"] = body.default_portions
     if body.notes is not None:
         update_data["notes"] = body.notes
+    if body.mbg_allocation_type is not None:
+        update_data["mbg_allocation_type"] = body.mbg_allocation_type
 
     response = (
         supabase.table("schools")
@@ -165,4 +169,33 @@ def get_school_deliveries(
         "success": True,
         "data": deliveries,
         "total": len(deliveries),
+    }
+
+
+@router.put("/{school_id}/mbg-allocation", dependencies=[Depends(require_role(["owner", "admin"]))])
+def update_school_mbg_allocation(
+    school_id: str,
+    body: Dict[str, str],
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """Set MBG allocation preference untuk sekolah"""
+    supabase = get_supabase()
+    
+    allocation_type = body.get("allocation_type", "large")
+    if allocation_type not in ["large", "small"]:
+        raise HTTPException(status_code=400, detail="Invalid allocation_type. Use 'large' or 'small'")
+    
+    # Update school
+    update_resp = supabase.table("schools").update({
+        "mbg_allocation_type": allocation_type,
+        "updated_at": datetime.now().isoformat()
+    }).eq("id", school_id).eq("tenant_id", current_user.tenant_id).execute()
+    
+    if not update_resp.data:
+        raise HTTPException(status_code=404, detail="School not found")
+        
+    return {
+        "success": True,
+        "school_id": school_id,
+        "allocation_type": allocation_type
     }
