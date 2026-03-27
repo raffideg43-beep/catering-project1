@@ -625,11 +625,9 @@ function PenggajianTab() {
                 <td className="py-3 px-4 font-medium">Rp {Number(p.total_amount).toLocaleString('id-ID')}</td>
                 <td className="py-3 px-4 text-center text-lg">
                   <span className="text-gray-400">📄</span>
-                  {p.status === 'draft' && (
-                    <button onClick={(e) => handleDelete(p.id, e)} className="ml-2 text-red-500 hover:text-red-700 cursor-pointer" title="Hapus Draft">
-                      🗑️
-                    </button>
-                  )}
+                  <button onClick={(e) => handleDelete(p.id, e)} className="ml-2 text-red-500 hover:text-red-700 cursor-pointer" title="Hapus Periode">
+                    🗑️
+                  </button>
                 </td>
               </tr>
             ))}

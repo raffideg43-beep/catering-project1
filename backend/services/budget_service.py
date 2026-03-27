@@ -104,14 +104,26 @@ class BudgetService:
         ba_rows = getattr(ba_resp, "data", None) or []
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
         
-        target_bahan = sum(_d(r.get("budget_raw_material", r.get("budget_food", 0))) for r in ba_rows)
-        target_upah = sum(_d(r.get("operational_salary", r.get("budget_labor", 0))) for r in ba_rows)
-        
-        target_ops_fuel = sum(_d(r.get("operational_fuel", r.get("budget_ops", 0))) for r in ba_rows)
-        target_ops_util = sum(_d(r.get("operational_utilities", 0)) for r in ba_rows)
-        target_ops = target_ops_fuel + target_ops_util
-        
-        target_rent = sum(_d(r.get("budget_kitchen_rent", 0)) for r in ba_rows)
+        target_bahan = Decimal("0")
+        target_upah = Decimal("0")
+        target_ops = Decimal("0")
+        target_rent = Decimal("0")
+
+        for r in ba_rows:
+            raw_mat = _d(r.get("budget_raw_material"))
+            target_bahan += raw_mat if raw_mat > 0 else _d(r.get("budget_food"))
+            
+            # Upah can be either operational_salary or fallback to legacy budget_labor
+            upah = _d(r.get("operational_salary"))
+            target_upah += upah if upah > 0 else _d(r.get("budget_labor"))
+            
+            # Operational is fuel + utilities OR fallback to legacy budget_ops
+            fuel = _d(r.get("operational_fuel"))
+            utils = _d(r.get("operational_utilities"))
+            total_ops_sub = fuel + utils
+            target_ops += total_ops_sub if total_ops_sub > 0 else _d(r.get("budget_ops"))
+            
+            target_rent += _d(r.get("budget_kitchen_rent"))
 
         def _breakdown(cat_key: str, target: Decimal, label: str):
             real = realisasi.get(cat_key, Decimal("0"))

@@ -625,7 +625,10 @@ async def create_bulk_delivery(
     total_revenue = 0.0
     budget_raw_material = 0.0
     budget_operational = 0.0
-    budget_kitchen_rent = 0.0
+    budget_kitchen_rent = 0
+    op_salary_total = 0
+    op_fuel_total = 0
+    op_utils_total = 0
     allocation_types_used = set()
 
     for d in body.deliveries:
@@ -645,6 +648,13 @@ async def create_bulk_delivery(
         budget_raw_material += portions * raw_mat
         budget_operational += portions * ops
         budget_kitchen_rent += portions * rent
+        
+        # Breakdown operational
+        op_salary_total += portions * 1500
+        op_fuel_total += portions * 1200
+        op_utils_total += portions * 300
+        
+        # Tally the subtotals (need variables for these)
 
     final_alloc_type = list(allocation_types_used)[0] if len(allocation_types_used) == 1 else "mixed"
 
@@ -678,9 +688,9 @@ async def create_bulk_delivery(
         "budget_raw_material": str(budget_raw_material),
         "budget_operational": str(budget_operational),
         "budget_kitchen_rent": str(budget_kitchen_rent),
-        "operational_salary": str(total_portions * 1500),
-        "operational_fuel": str(total_portions * 1200),
-        "operational_utilities": str(total_portions * 300),
+        "operational_salary": str(op_salary_total),
+        "operational_fuel": str(op_fuel_total),
+        "operational_utilities": str(op_utils_total),
     }
     alloc_insert_resp = supabase.table("mbg_budget_allocations").insert(alloc_row).execute()
     alloc_db = (getattr(alloc_insert_resp, "data", None) or [{}])[0]

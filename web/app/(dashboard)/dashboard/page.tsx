@@ -260,29 +260,18 @@ export default function DashboardPage() {
             </div>
 
             {/* ─── Quick Links ──────────────────────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                    {
-                        label: "📥 Download Excel", href: "#", onClick: async () => {
-                            try {
-                                const r = await apiGet("/reports/excel/download");
-                                if (r?.data?.file_url) window.open(r.data.file_url, "_blank");
-                            } catch { alert("Gagal generate Excel"); }
-                        }
-                    },
-                    { label: "📋 Lihat Piutang", href: "/piutang" },
-                    { label: "💸 Lihat Hutang", href: "/hutang" },
-                    { label: "⚙️ Settings", href: "/settings" },
-                ].map((item) => (
-                    <a
-                        key={item.label}
-                        href={item.href}
-                        onClick={item.onClick ? (e) => { e.preventDefault(); item.onClick!(); } : undefined}
-                        className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all"
-                    >
-                        {item.label}
-                    </a>
-                ))}
+            <div>
+                <button
+                    onClick={async () => {
+                        try {
+                            const r = await apiGet("/reports/excel/download");
+                            if (r?.data?.file_url) window.open(r.data.file_url, "_blank");
+                        } catch { alert("Gagal generate Excel"); }
+                    }}
+                    className="w-full sm:w-auto bg-blue-50 border border-blue-200 text-blue-700 shadow-sm px-6 py-3 rounded-xl font-medium hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
+                >
+                    📥 Download Excel Laporan
+                </button>
             </div>
         </div>
     );

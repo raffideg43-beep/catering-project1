@@ -134,10 +134,7 @@ def delete_payroll_period(
     if not periods:
         raise HTTPException(status_code=404, detail="Periode tidak ditemukan")
         
-    if periods[0]["status"] != "draft":
-        raise HTTPException(status_code=400, detail="Hanya periode draft yang bisa dibatalkan/dihapus")
-        
-    # Delete cascade or delete items then period
+    # Delete items then period
     supabase.table("payroll_items").delete().eq("period_id", period_id).execute()
     supabase.table("payroll_periods").delete().eq("id", period_id).execute()
     

@@ -269,7 +269,7 @@ class ExportService:
         # Payroll Items
         period_resp = (
             supabase.table("payroll_periods")
-            .select("id, name, start_date")
+            .select("id, name, start_date, status")
             .eq("tenant_id", tenant_id)
             .neq("status", "draft")
             .gte("start_date", first.isoformat())
@@ -283,7 +283,7 @@ class ExportService:
         if period_ids:
             items_res = (
                 supabase.table("payroll_items")
-                .select("*, employees(name), payroll_periods(name, start_date)")
+                .select("*, employees(name), payroll_periods(name, start_date, status)")
                 .in_("period_id", period_ids)
                 .execute()
             )
@@ -302,14 +302,26 @@ class ExportService:
         )
         kas_ledger = getattr(ledger_res, "data", None) or []
 
-        # School Beneficiaries (for Sheet 9)
+        # School Beneficiaries (for Sheet 9) — include mbg_allocation_type
         sb_res = (
             supabase.table("school_beneficiaries")
-            .select("*, schools(name), beneficiary_types(name)")
+            .select("*, schools(name, mbg_allocation_type, default_portions), beneficiary_types(name)")
             .eq("tenant_id", tenant_id)
             .execute()
         )
         school_beneficiaries = getattr(sb_res, "data", None) or []
+
+        # Fund Disbursements (for Buku Kas sheets)
+        disb_res = (
+            supabase.table("fund_disbursements")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .eq("year", year)
+            .eq("month", month)
+            .order("disbursement_date")
+            .execute()
+        )
+        fund_disbursements = getattr(disb_res, "data", None) or []
 
         # Budget Summary
         from services.budget_service import budget_service
@@ -346,6 +358,8 @@ class ExportService:
             "school_beneficiaries": school_beneficiaries,
             "budget_summary": budget_summary,
             "budget_allocations": budget_allocations,
+            "master_schedule": self._fetch_schedule_for_export(tenant_id),
+            "fund_disbursements": fund_disbursements,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -403,7 +417,7 @@ class ExportService:
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
 
     def _fill_bku(self, ws, data: dict, year: int, month: int, kas_type: str, title: str) -> None:
-        from openpyxl.styles import Font, Alignment
+        from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
         
         ws.merge_cells("A1:G1")
@@ -411,9 +425,10 @@ class ExportService:
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        headers = ["No", "Tanggal", "Akun Kas", "Keterangan", "Masuk (Debit)", "Keluar (Kredit)", "Saldo Akhir"]
+        headers = ["No", "Tanggal", "Akun Kas", "Keterangan", "Masuk (Debit)", "Keluar (Kredit)", "Saldo Berjalan"]
         self._write_headers(ws, 3, headers)
 
+        # Filter ledger by kas type
         filtered_ledger = []
         for e in data.get("kas_ledger", []):
             acc_info = e.get("kas_accounts")
@@ -421,63 +436,223 @@ class ExportService:
                 filtered_ledger.append(e)
 
         row = 4
-        if not filtered_ledger:
-            ws.cell(row, 1, "—")
-            ws.cell(row, 2, "Tidak ada transaksi pada kas ini")
-            self._set_column_widths(ws)
-            return
+        n = 0
+        running_balance = Decimal("0")
 
-        for i, entry in enumerate(filtered_ledger, 1):
-            is_debit = entry.get("entry_type") == "debit"
-            masuk = entry.get("amount") if is_debit else 0
-            keluar = 0 if is_debit else entry.get("amount")
-            
-            ws.cell(row, 1, i)
-            ws.cell(row, 2, entry.get("entry_date", ""))
-            
-            # Safe access for kas_account inner join
-            acc_info = entry.get("kas_accounts")
-            acc_name = acc_info.get("name", "") if isinstance(acc_info, dict) else ""
-            ws.cell(row, 3, acc_name)
-            
-            ws.cell(row, 4, entry.get("description", ""))
-            
-            ws.cell(row, 5, float(masuk)).number_format = '"Rp "#,##0'
-            ws.cell(row, 6, float(keluar)).number_format = '"Rp "#,##0'
-            ws.cell(row, 7, float(entry.get("balance_after", 0))).number_format = '"Rp "#,##0'
-            
-            self._alt_row(ws, row, 3)
+        # If kas_ledger has no entries for this type, synthesize from disbursements + transactions
+        if not filtered_ledger:
+            # --- Synthesize DEBIT entries from fund_disbursements (va_bank only) ---
+            if kas_type == "va_bank":
+                for disb in data.get("fund_disbursements", []):
+                    n += 1
+                    amt = _d(disb.get("amount"))
+                    running_balance += amt
+                    ref = disb.get("reference_number", "")
+                    ws.cell(row, 1, n)
+                    ws.cell(row, 2, disb.get("disbursement_date", ""))
+                    ws.cell(row, 3, title)
+                    ws.cell(row, 4, f"Pencairan Dana MBG (Ref: {ref})" if ref else "Pencairan Dana MBG")
+                    ws.cell(row, 5, float(amt)).number_format = '"Rp "#,##0'
+                    ws.cell(row, 6, 0).number_format = '"Rp "#,##0'
+                    ws.cell(row, 7, float(running_balance)).number_format = '"Rp "#,##0'
+                    self._alt_row(ws, row, 3)
+                    row += 1
+
+            # --- Synthesize KREDIT entries from purchase transactions ---
+            for trx in data.get("transactions", []):
+                if trx.get("status") in ("void", "cancelled"):
+                    continue
+                n += 1
+                amt = _d(trx.get("total"))
+                running_balance -= amt
+                ws.cell(row, 1, n)
+                ws.cell(row, 2, trx.get("date", ""))
+                ws.cell(row, 3, title)
+                supplier = trx.get("nama_toko", "") or "Supplier"
+                ws.cell(row, 4, f"Pembelian bahan - {supplier}")
+                ws.cell(row, 5, 0).number_format = '"Rp "#,##0'
+                ws.cell(row, 6, float(amt)).number_format = '"Rp "#,##0'
+                ws.cell(row, 7, float(running_balance)).number_format = '"Rp "#,##0'
+                self._alt_row(ws, row, 3)
+                row += 1
+
+            if n == 0:
+                ws.cell(row, 1, "—")
+                ws.cell(row, 2, "Tidak ada transaksi pada kas ini")
+        else:
+            # Use actual kas_ledger entries
+            for entry in filtered_ledger:
+                n += 1
+                is_debit = entry.get("entry_type") == "debit"
+                masuk = float(entry.get("amount", 0)) if is_debit else 0
+                keluar = 0 if is_debit else float(entry.get("amount", 0))
+                
+                ws.cell(row, 1, n)
+                ws.cell(row, 2, entry.get("entry_date", ""))
+                
+                acc_info = entry.get("kas_accounts")
+                acc_name = acc_info.get("name", "") if isinstance(acc_info, dict) else ""
+                ws.cell(row, 3, acc_name)
+                
+                ws.cell(row, 4, entry.get("description", ""))
+                
+                ws.cell(row, 5, masuk).number_format = '"Rp "#,##0'
+                ws.cell(row, 6, keluar).number_format = '"Rp "#,##0'
+                ws.cell(row, 7, float(entry.get("balance_after", 0))).number_format = '"Rp "#,##0'
+                
+                self._alt_row(ws, row, 3)
+                row += 1
+
+        # Total row
+        if n > 0:
             row += 1
+            total_debit = Decimal("0")
+            total_kredit = Decimal("0")
+            if filtered_ledger:
+                for e in filtered_ledger:
+                    if e.get("entry_type") == "debit":
+                        total_debit += _d(e.get("amount"))
+                    else:
+                        total_kredit += _d(e.get("amount"))
+            else:
+                for disb in data.get("fund_disbursements", []):
+                    total_debit += _d(disb.get("amount"))
+                for trx in data.get("transactions", []):
+                    if trx.get("status") not in ("void", "cancelled"):
+                        total_kredit += _d(trx.get("total"))
+
+            ws.cell(row, 4, "TOTAL").font = Font(bold=True)
+            ws.cell(row, 5, float(total_debit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 5).font = Font(bold=True)
+            ws.cell(row, 6, float(total_kredit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 6).font = Font(bold=True)
+            ws.cell(row, 7, float(total_debit - total_kredit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 7).font = Font(bold=True)
 
         self._set_column_widths(ws)
 
     def _fill_penerima_manfaat(self, ws, data: dict) -> None:
-        from openpyxl.styles import Font, Alignment
-        ws.merge_cells("A1:D1")
-        ws["A1"] = "DATA PENERIMA MANFAAT MBG"
+        from openpyxl.styles import Font, Alignment, PatternFill
+        ws.merge_cells("A1:I1")
+        ws["A1"] = "DATA PENERIMA MANFAAT & LOGISTIK PENGIRIMAN MBG"
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        headers = ["No", "Sekolah", "Jenis Penerima", "Jumlah Porsi (Target)"]
+        headers = [
+            "No", "Sekolah", "Tipe Alokasi", "Jenis Penerima",
+            "Porsi Target/Hari", "Porsi Terkirim (Bulan Ini)",
+            "Berangkat", "Target Tiba", "Selesai",
+        ]
         self._write_headers(ws, 3, headers)
-        
+
+        # Build logistics lookup by school_id from master schedule
+        schedule = data.get("master_schedule") or {}
+        logistics_by_school = {}
+        for s in schedule.get("schools", []):
+            logistics_by_school[s["school_id"]] = s
+
+        # Aggregate actual delivered portions per school this month
+        delivered_by_school = {}
+        for d in data.get("deliveries", []):
+            sid = d.get("school_id", "")
+            delivered_by_school[sid] = delivered_by_school.get(sid, 0) + d.get("portions_sent", 0)
+
         sb_data = data.get("school_beneficiaries", [])
         row = 4
         if not sb_data:
             ws.cell(row, 1, "—")
             ws.cell(row, 2, "Data Kosong")
         else:
+            seen_schools = set()
             for i, sb in enumerate(sb_data, 1):
-                sch_name = sb.get("schools", {}).get("name", "") if isinstance(sb.get("schools"), dict) else ""
+                sch = sb.get("schools", {}) if isinstance(sb.get("schools"), dict) else {}
+                sch_name = sch.get("name", "")
+                sch_id = sb.get("school_id", "")
                 bt_name = sb.get("beneficiary_types", {}).get("name", "") if isinstance(sb.get("beneficiary_types"), dict) else ""
+                alloc_type = sch.get("mbg_allocation_type", "large")
+                alloc_label = "Rp 15.000" if alloc_type != "small" else "Rp 13.000"
+
+                # Use default_portions from schools table as daily target
+                target_portions = sb.get("target_portions", 0) or sch.get("default_portions", 0)
+                actual_delivered = delivered_by_school.get(sch_id, 0)
+
                 ws.cell(row, 1, i)
                 ws.cell(row, 2, sch_name)
-                ws.cell(row, 3, bt_name)
-                ws.cell(row, 4, sb.get("target_portions", 0))
-                self._alt_row(ws, row, 3)
+                ws.cell(row, 3, alloc_label)
+                ws.cell(row, 4, bt_name)
+                ws.cell(row, 5, target_portions)
+                ws.cell(row, 6, actual_delivered)
+
+                # Logistics columns — only fill once per school
+                logistic = logistics_by_school.get(sch_id)
+                if logistic and sch_id not in seen_schools:
+                    ws.cell(row, 7, logistic.get("depart_time", "-"))
+                    ws.cell(row, 8, logistic.get("target_arrival", "-"))
+                    ws.cell(row, 9, logistic.get("done_at_school", "-"))
+                    seen_schools.add(sch_id)
+                else:
+                    for c in range(7, 10):
+                        ws.cell(row, c, "-")
+
+                self._alt_row(ws, row, len(headers) - 1)
                 row += 1
-                
+
+            # Add schools that have logistics but no beneficiary entry
+            for sid, logistic in logistics_by_school.items():
+                if sid not in seen_schools:
+                    row += 1
+                    ws.cell(row, 1, "—")
+                    ws.cell(row, 2, logistic.get("school_name", "?"))
+                    ws.cell(row, 3, "-")
+                    ws.cell(row, 4, "(Tanpa data penerima)")
+                    ws.cell(row, 5, logistic.get("default_portions", 0))
+                    ws.cell(row, 6, delivered_by_school.get(sid, 0))
+                    ws.cell(row, 7, logistic.get("depart_time", "-"))
+                    ws.cell(row, 8, logistic.get("target_arrival", "-"))
+                    ws.cell(row, 9, logistic.get("done_at_school", "-"))
+                    seen_schools.add(sid)
+
+        # Totals row
+        total_target = sum(
+            (sb.get("target_portions", 0) or (sb.get("schools", {}) or {}).get("default_portions", 0))
+            for sb in sb_data
+        ) if sb_data else 0
+        total_delivered = sum(delivered_by_school.values())
+        row += 1
+        ws.cell(row, 4, "TOTAL").font = Font(bold=True)
+        ws.cell(row, 5, total_target).font = Font(bold=True)
+        ws.cell(row, 6, total_delivered).font = Font(bold=True)
+
+        # Add master summary below table
+        row += 2
+        if schedule:
+            ws.cell(row, 1, "Jadwal Dapur Master").font = Font(bold=True, size=11)
+            fill = PatternFill("solid", fgColor="E8F5E9")
+            row += 1
+            info = [
+                ("Persiapan Bahan", schedule.get("prep_start_time", "-")),
+                ("Mulai Masak", schedule.get("cook_start_time", "-")),
+                ("Selesai Masak", schedule.get("cook_end_time", "-")),
+                ("Total Porsi", schedule.get("total_portions", 0)),
+            ]
+            for label, val in info:
+                ws.cell(row, 1, label).fill = fill
+                ws.cell(row, 2, val).fill = fill
+                row += 1
+        else:
+            ws.cell(row, 1, "⚠️ Master schedule belum di-setup. Data logistik tidak tersedia.")
+            ws.cell(row, 1).font = Font(italic=True, color="FF0000")
+
         self._set_column_widths(ws)
+
+    def _fetch_schedule_for_export(self, tenant_id: str) -> dict:
+        """Fetch master schedule data for Excel export."""
+        try:
+            from routers.schedules import _fetch_master_data
+            return _fetch_master_data(tenant_id) or {}
+        except Exception as e:
+            logger.warning(f"Failed to fetch master schedule for export: {e}")
+            return {}
 
     def _fill_rekapitulasi_juknis(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, Alignment, PatternFill
@@ -503,14 +678,26 @@ class ExportService:
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
         total_exp = exp_bahan + exp_upah + exp_ops
         
-        # Target mengikuti data per-porsi dari budget_allocations aktual
         budget_allocations = data.get("budget_allocations", [])
-        target_bahan = sum(_d(ba.get("budget_raw_material", ba.get("budget_food", 0))) for ba in budget_allocations)
-        target_upah = sum(_d(ba.get("operational_salary", ba.get("budget_labor", 0))) for ba in budget_allocations)
-        target_ops_fuel = sum(_d(ba.get("operational_fuel", ba.get("budget_ops", 0))) for ba in budget_allocations)
-        target_ops_util = sum(_d(ba.get("operational_utilities", 0)) for ba in budget_allocations)
-        target_ops = target_ops_fuel + target_ops_util
-        target_rent = sum(_d(ba.get("budget_kitchen_rent", 0)) for ba in budget_allocations)
+        target_bahan = Decimal("0")
+        target_upah = Decimal("0")
+        target_ops = Decimal("0")
+        target_rent = Decimal("0")
+        
+        for ba in budget_allocations:
+            raw_mat = _d(ba.get("budget_raw_material"))
+            target_bahan += raw_mat if raw_mat > 0 else _d(ba.get("budget_food"))
+            
+            upah = _d(ba.get("operational_salary"))
+            target_upah += upah if upah > 0 else _d(ba.get("budget_labor"))
+            
+            fuel = _d(ba.get("operational_fuel"))
+            utils = _d(ba.get("operational_utilities"))
+            total_ops_sub = fuel + utils
+            target_ops += total_ops_sub if total_ops_sub > 0 else _d(ba.get("budget_ops"))
+            
+            target_rent += _d(ba.get("budget_kitchen_rent"))
+            
         target_total = target_bahan + target_upah + target_ops + target_rent
         
         def pct(aktual, target):
@@ -904,13 +1091,25 @@ class ExportService:
         total_exp = sum(_d(t.get("total")) for t in transactions)
         
         budget_allocations = data.get("budget_allocations", [])
-        # Aggregate logic supporting both legacy 'budget_food' and new per-portion fields
-        target_bahan = sum(_d(ba.get("budget_raw_material", ba.get("budget_food", 0))) for ba in budget_allocations)
-        target_upah = sum(_d(ba.get("operational_salary", ba.get("budget_labor", 0))) for ba in budget_allocations)
-        target_ops_fuel = sum(_d(ba.get("operational_fuel", ba.get("budget_ops", 0))) for ba in budget_allocations)
-        target_ops_util = sum(_d(ba.get("operational_utilities", 0)) for ba in budget_allocations)
-        target_ops = target_ops_fuel + target_ops_util
-        target_rent = sum(_d(ba.get("budget_kitchen_rent", 0)) for ba in budget_allocations)
+        
+        target_bahan = Decimal("0")
+        target_upah = Decimal("0")
+        target_ops = Decimal("0")
+        target_rent = Decimal("0")
+
+        for ba in budget_allocations:
+            raw_mat = _d(ba.get("budget_raw_material"))
+            target_bahan += raw_mat if raw_mat > 0 else _d(ba.get("budget_food"))
+            
+            upah = _d(ba.get("operational_salary"))
+            target_upah += upah if upah > 0 else _d(ba.get("budget_labor"))
+            
+            fuel = _d(ba.get("operational_fuel"))
+            utils = _d(ba.get("operational_utilities"))
+            total_ops_sub = fuel + utils
+            target_ops += total_ops_sub if total_ops_sub > 0 else _d(ba.get("budget_ops"))
+            
+            target_rent += _d(ba.get("budget_kitchen_rent"))
 
         ws["A13"] = "Komposisi Biaya (Target vs Realisasi)"
         ws["A13"].font = Font(bold=True, size=11)
@@ -1028,22 +1227,77 @@ class ExportService:
         from openpyxl.styles import Font, PatternFill, Alignment
         bulan_str = BULAN[month]
 
-        # ── Section A: BIAYA OPERASIONAL ──
-        ws.merge_cells("A1:G1")
-        ws["A1"] = f"BIAYA OPERASIONAL — {bulan_str} {year}"
+        # ── Section A: TARGET vs REALISASI RINGKASAN ──
+        ws.merge_cells("A1:E1")
+        ws["A1"] = f"RINGKASAN OPERASIONAL & UPAH — {bulan_str} {year}"
         ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        ops_headers = ["No", "Tanggal", "Nama Biaya", "Kategori", "Nominal", "Rutin?", "Catatan"]
-        self._write_headers(ws, 2, ops_headers)
+        sum_headers = ["Kategori", "Target (Per Porsi)", "Realisasi", "Selisih", "Status"]
+        self._write_headers(ws, 2, sum_headers)
+
+        # Calculate targets from budget_allocations
+        budget_allocations = data.get("budget_allocations", [])
+        target_upah = Decimal("0")
+        target_ops = Decimal("0")
+        target_rent = Decimal("0")
+        for ba in budget_allocations:
+            u = _d(ba.get("operational_salary"))
+            target_upah += u if u > 0 else _d(ba.get("budget_labor"))
+            f = _d(ba.get("operational_fuel"))
+            ut = _d(ba.get("operational_utilities"))
+            sub = f + ut
+            target_ops += sub if sub > 0 else _d(ba.get("budget_ops"))
+            target_rent += _d(ba.get("budget_kitchen_rent"))
+
+        # Calculate actuals from payroll and operational costs
+        actual_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
+        actual_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
 
         row = 3
-        total_ops = Decimal("0")
+        summary_items = [
+            ("Gaji & Upah (Rp 1.500/porsi)", target_upah, actual_upah),
+            ("Operasional / BBM / Listrik (Rp 1.500/porsi)", target_ops, actual_ops),
+            ("Sewa Dapur / Laba Bersih (Rp 2.000/porsi)", target_rent, Decimal("0")),
+        ]
+        for label, tgt, act in summary_items:
+            selisih = tgt - act
+            status = "✅ Hemat" if selisih >= 0 else "⚠️ Over"
+            ws.cell(row, 1, label)
+            ws.cell(row, 2, float(tgt)).number_format = '"Rp "#,##0'
+            ws.cell(row, 3, float(act)).number_format = '"Rp "#,##0'
+            ws.cell(row, 4, float(selisih)).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, status)
+            if selisih < 0:
+                ws.cell(row, 4).font = Font(color="FF0000", bold=True)
+                ws.cell(row, 5).font = Font(color="FF0000")
+            else:
+                ws.cell(row, 4).font = Font(color="006400", bold=True)
+                ws.cell(row, 5).font = Font(color="006400")
+            row += 1
+
+        row += 1
+
+        # ── Section B: DETAIL BIAYA OPERASIONAL ──
+        ws.merge_cells(f"A{row}:G{row}")
+        ws[f"A{row}"] = f"DETAIL BIAYA OPERASIONAL — {bulan_str} {year}"
+        ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws[f"A{row}"].alignment = Alignment(horizontal="center")
+        row += 1
+
+        ops_headers = ["No", "Tanggal", "Nama Biaya", "Kategori", "Nominal", "Rutin?", "Catatan"]
+        self._write_headers(ws, row, ops_headers)
+        row += 1
+
+        total_ops_detail = Decimal("0")
+        n = 0
         
-        for n, cost in enumerate(data.get("operational_costs", []), 1):
+        for cost in data.get("operational_costs", []):
+            n += 1
             amt = float(_d(cost.get("amount")))
-            total_ops += _d(cost.get("amount"))
+            total_ops_detail += _d(cost.get("amount"))
             
             ws.cell(row, 1, n)
             ws.cell(row, 2, cost.get("cost_date", ""))
@@ -1060,10 +1314,10 @@ class ExportService:
             ws.cell(row, 2, "Tidak ada biaya operasional bulan ini")
             row += 1
 
-        self._write_total_row(ws, row, {5: float(total_ops)})
+        self._write_total_row(ws, row, {5: float(total_ops_detail)})
         row += 2
 
-        # ── Section B: GAJI & UPAH ──
+        # ── Section C: GAJI & UPAH ──
         ws.merge_cells(f"A{row}:J{row}")
         ws[f"A{row}"] = f"GAJI & UPAH (BERDASARKAN PERIODE) — {bulan_str} {year}"
         ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
@@ -1071,11 +1325,11 @@ class ExportService:
         ws[f"A{row}"].alignment = Alignment(horizontal="center")
         row += 1
 
-        upah_headers = ["No", "Periode", "Mulai", "Nama", "Jabatan", "Hadir", "Alpa", "Gaji/Hari", "Potongan", "Total Terima"]
+        upah_headers = ["No", "Periode", "Status", "Mulai", "Nama", "Jabatan", "Hadir", "Alpa", "Potongan", "Total Terima"]
         self._write_headers(ws, row, upah_headers)
         row += 1
 
-        total_upah = Decimal("0")
+        total_upah_detail = Decimal("0")
         n = 0
         
         for item in data.get("payroll_items", []):
@@ -1083,16 +1337,16 @@ class ExportService:
             period = item.get("payroll_periods", {})
             emp = item.get("employees", {})
             net = float(_d(item.get("net_amount")))
-            total_upah += _d(item.get("net_amount"))
+            total_upah_detail += _d(item.get("net_amount"))
             
             ws.cell(row, 1, n)
             ws.cell(row, 2, period.get("name", ""))
-            ws.cell(row, 3, period.get("start_date", ""))
-            ws.cell(row, 4, emp.get("name", ""))
-            ws.cell(row, 5, item.get("position_name", ""))
-            ws.cell(row, 6, item.get("present_days", 0))
-            ws.cell(row, 7, item.get("absent_days", 0))
-            ws.cell(row, 8, float(_d(item.get("base_salary")))).number_format = '"Rp "#,##0'
+            ws.cell(row, 3, period.get("status", ""))
+            ws.cell(row, 4, period.get("start_date", ""))
+            ws.cell(row, 5, emp.get("name", ""))
+            ws.cell(row, 6, item.get("position_name", ""))
+            ws.cell(row, 7, item.get("present_days", 0))
+            ws.cell(row, 8, item.get("absent_days", 0))
             ws.cell(row, 9, float(_d(item.get("deductions")))).number_format = '"Rp "#,##0'
             ws.cell(row, 10, net).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
@@ -1103,7 +1357,7 @@ class ExportService:
             ws.cell(row, 2, "Tidak ada data gaji bulan ini")
             row += 1
             
-        self._write_total_row(ws, row, {10: float(total_upah)})
+        self._write_total_row(ws, row, {10: float(total_upah_detail)})
         
         self._set_column_widths(ws)
         ws.freeze_panes = "A3"
