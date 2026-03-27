@@ -52,7 +52,6 @@ export default function PembukuanPage() {
     const [loading, setLoading] = useState(true);
     const [excelLoading, setExcelLoading] = useState(false);
     const [legalDocs, setLegalDocs] = useState<any[]>([]);
-    const [sptLoading, setSptLoading] = useState(false);
     const [bapLoading, setBapLoading] = useState(false);
     
     const [error, setError] = useState<string | null>(null);
@@ -117,17 +116,8 @@ export default function PembukuanPage() {
         }
     };
 
-    const handleGenerateSPT = async () => {
-        setSptLoading(true);
-        try {
-            await apiPost("/legal/spt/generate", { year: tahun, month: bulan });
-            fetchData();
-        } catch (e: any) {
-            alert(e.response?.data?.detail || "Gagal generate SPT.");
-        } finally {
-            setSptLoading(false);
-        }
-    };
+
+
 
     const handleGenerateBAP = async () => {
         setBapLoading(true);
@@ -155,7 +145,6 @@ export default function PembukuanPage() {
 
     const getDoc = (type: string) => legalDocs.find(d => d.doc_type === type);
     const excelDoc = getDoc("excel_dinas");
-    const sptDoc = getDoc("spt");
     const bapDoc = getDoc("bap");
 
     const handleSaveOps = async (e: React.FormEvent) => {
@@ -203,7 +192,7 @@ export default function PembukuanPage() {
             />
 
             {/* ─── DOKUMEN LEGAL & EXCEL SECTION ─────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
                 {/* EXCEL DINAS */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
@@ -241,54 +230,6 @@ export default function PembukuanPage() {
                     </div>
                 </div>
 
-                {/* SPT */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex gap-3">
-                            <span className="text-3xl">📋</span>
-                            <div>
-                                <h3 className="font-bold text-gray-900">SPT</h3>
-                                <p className="text-sm text-gray-500">Surat Pernyataan Tanggung Jawab</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="mb-4">
-                        <div className="text-sm flex items-center justify-between py-1">
-                            <span className="text-gray-500">Status:</span>
-                            <span className={`font-medium ${!sptDoc ? "text-gray-500" : sptDoc.status === "draft" ? "text-orange-500" : sptDoc.status === "final" ? "text-green-600" : "text-blue-600"}`}>
-                                {!sptDoc ? "⚪ Belum digenerate" : sptDoc.status === "draft" ? "📝 Draft (Belum TTD)" : sptDoc.status === "final" ? "✅ Final (Sudah TTD)" : "📤 Submitted"}
-                            </span>
-                        </div>
-                        {sptDoc && (
-                           <div className="text-xs text-gray-400 mt-1">Generated: {new Date(sptDoc.generated_at).toLocaleString("id-ID")}</div>
-                        )}
-                    </div>
-                    
-                    <div className="mt-auto flex flex-col gap-2">
-                        {sptDoc && (
-                            <div className="grid grid-cols-2 gap-2">
-                                <a href={sptDoc.file_url} target="_blank" rel="noopener noreferrer" className="py-2 bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg text-sm font-medium text-center transition-colors">
-                                    📥 Download PDF
-                                </a>
-                                {sptDoc.status === "draft" ? (
-                                    <button onClick={() => handleUpdateStatus(sptDoc.id, "final")} className="py-2 bg-green-500 text-white hover:bg-green-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
-                                        ✅ Tandai Final
-                                    </button>
-                                ) : sptDoc.status === "final" ? (
-                                    <button onClick={() => handleUpdateStatus(sptDoc.id, "submitted")} className="py-2 bg-blue-500 text-white hover:bg-blue-600 rounded-lg text-sm font-medium transition-colors cursor-pointer">
-                                        📤 Tandai Submitted
-                                    </button>
-                                ) : (
-                                    <div className="py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium text-center">✔ Submitted</div>
-                                )}
-                            </div>
-                        )}
-                        <button onClick={handleGenerateSPT} disabled={sptLoading} className="w-full py-2 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50">
-                            {sptLoading ? "⏳ Generating..." : sptDoc ? "🔄 Generate Ulang" : "➕ Generate SPT"}
-                        </button>
-                    </div>
-                </div>
 
                 {/* BAP */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
