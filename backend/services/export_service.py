@@ -338,6 +338,71 @@ class ExportService:
         )
         budget_allocations = getattr(ba_res, "data", None) or []
 
+        # ─── Compliance data (Modul 21.5e) ──────────────────────────────────
+        try:
+            hyg_res = (
+                supabase.table("hygiene_checks").select("*")
+                .eq("tenant_id", tenant_id)
+                .gte("check_date", first.isoformat())
+                .lte("check_date", last.isoformat())
+                .order("check_date")
+                .execute()
+            )
+            hygiene_checks = getattr(hyg_res, "data", None) or []
+        except Exception:
+            hygiene_checks = []
+
+        try:
+            temp_res = (
+                supabase.table("temperature_logs").select("*")
+                .eq("tenant_id", tenant_id)
+                .gte("log_date", first.isoformat())
+                .lte("log_date", last.isoformat())
+                .order("log_date")
+                .execute()
+            )
+            temperature_logs = getattr(temp_res, "data", None) or []
+        except Exception:
+            temperature_logs = []
+
+        try:
+            smp_res = (
+                supabase.table("food_samples").select("*")
+                .eq("tenant_id", tenant_id)
+                .eq("status", "disimpan")
+                .order("expires_at")
+                .execute()
+            )
+            food_samples = getattr(smp_res, "data", None) or []
+        except Exception:
+            food_samples = []
+
+        try:
+            waste_res = (
+                supabase.table("food_waste_reports").select("*, schools(name)")
+                .eq("tenant_id", tenant_id)
+                .gte("report_date", first.isoformat())
+                .lte("report_date", last.isoformat())
+                .order("report_date")
+                .execute()
+            )
+            food_waste_reports = getattr(waste_res, "data", None) or []
+        except Exception:
+            food_waste_reports = []
+
+        try:
+            inc_res = (
+                supabase.table("incident_reports").select("*, schools(name)")
+                .eq("tenant_id", tenant_id)
+                .gte("incident_time", f"{first}T00:00:00")
+                .lte("incident_time", f"{last}T23:59:59")
+                .order("incident_time", desc=True)
+                .execute()
+            )
+            incident_reports = getattr(inc_res, "data", None) or []
+        except Exception:
+            incident_reports = []
+
         return {
             "tenant": tenant,
             "first": first,
@@ -360,7 +425,11 @@ class ExportService:
             "budget_allocations": budget_allocations,
             "master_schedule": self._fetch_schedule_for_export(tenant_id),
             "fund_disbursements": fund_disbursements,
-            **self._fetch_compliance_data(supabase, tenant_id, first, last),
+            "hygiene_checks": hygiene_checks,
+            "temperature_logs": temperature_logs,
+            "food_samples": food_samples,
+            "food_waste_reports": food_waste_reports,
+            "incident_reports": incident_reports,
         }
 
     # ─── Workbook builder ─────────────────────────────────────────────────────
@@ -400,6 +469,13 @@ class ExportService:
         # Sheet 10: Rekapitulasi Juknis
         ws_rj = wb.create_sheet("Rekapitulasi Juknis")
 
+        # Sheet 11-15: Compliance (Modul 21.5e)
+        ws_hygiene = wb.create_sheet("Higiene")
+        ws_suhu = wb.create_sheet("Suhu")
+        ws_sampel = wb.create_sheet("Bank Sampel")
+        ws_sisa = wb.create_sheet("Sisa Makanan")
+        ws_insiden = wb.create_sheet("Insiden")
+
         logger.info(f"Building workbook with sheets: {wb.sheetnames}")
 
         self._fill_ringkasan(ws_ringkasan, data, year, month)
@@ -413,18 +489,12 @@ class ExportService:
         self._fill_penerima_manfaat(ws_pm, data)
         self._fill_rekapitulasi_juknis(ws_rj, data, year, month)
 
-        # ──── Compliance sheets (Modul 21.5e) ────
-        ws_hyg = wb.create_sheet("Higiene")
-        ws_temp = wb.create_sheet("Suhu")
-        ws_samp = wb.create_sheet("Bank Sampel")
-        ws_waste = wb.create_sheet("Sisa Makanan")
-        ws_inc = wb.create_sheet("Insiden")
-
-        self._fill_hygiene_sheet(ws_hyg, data, year, month)
-        self._fill_temperature_sheet(ws_temp, data, year, month)
-        self._fill_samples_sheet(ws_samp, data)
-        self._fill_food_waste_sheet(ws_waste, data, year, month)
-        self._fill_incidents_sheet(ws_inc, data, year, month)
+        # Fill compliance sheets
+        self._fill_hygiene(ws_hygiene, data, year, month)
+        self._fill_suhu(ws_suhu, data, year, month)
+        self._fill_bank_sampel(ws_sampel, data)
+        self._fill_sisa_makanan(ws_sisa, data, year, month)
+        self._fill_insiden(ws_insiden, data, year, month)
 
         return wb
 
@@ -1488,66 +1558,12 @@ class ExportService:
         except Exception as e:
             logger.warning(f"upsert excel_files gagal: {e}")
 
-    # ─── Compliance data fetching (Modul 21.5e) ───────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════════
+    # COMPLIANCE SHEETS — Modul 21.5e
+    # ═══════════════════════════════════════════════════════════════════════
 
-    def _fetch_compliance_data(self, supabase, tenant_id: str, first: date, last: date) -> dict:
-        """Fetch all compliance data needed for 5 compliance sheets."""
-        try:
-            hc = supabase.table("hygiene_checks").select("*").eq(
-                "tenant_id", tenant_id
-            ).gte("check_date", first.isoformat()).lte(
-                "check_date", last.isoformat()
-            ).order("check_date").execute()
-        except Exception:
-            hc = None
-
-        try:
-            tl = supabase.table("temperature_logs").select("*").eq(
-                "tenant_id", tenant_id
-            ).gte("log_date", first.isoformat()).lte(
-                "log_date", last.isoformat()
-            ).order("log_date").order("log_time").execute()
-        except Exception:
-            tl = None
-
-        try:
-            fs = supabase.table("food_samples").select("*").eq(
-                "tenant_id", tenant_id
-            ).gte("sample_date", first.isoformat()).lte(
-                "sample_date", last.isoformat()
-            ).order("sample_date").execute()
-        except Exception:
-            fs = None
-
-        try:
-            fw = supabase.table("food_waste_reports").select("*, schools(name)").eq(
-                "tenant_id", tenant_id
-            ).gte("report_date", first.isoformat()).lte(
-                "report_date", last.isoformat()
-            ).order("report_date").execute()
-        except Exception:
-            fw = None
-
-        try:
-            ir = supabase.table("incident_reports").select("*, schools(name)").eq(
-                "tenant_id", tenant_id
-            ).gte("incident_time", f"{first}T00:00:00").lte(
-                "incident_time", f"{last}T23:59:59"
-            ).order("incident_time", desc=True).execute()
-        except Exception:
-            ir = None
-
-        return {
-            "hygiene_checks": getattr(hc, "data", None) or [] if hc else [],
-            "temperature_logs": getattr(tl, "data", None) or [] if tl else [],
-            "food_samples": getattr(fs, "data", None) or [] if fs else [],
-            "food_waste_reports": getattr(fw, "data", None) or [] if fw else [],
-            "incident_reports": getattr(ir, "data", None) or [] if ir else [],
-        }
-
-    # ─── Sheet: Higiene ───────────────────────────────────────────────────────
-
-    def _fill_hygiene_sheet(self, ws, data: dict, year: int, month: int) -> None:
+    def _fill_hygiene(self, ws, data: dict, year: int, month: int) -> None:
+        """Sheet 11: Checklist Higiene Bulanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
 
@@ -1557,61 +1573,52 @@ class ExportService:
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = [
-            "Tanggal", "Lantai/Dinding", "Suhu", "Peralatan", "Personel",
-            "Air Bersih", "Area Penyimpanan", "Tempat Sampah", "Status", "Catatan",
+            "Tanggal", "Lantai/Dinding", "Suhu Penyimpanan", "Peralatan Masak",
+            "Atribut Personel", "Air Bersih", "Area Penyimpanan", "Tempat Sampah",
+            "Status", "Catatan"
         ]
-        self._write_headers(ws, 3, headers)
+        hdr_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        for col_idx, hdr in enumerate(headers, 1):
+            cell = ws.cell(row=3, column=col_idx, value=hdr)
+            cell.font = Font(bold=True, color="FFFFFF", size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
 
         checks = data.get("hygiene_checks", [])
-
         area_map = {
-            "lantai": 2, "dinding": 2,
-            "suhu": 3, "chiller": 3, "freezer": 3,
-            "peralatan": 4, "masak": 4,
-            "personel": 5, "masker": 5, "apron": 5, "hairnet": 5,
-            "air": 6,
-            "penyimpanan": 7,
-            "sampah": 8,
+            "Lantai": 2, "Suhu": 3, "Peralatan": 4, "Personel": 5,
+            "Air": 6, "Penyimpanan": 7, "Sampah": 8,
         }
 
         for idx, check in enumerate(checks, start=4):
-            ws.cell(row=idx, column=1).value = check.get("check_date", "")
+            ws.cell(row=idx, column=1, value=check.get("check_date", ""))
+
             items = check.get("items", [])
-
             for item in items:
-                area_lower = (item.get("area", "") or "").lower()
-                col = None
-                for keyword, c in area_map.items():
-                    if keyword in area_lower:
-                        col = c
+                area_name = item.get("area", "")
+                for key, col in area_map.items():
+                    if key.lower() in area_name.lower():
+                        icon = "✓" if item.get("status") == "baik" else "⚠️"
+                        ws.cell(row=idx, column=col, value=icon)
                         break
-                if col:
-                    st = item.get("status", "")
-                    icon = "✓" if st == "baik" else "⚠️" if st == "perlu_perbaikan" else "✗"
-                    ws.cell(row=idx, column=col).value = icon
 
-            overall = check.get("overall_status", "")
-            status_cell = ws.cell(row=idx, column=9)
-            status_cell.value = overall.upper().replace("_", " ")
-            if overall == "tidak_layak":
+            status = check.get("overall_status", "")
+            status_cell = ws.cell(row=idx, column=9, value=status.upper())
+            if status == "tidak_layak":
                 status_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
                 status_cell.font = Font(color="FFFFFF", bold=True)
-            elif overall == "perlu_perbaikan":
+            elif status == "perlu_perbaikan":
                 status_cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
-            else:
-                status_cell.fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
 
-            ws.cell(row=idx, column=10).value = check.get("notes", "")
+            ws.cell(row=idx, column=10, value=check.get("notes", ""))
 
-        # Column widths
         ws.column_dimensions["A"].width = 12
-        for col in ["B", "C", "D", "E", "F", "G", "H", "I"]:
-            ws.column_dimensions[col].width = 14
-        ws.column_dimensions["J"].width = 20
+        for col_letter in ["B", "C", "D", "E", "F", "G", "H", "I"]:
+            ws.column_dimensions[col_letter].width = 14
+        ws.column_dimensions["J"].width = 22
 
-    # ─── Sheet: Suhu ──────────────────────────────────────────────────────────
-
-    def _fill_temperature_sheet(self, ws, data: dict, year: int, month: int) -> None:
+    def _fill_suhu(self, ws, data: dict, year: int, month: int) -> None:
+        """Sheet 12: Monitoring Suhu."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
 
@@ -1621,18 +1628,21 @@ class ExportService:
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = ["Tanggal", "Jam", "Area", "Suhu (°C)", "Status", "Catatan"]
-        self._write_headers(ws, 3, headers)
+        hdr_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        for col_idx, hdr in enumerate(headers, 1):
+            cell = ws.cell(row=3, column=col_idx, value=hdr)
+            cell.font = Font(bold=True, color="FFFFFF", size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
 
         logs = data.get("temperature_logs", [])
-
         for idx, log in enumerate(logs, start=4):
-            ws.cell(row=idx, column=1).value = log.get("log_date", "")
-            ws.cell(row=idx, column=2).value = log.get("log_time", "")
-            ws.cell(row=idx, column=3).value = log.get("area", "")
+            ws.cell(row=idx, column=1, value=log.get("log_date", ""))
+            ws.cell(row=idx, column=2, value=log.get("log_time", ""))
+            ws.cell(row=idx, column=3, value=log.get("area", ""))
 
-            temp_cell = ws.cell(row=idx, column=4)
-            temp_cell.value = log.get("temperature")
-            temp_cell.number_format = "0.0"
+            temp_cell = ws.cell(row=idx, column=4, value=log.get("temperature"))
+            temp_cell.number_format = '0.0'
 
             status_cell = ws.cell(row=idx, column=5)
             if not log.get("is_normal"):
@@ -1644,14 +1654,13 @@ class ExportService:
                 status_cell.fill = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
                 status_cell.font = Font(color="FFFFFF")
 
-            ws.cell(row=idx, column=6).value = log.get("notes", "")
+            ws.cell(row=idx, column=6, value=log.get("notes", ""))
 
-        for col in ["A", "B", "C", "D", "E", "F"]:
-            ws.column_dimensions[col].width = 16
+        for col_letter in ["A", "B", "C", "D", "E", "F"]:
+            ws.column_dimensions[col_letter].width = 16
 
-    # ─── Sheet: Bank Sampel ───────────────────────────────────────────────────
-
-    def _fill_samples_sheet(self, ws, data: dict) -> None:
+    def _fill_bank_sampel(self, ws, data: dict) -> None:
+        """Sheet 13: Bank Sampel Makanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
 
         ws.merge_cells("A1:H1")
@@ -1659,24 +1668,28 @@ class ExportService:
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        headers = [
-            "Kode Sampel", "Menu", "Tanggal Ambil", "Jam Ambil",
-            "Berat (g)", "Kadaluarsa", "Status", "Suhu (°C)",
-        ]
-        self._write_headers(ws, 3, headers)
+        headers = ["Kode Sampel", "Menu", "Tanggal", "Jam Ambil", "Berat (g)", "Kadaluarsa", "Status", "Sisa Waktu"]
+        hdr_fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+        for col_idx, hdr in enumerate(headers, 1):
+            cell = ws.cell(row=3, column=col_idx, value=hdr)
+            cell.font = Font(bold=True, color="FFFFFF", size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
 
         samples = data.get("food_samples", [])
         now = datetime.now(timezone.utc)
 
         for idx, sample in enumerate(samples, start=4):
-            ws.cell(row=idx, column=1).value = sample.get("sample_code", "")
-            ws.cell(row=idx, column=2).value = sample.get("menu_name", "")
-            ws.cell(row=idx, column=3).value = sample.get("sample_date", "")
-            ws.cell(row=idx, column=4).value = sample.get("taken_at", "")
-            ws.cell(row=idx, column=5).value = sample.get("weight_gram")
-            ws.cell(row=idx, column=6).value = (sample.get("expires_at") or "")[:16]
+            ws.cell(row=idx, column=1, value=sample.get("sample_code", ""))
+            ws.cell(row=idx, column=2, value=sample.get("menu_name", ""))
+            ws.cell(row=idx, column=3, value=sample.get("sample_date", ""))
+            ws.cell(row=idx, column=4, value=sample.get("taken_at", ""))
+            ws.cell(row=idx, column=5, value=sample.get("weight_gram"))
+            ws.cell(row=idx, column=6, value=sample.get("expires_at", ""))
 
             status_cell = ws.cell(row=idx, column=7)
+            hours_cell = ws.cell(row=idx, column=8)
+
             try:
                 exp_str = sample.get("expires_at", "")
                 if exp_str:
@@ -1689,27 +1702,29 @@ class ExportService:
                         status_cell.value = "❌ KADALUARSA"
                         status_cell.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
                         status_cell.font = Font(color="FFFFFF")
+                        hours_cell.value = "Expired"
                     elif hours_left <= 4:
-                        status_cell.value = f"⚠️ {hours_left:.1f}h"
+                        status_cell.value = "⚠️ Segera"
                         status_cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                        hours_cell.value = f"{hours_left:.1f} jam"
                     else:
-                        status_cell.value = f"✓ {hours_left:.1f}h"
+                        status_cell.value = "✓ Aman"
                         status_cell.fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
+                        hours_cell.value = f"{hours_left:.1f} jam"
                 else:
-                    status_cell.value = sample.get("status", "")
+                    status_cell.value = "—"
+                    hours_cell.value = "—"
             except Exception:
                 status_cell.value = sample.get("status", "")
-
-            ws.cell(row=idx, column=8).value = sample.get("storage_temp")
+                hours_cell.value = "—"
 
         ws.column_dimensions["A"].width = 18
         ws.column_dimensions["B"].width = 20
-        for col in ["C", "D", "E", "F", "G", "H"]:
-            ws.column_dimensions[col].width = 14
+        for col_letter in ["C", "D", "E", "F", "G", "H"]:
+            ws.column_dimensions[col_letter].width = 14
 
-    # ─── Sheet: Sisa Makanan ──────────────────────────────────────────────────
-
-    def _fill_food_waste_sheet(self, ws, data: dict, year: int, month: int) -> None:
+    def _fill_sisa_makanan(self, ws, data: dict, year: int, month: int) -> None:
+        """Sheet 14: Laporan Sisa Makanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
 
@@ -1718,58 +1733,54 @@ class ExportService:
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        headers = [
-            "Tanggal", "Sekolah", "Porsi Kirim", "Porsi Konsumsi",
-            "% Sisa", "Skor Comstock", "Alasan", "Catatan",
-        ]
-        self._write_headers(ws, 3, headers)
+        headers = ["Tanggal", "Sekolah", "Porsi Kirim", "Porsi Konsumsi", "% Sisa", "Skor Comstock", "Alasan", "Catatan"]
+        hdr_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        for col_idx, hdr in enumerate(headers, 1):
+            cell = ws.cell(row=3, column=col_idx, value=hdr)
+            cell.font = Font(bold=True, color="FFFFFF", size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
 
         reports = data.get("food_waste_reports", [])
 
+        total_sent = 0
+        total_consumed = 0
+
         for idx, rep in enumerate(reports, start=4):
-            ws.cell(row=idx, column=1).value = rep.get("report_date", "")
+            ws.cell(row=idx, column=1, value=rep.get("report_date", ""))
+            school_info = rep.get("schools") or {}
+            ws.cell(row=idx, column=2, value=school_info.get("name", "") if isinstance(school_info, dict) else "")
+            ws.cell(row=idx, column=3, value=rep.get("portions_sent", 0))
+            ws.cell(row=idx, column=4, value=rep.get("portions_consumed", 0))
 
-            sch = rep.get("schools")
-            if isinstance(sch, dict):
-                ws.cell(row=idx, column=2).value = sch.get("name", "")
-            else:
-                ws.cell(row=idx, column=2).value = (rep.get("school_id") or "")[:8]
+            pct_cell = ws.cell(row=idx, column=5, value=rep.get("waste_pct", 0))
+            pct_cell.number_format = '0.0"%"'
 
-            ws.cell(row=idx, column=3).value = rep.get("portions_sent")
-            ws.cell(row=idx, column=4).value = rep.get("portions_consumed")
+            score = rep.get("comstock_score", 0)
+            ws.cell(row=idx, column=6, value=f"⭐{score}" if score else "")
+            ws.cell(row=idx, column=7, value=rep.get("waste_reason", ""))
+            ws.cell(row=idx, column=8, value=rep.get("notes", ""))
 
-            pct_cell = ws.cell(row=idx, column=5)
-            pct_cell.value = rep.get("waste_pct", 0)
-            pct_cell.number_format = "0.0\"%\""
-            if (rep.get("waste_pct") or 0) > 20:
-                pct_cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
-
-            ws.cell(row=idx, column=6).value = rep.get("comstock_score")
-            ws.cell(row=idx, column=7).value = rep.get("waste_reason", "")
-            ws.cell(row=idx, column=8).value = rep.get("notes", "")
+            total_sent += rep.get("portions_sent", 0)
+            total_consumed += rep.get("portions_consumed", 0)
 
         # Summary row
         if reports:
-            row = len(reports) + 5
-            ws.cell(row=row, column=1).value = "TOTAL"
-            ws.cell(row=row, column=1).font = Font(bold=True)
-            total_sent = sum(r.get("portions_sent", 0) for r in reports)
-            total_consumed = sum(r.get("portions_consumed", 0) or 0 for r in reports)
-            ws.cell(row=row, column=3).value = total_sent
-            ws.cell(row=row, column=3).font = Font(bold=True)
-            ws.cell(row=row, column=4).value = total_consumed
-            ws.cell(row=row, column=4).font = Font(bold=True)
-            avg_pct = round((total_sent - total_consumed) / total_sent * 100, 1) if total_sent > 0 else 0
-            ws.cell(row=row, column=5).value = avg_pct
-            ws.cell(row=row, column=5).font = Font(bold=True)
-            ws.cell(row=row, column=5).number_format = "0.0\"%\""
+            summary_row = len(reports) + 5
+            ws.cell(row=summary_row, column=1, value="TOTAL").font = Font(bold=True)
+            ws.cell(row=summary_row, column=3, value=total_sent).font = Font(bold=True)
+            ws.cell(row=summary_row, column=4, value=total_consumed).font = Font(bold=True)
+            total_pct = round((total_sent - total_consumed) / total_sent * 100, 1) if total_sent > 0 else 0
+            pct_summary = ws.cell(row=summary_row, column=5, value=total_pct)
+            pct_summary.number_format = '0.0"%"'
+            pct_summary.font = Font(bold=True)
+            pct_summary.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
 
-        for col in ["A", "B", "C", "D", "E", "F", "G", "H"]:
-            ws.column_dimensions[col].width = 15
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H"]:
+            ws.column_dimensions[col_letter].width = 15
 
-    # ─── Sheet: Insiden ───────────────────────────────────────────────────────
-
-    def _fill_incidents_sheet(self, ws, data: dict, year: int, month: int) -> None:
+    def _fill_insiden(self, ws, data: dict, year: int, month: int) -> None:
+        """Sheet 15: Laporan Insiden KLB."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
 
@@ -1778,40 +1789,33 @@ class ExportService:
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        headers = [
-            "Kode Insiden", "Tanggal", "Sekolah", "Lokasi", "Korban",
-            "Gejala", "Tindakan", "Sampel", "Status", "Hasil Investigasi",
-        ]
-        self._write_headers(ws, 3, headers)
+        headers = ["Kode Insiden", "Tanggal", "Sekolah", "Lokasi", "Korban", "Gejala", "Tindakan", "Sampel Diamankan", "Status", "Hasil Investigasi"]
+        hdr_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+        for col_idx, hdr in enumerate(headers, 1):
+            cell = ws.cell(row=3, column=col_idx, value=hdr)
+            cell.font = Font(bold=True, color="FFFFFF", size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
 
         incidents = data.get("incident_reports", [])
 
         for idx, inc in enumerate(incidents, start=4):
-            ws.cell(row=idx, column=1).value = inc.get("incident_code", "")
-            ws.cell(row=idx, column=2).value = (inc.get("incident_time") or "")[:10]
-
-            sch = inc.get("schools")
-            if isinstance(sch, dict):
-                ws.cell(row=idx, column=3).value = sch.get("name", "")
-            else:
-                ws.cell(row=idx, column=3).value = (inc.get("school_id") or "")[:8]
-
-            ws.cell(row=idx, column=4).value = inc.get("location", "")
-            ws.cell(row=idx, column=5).value = inc.get("victim_count")
-
-            symptoms = inc.get("symptoms") or []
-            ws.cell(row=idx, column=6).value = ", ".join(symptoms) if isinstance(symptoms, list) else str(symptoms)
-
-            ws.cell(row=idx, column=7).value = inc.get("first_action", "")
+            ws.cell(row=idx, column=1, value=inc.get("incident_code", ""))
+            ws.cell(row=idx, column=2, value=(inc.get("incident_time", "") or "")[:10])
+            school_info = inc.get("schools") or {}
+            ws.cell(row=idx, column=3, value=school_info.get("name", "") if isinstance(school_info, dict) else "")
+            ws.cell(row=idx, column=4, value=inc.get("location", ""))
+            ws.cell(row=idx, column=5, value=inc.get("victim_count", 0))
+            ws.cell(row=idx, column=6, value=", ".join(inc.get("symptoms", []) or []))
+            ws.cell(row=idx, column=7, value=inc.get("first_action", ""))
 
             sample_cell = ws.cell(row=idx, column=8)
             sample_cell.value = "✓ Ya" if inc.get("sample_secured") else "✗ Tidak"
             if inc.get("sample_secured"):
                 sample_cell.fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
 
-            status_cell = ws.cell(row=idx, column=9)
+            status_cell = ws.cell(row=idx, column=9, value=(inc.get("status", "") or "").upper())
             status_val = inc.get("status", "")
-            status_cell.value = status_val.upper()
             if status_val == "investigasi":
                 status_cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
             elif status_val == "selesai":
@@ -1819,14 +1823,13 @@ class ExportService:
             elif status_val == "ditutup":
                 status_cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
-            ws.cell(row=idx, column=10).value = inc.get("investigation_result", "")
+            ws.cell(row=idx, column=10, value=inc.get("investigation_result", ""))
 
-        # No-incident footer
         if not incidents:
+            ws.cell(row=4, column=1, value="Tidak ada insiden pada bulan ini")
             ws.merge_cells("A4:J4")
-            ws["A4"] = "✅ Tidak ada insiden tercatat pada periode ini."
-            ws["A4"].font = Font(italic=True, color="006100")
+            ws["A4"].font = Font(italic=True, color="808080")
             ws["A4"].alignment = Alignment(horizontal="center")
 
-        for col in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]:
-            ws.column_dimensions[col].width = 15
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]:
+            ws.column_dimensions[col_letter].width = 15
