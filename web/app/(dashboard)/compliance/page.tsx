@@ -386,87 +386,165 @@ function SamplesTab() {
    ═══════════════════════════════════════════════════════════════════════════ */
 function WasteTab() {
   const [reports, setReports] = useState<any[]>([]);
+  const [targets, setTargets] = useState<any[]>([]);
+  const [targetDate, setTargetDate] = useState(today());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ school_id: "", report_date: today(), portions_sent: "", portions_consumed: "", comstock_score: 3, waste_reason: "" });
+  
+  const [activeSchoolId, setActiveSchoolId] = useState<string | null>(null);
+  const [form, setForm] = useState({ portions_consumed: "", comstock_score: 3, waste_reason: "" });
   const [loading, setLoading] = useState(false);
 
+  // Fetch riwayat bulanan
   useEffect(() => {
     apiGet("/compliance/food-waste", { month, year })
       .then((d) => setReports(d.data || []))
       .catch(() => {});
   }, [month, year]);
 
-  const submit = async () => {
+  // Fetch target sekolah per hari
+  useEffect(() => {
+    apiGet("/compliance/food-waste-targets", { target_date: targetDate })
+      .then((d) => setTargets(d.data || []))
+      .catch(() => {});
+  }, [targetDate]);
+
+  const submit = async (target: any) => {
     setLoading(true);
     try {
       const res = await apiPost("/compliance/food-waste", {
-        ...form,
-        portions_sent: parseInt(form.portions_sent),
+        school_id: target.school_id,
+        report_date: targetDate,
+        portions_sent: target.portions_sent,
         portions_consumed: parseInt(form.portions_consumed),
         comstock_score: form.comstock_score,
+        waste_reason: form.waste_reason,
       });
+      // Update local targets state
+      setTargets(targets.map(t => t.school_id === target.school_id ? { ...t, is_reported: true, report_id: res.data.id } : t));
+      // Add to reports history
       setReports([res.data, ...reports]);
-      setShowForm(false);
-    } catch { }
+      setActiveSchoolId(null);
+      setForm({ portions_consumed: "", comstock_score: 3, waste_reason: "" });
+    } catch (e: any) { 
+      alert(e.response?.data?.detail || "Gagal menyimpan laporan.");
+    }
     setLoading(false);
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center flex-wrap gap-2">
-        <h2 className="text-xl font-bold">Laporan Sisa Makanan</h2>
-        <div className="flex gap-2 items-center">
-          <select value={month} onChange={(e) => setMonth(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm">
-            {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(2024, i).toLocaleDateString("id-ID", { month: "long" })}</option>)}
-          </select>
-          <select value={year} onChange={(e) => setYear(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm">
-            <option value={2025}>2025</option><option value={2026}>2026</option>
-          </select>
-          <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">+</button>
+    <div className="space-y-6">
+      
+      {/* SECTION: Input Laporan Harian */}
+      <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <div>
+            <h2 className="text-lg font-bold">Input Laporan Sisa Makanan</h2>
+            <p className="text-sm text-gray-500">Pilih sekolah untuk melaporkan sisa (Comstock).</p>
+          </div>
+          <input 
+            type="date" 
+            value={targetDate} 
+            onChange={(e) => setTargetDate(e.target.value)} 
+            className="border rounded-lg px-3 py-2 text-sm bg-gray-50 focus:bg-white transition-colors"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {targets.map(t => (
+            <div key={t.school_id} className={`border rounded-xl p-4 flex flex-col ${t.is_reported ? "bg-green-50 border-green-200" : "bg-white"}`}>
+              <div className="mb-2">
+                <h3 className="font-bold text-gray-900 truncate">{t.school_name}</h3>
+                <p className="text-sm text-gray-600 line-clamp-1">{t.menu_name || "Tidak ada menu"}</p>
+                <div className="text-xs text-gray-500 mt-1">Target Kirim: <span className="font-semibold text-gray-700">{t.portions_sent} porsi</span></div>
+              </div>
+              
+              <div className="mt-auto pt-3">
+                {t.is_reported ? (
+                  <div className="text-sm font-medium text-green-700 flex items-center gap-1.5"><span className="text-lg">✅</span> Sudah Dilaporkan</div>
+                ) : activeSchoolId === t.school_id ? (
+                  <div className="space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 mb-1 block">Porsi Dikonsumsi</label>
+                      <input type="number" placeholder="Contoh: 90" value={form.portions_consumed} onChange={(e) => setForm({ ...form, portions_consumed: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 mb-1 block">Skor Comstock</label>
+                      <select value={form.comstock_score} onChange={(e) => setForm({ ...form, comstock_score: +e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm bg-white">
+                        <option value={1}>1 ⭐ Habis (0%)</option>
+                        <option value={2}>2 ⭐ Sisa &lt;25%</option>
+                        <option value={3}>3 ⭐ Sisa 25-50%</option>
+                        <option value={4}>4 ⭐ Sisa 50-75%</option>
+                        <option value={5}>5 ⭐ Sisa &gt;75%</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 mb-1 block">Alasan Sisa (opsional)</label>
+                      <input placeholder="Kenyang, kurang suka..." value={form.waste_reason} onChange={(e) => setForm({ ...form, waste_reason: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button onClick={() => setActiveSchoolId(null)} className="flex-1 py-1.5 bg-gray-200 text-gray-700 rounded text-xs font-medium hover:bg-gray-300">Batal</button>
+                      <button onClick={() => submit(t)} disabled={loading} className="flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">Kirim</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => { setActiveSchoolId(t.school_id); setForm({ portions_consumed: t.portions_sent.toString(), comstock_score: 1, waste_reason: "" }); }} className="w-full py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors">
+                    📝 Laporkan Sisa
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {targets.length === 0 && (
+            <div className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+              Tidak ada data pengiriman (buku harian/delivery) untuk tanggal ini.<br/>
+              Pastikan pengiriman sudah diinput di modul Operasional &gt; Pengiriman.
+            </div>
+          )}
         </div>
       </div>
 
-      {showForm && (
-        <div className="bg-white border rounded-xl p-4 space-y-3">
-          <input placeholder="ID Sekolah" value={form.school_id} onChange={(e) => setForm({ ...form, school_id: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-          <input type="date" value={form.report_date} onChange={(e) => setForm({ ...form, report_date: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-sm font-medium">Porsi Kirim</label><input type="number" value={form.portions_sent} onChange={(e) => setForm({ ...form, portions_sent: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="text-sm font-medium">Porsi Konsumsi</label><input type="number" value={form.portions_consumed} onChange={(e) => setForm({ ...form, portions_consumed: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
-          </div>
-          <div><label className="text-sm font-medium">Skor Comstock (1-5)</label>
-            <select value={form.comstock_score} onChange={(e) => setForm({ ...form, comstock_score: +e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
-              <option value={1}>1 ⭐ Habis</option><option value={2}>2 ⭐ &lt;25% sisa</option><option value={3}>3 ⭐ 25-50%</option>
-              <option value={4}>4 ⭐ 50-75%</option><option value={5}>5 ⭐ &gt;75% sisa</option>
-            </select>
-          </div>
-          <input placeholder="Alasan sisa (kenyang, tidak suka, dll)" value={form.waste_reason} onChange={(e) => setForm({ ...form, waste_reason: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-          <button onClick={submit} disabled={loading} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-            {loading ? "Menyimpan..." : "Simpan Laporan"}
-          </button>
+      {/* SECTION: History Laporan */}
+      <div className="flex justify-between items-center px-1">
+        <h2 className="text-lg font-bold">Riwayat Laporan (Bulanan)</h2>
+        <div className="flex gap-2 items-center">
+          <select value={month} onChange={(e) => setMonth(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+            {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(2024, i).toLocaleDateString("id-ID", { month: "long" })}</option>)}
+          </select>
+          <select value={year} onChange={(e) => setYear(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+            <option value={2025}>2025</option><option value={2026}>2026</option>
+          </select>
         </div>
-      )}
+      </div>
 
-      <div className="bg-white border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr>
-            <th className="text-left px-4 py-2.5">Tanggal</th><th className="text-right px-4 py-2.5">Kirim</th>
-            <th className="text-right px-4 py-2.5">Konsumsi</th><th className="text-right px-4 py-2.5">% Sisa</th>
-            <th className="text-center px-4 py-2.5">Comstock</th>
-          </tr></thead>
-          <tbody>{reports.map((r) => (
-            <tr key={r.id} className="border-t">
-              <td className="px-4 py-2">{r.report_date}</td>
-              <td className="text-right px-4 py-2">{r.portions_sent}</td>
-              <td className="text-right px-4 py-2">{r.portions_consumed}</td>
-              <td className="text-right px-4 py-2 font-semibold">{r.waste_pct}%</td>
-              <td className="text-center px-4 py-2">⭐{r.comstock_score}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-        {reports.length === 0 && <p className="text-center text-gray-400 py-6">Belum ada laporan bulan ini</p>}
+      <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50"><tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Tanggal</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Sekolah</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Kirim</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Konsumsi</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">% Sisa</th>
+              <th className="text-center px-4 py-3 font-medium text-gray-600">Comstock</th>
+            </tr></thead>
+            <tbody>{reports.map((r) => (
+              <tr key={r.id} className="border-t hover:bg-gray-50">
+                <td className="px-4 py-2.5 whitespace-nowrap">{fmtDate(r.report_date)}</td>
+                <td className="px-4 py-2.5 text-gray-900">{r.schools?.name || r.school_id}</td>
+                <td className="text-right px-4 py-2.5">{r.portions_sent}</td>
+                <td className="text-right px-4 py-2.5 font-medium">{r.portions_consumed}</td>
+                <td className="text-right px-4 py-2.5">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.waste_pct > 20 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                    {r.waste_pct}%
+                  </span>
+                </td>
+                <td className="text-center px-4 py-2.5"><span className="text-lg" title={`Skor ${r.comstock_score}`}>{"⭐".repeat(r.comstock_score)}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {reports.length === 0 && <p className="text-center text-gray-400 py-8">Belum ada riwayat laporan bulan ini</p>}
+        </div>
       </div>
     </div>
   );

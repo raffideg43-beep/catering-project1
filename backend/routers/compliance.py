@@ -440,6 +440,50 @@ def create_food_waste_report(
     return {"success": True, "data": rows[0]}
 
 
+@router.get("/food-waste-targets", response_model=Dict[str, Any],
+            dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+def get_food_waste_targets(
+    target_date: date = Query(...),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Ambil daftar sekolah, menu, dan porsi kirim untuk hari tertentu dari mbg_deliveries."""
+    supabase = get_supabase()
+
+    # 1. Fetch deliveries
+    d_resp = (
+        supabase.table("mbg_deliveries").select("school_id, menu_name, portions_sent, schools(name)")
+        .eq("tenant_id", current_user.tenant_id)
+        .eq("delivery_date", target_date.isoformat())
+        .execute()
+    )
+    deliveries = getattr(d_resp, "data", None) or []
+
+    # 2. Fetch existing reports to cross-check
+    r_resp = (
+        supabase.table("food_waste_reports").select("school_id, id")
+        .eq("tenant_id", current_user.tenant_id)
+        .eq("report_date", target_date.isoformat())
+        .execute()
+    )
+    reports = getattr(r_resp, "data", None) or []
+    reported_schools = {r["school_id"]: r["id"] for r in reports}
+
+    # 3. Format result
+    targets = []
+    for d in deliveries:
+        sid = d.get("school_id")
+        targets.append({
+            "school_id": sid,
+            "school_name": d.get("schools", {}).get("name", "Unknown School") if d.get("schools") else "Unknown",
+            "menu_name": d.get("menu_name", ""),
+            "portions_sent": d.get("portions_sent", 0),
+            "report_id": reported_schools.get(sid),
+            "is_reported": sid in reported_schools
+        })
+
+    return {"success": True, "target_date": target_date.isoformat(), "data": targets}
+
+
 @router.get("/food-waste", response_model=Dict[str, Any],
             dependencies=[Depends(require_role(["owner", "admin"]))])
 def get_food_waste_reports(
