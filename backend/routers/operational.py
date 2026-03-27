@@ -101,6 +101,7 @@ async def create_operational_cost(
 
     cost_data = body.model_dump(exclude_unset=True)
     cost_data["tenant_id"] = tid
+    cost_data["amount"] = float(body.amount)
     
     try:
         cost_dt = cost_data["cost_date"] if isinstance(cost_data.get("cost_date"), date) else date.today()
