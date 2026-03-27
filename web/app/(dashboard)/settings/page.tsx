@@ -22,8 +22,8 @@ export default function SettingsPage() {
     { id: "bahan", label: "Bahan & BOM" },
     { id: "alokasi", label: "Alokasi MBG" },
     { id: "telegram", label: "Telegram" },
-    { id: "users", label: "Tim & Akses" },
     { id: "import", label: "Import Data" },
+    { id: "users", label: "👥 Tim & Akses" },
   ];
 
   return (
@@ -56,8 +56,8 @@ export default function SettingsPage() {
         {activeTab === "bahan" && <TabBahan />}
         {activeTab === "alokasi" && <TabAlokasi />}
         {activeTab === "telegram" && <TabTelegram />}
-        {activeTab === "users" && <TabUsers />}
         {activeTab === "import" && <TabImport />}
+        {activeTab === "users" && <TabUsers />}
       </div>
     </div>
   );

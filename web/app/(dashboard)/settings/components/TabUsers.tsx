@@ -1,321 +1,311 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPost, apiPut } from "@/lib/api";
-import { Plus, Edit2, Ban, CheckCircle, XCircle } from "lucide-react";
 
-type User = {
+/* ─── Types ─────────────────────────────────────────────────────────────── */
+interface TeamUser {
   id: string;
   name: string;
   email: string;
   role: string;
-  telegram_id: number | null;
+  has_telegram: boolean;
   is_active: boolean;
+  created_at: string;
+  last_login: string | null;
+}
+
+type Role = "admin" | "kasir" | "viewer" | "driver";
+const ROLES: { value: Role; label: string; desc: string }[] = [
+  { value: "admin",  label: "Admin",  desc: "Semua fitur kecuali kelola user" },
+  { value: "kasir",  label: "Kasir",  desc: "Input transaksi harian" },
+  { value: "viewer", label: "Viewer", desc: "Lihat laporan saja" },
+  { value: "driver", label: "Driver", desc: "Lihat jadwal pengiriman" },
+];
+
+const ROLE_COLORS: Record<string, string> = {
+  owner:  "bg-blue-900 text-white",
+  admin:  "bg-blue-600 text-white",
+  kasir:  "bg-green-600 text-white",
+  viewer: "bg-gray-500 text-white",
+  driver: "bg-amber-500 text-white",
 };
 
+/* ─── Component ─────────────────────────────────────────────────────────── */
 export function TabUsers() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<TeamUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
-  // Modals
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showRoleModal, setShowRoleModal] = useState(false);
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  // Modal states
+  const [showInvite, setShowInvite] = useState(false);
+  const [roleModal, setRoleModal] = useState<TeamUser | null>(null);
+  const [statusModal, setStatusModal] = useState<TeamUser | null>(null);
 
-  // Add form
-  const [addForm, setAddForm] = useState({ name: "", email: "", password: "", role: "admin" });
+  // Invite form
+  const [invName, setInvName] = useState("");
+  const [invEmail, setInvEmail] = useState("");
+  const [invPassword, setInvPassword] = useState("");
+  const [invRole, setInvRole] = useState<Role>("kasir");
+  const [invLoading, setInvLoading] = useState(false);
 
-  // Role form
-  const [newRole, setNewRole] = useState("");
+  // Role change
+  const [newRole, setNewRole] = useState<Role>("admin");
+  const [roleLoading, setRoleLoading] = useState(false);
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    setError("");
+  // Status change
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const fetchUsers = useCallback(async () => {
     try {
+      setLoading(true);
       const res = await apiGet("/auth/users");
-      if (res?.data) {
-        setUsers(res.data);
-      }
-    } catch (err: any) {
-      if (err?.response?.status === 403) {
-        setError("Hanya Owner yang dapat mengakses menu ini.");
-      } else {
-        setError("Gagal memuat data pengguna.");
-      }
+      setUsers(res.data || []);
+      setError("");
+    } catch (e: any) {
+      setError(e?.response?.data?.error || "Gagal memuat data user");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchUsers();
   }, []);
 
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  /* ── Handlers ────────────────────────────────────────────────────────── */
+  const handleInvite = async () => {
+    if (!invName || !invEmail || !invPassword) return;
     try {
-      await apiPost("/auth/users/invite", addForm);
-      setSuccess("User berhasil ditambahkan.");
-      setShowAddModal(false);
-      setAddForm({ name: "", email: "", password: "", role: "admin" });
+      setInvLoading(true);
+      await apiPost("/auth/users/invite", {
+        name: invName, email: invEmail, password: invPassword, role: invRole,
+      });
+      setShowInvite(false);
+      setInvName(""); setInvEmail(""); setInvPassword(""); setInvRole("kasir");
       fetchUsers();
-    } catch (err: any) {
-      setError(err?.response?.data?.error || "Gagal menambah user.");
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Gagal menambah user");
+    } finally {
+      setInvLoading(false);
     }
   };
 
-  const handleUpdateRole = async () => {
-    if (!selectedUser) return;
-    setError("");
-    setSuccess("");
+  const handleRoleChange = async () => {
+    if (!roleModal) return;
     try {
-      await apiPut(`/auth/users/${selectedUser.id}/role`, { role: newRole });
-      setSuccess(`Role ${selectedUser.name} berhasil diubah.`);
-      setShowRoleModal(false);
+      setRoleLoading(true);
+      await apiPut(`/auth/users/${roleModal.id}/role`, { role: newRole });
+      setRoleModal(null);
       fetchUsers();
-    } catch (err: any) {
-      setError(err?.response?.data?.error || "Gagal mengubah role.");
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Gagal mengubah role");
+    } finally {
+      setRoleLoading(false);
     }
   };
 
-  const handleToggleStatus = async () => {
-    if (!selectedUser) return;
-    setError("");
-    setSuccess("");
+  const handleStatusChange = async () => {
+    if (!statusModal) return;
     try {
-      const newStatus = !selectedUser.is_active;
-      await apiPut(`/auth/users/${selectedUser.id}/status`, { is_active: newStatus });
-      setSuccess(`Status ${selectedUser.name} berhasil diubah.`);
-      setShowStatusModal(false);
+      setStatusLoading(true);
+      await apiPut(`/auth/users/${statusModal.id}/status`, { is_active: !statusModal.is_active });
+      setStatusModal(null);
       fetchUsers();
-    } catch (err: any) {
-      setError(err?.response?.data?.error || "Gagal mengubah status.");
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Gagal mengubah status");
+    } finally {
+      setStatusLoading(false);
     }
   };
 
-  const openRoleModal = (user: User) => {
-    setSelectedUser(user);
-    setNewRole(user.role);
-    setShowRoleModal(true);
-  };
+  /* ── Render ──────────────────────────────────────────────────────────── */
+  if (loading) return <div className="text-center py-12 text-gray-500">Memuat data tim...</div>;
+  if (error) return <div className="text-center py-12 text-red-500">{error}</div>;
 
-  const openStatusModal = (user: User) => {
-    setSelectedUser(user);
-    setShowStatusModal(true);
-  };
-
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case "owner": return <span className="px-2 py-1 text-xs rounded-full bg-blue-900 text-white font-medium">Owner</span>;
-      case "admin": return <span className="px-2 py-1 text-xs rounded-full bg-blue-500 text-white font-medium">Admin</span>;
-      case "kasir": return <span className="px-2 py-1 text-xs rounded-full bg-green-500 text-white font-medium">Kasir</span>;
-      case "viewer": return <span className="px-2 py-1 text-xs rounded-full bg-gray-500 text-white font-medium">Viewer</span>;
-      case "driver": return <span className="px-2 py-1 text-xs rounded-full bg-amber-500 text-amber-900 font-medium">Driver</span>;
-      default: return <span className="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-800 font-medium">{role}</span>;
-    }
-  };
-
-  if (loading) return <div className="py-8 text-center text-gray-500">Memuat data user...</div>;
+  const nonOwnerCount = users.filter(u => u.role !== "owner").length;
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Tim & Akses</h2>
-          <p className="text-sm text-gray-500 mt-1">Kelola anggota tim dan hak akses mereka.</p>
+          <h2 className="text-xl font-bold text-gray-900">👥 Tim & Akses</h2>
+          <p className="text-sm text-gray-500 mt-1">Kelola anggota tim dan hak akses mereka</p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          onClick={() => setShowInvite(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm"
         >
-          <Plus className="w-4 h-4 mr-2" />
-          Tambah User
+          + Tambah User
         </button>
       </div>
 
-      {error && <div className="mb-4 bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
-      {success && <div className="mb-4 bg-green-50 text-green-600 p-3 rounded-lg text-sm">{success}</div>}
+      {/* Empty state */}
+      {nonOwnerCount === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+          <strong>Belum ada anggota tim lain.</strong><br />
+          Tambah kasir atau admin untuk bantu operasional harian.
+        </div>
+      )}
 
-      <div className="bg-white border rounded-xl overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b">
-              <th className="p-4 font-medium text-gray-500">Nama</th>
-              <th className="p-4 font-medium text-gray-500">Role</th>
-              <th className="p-4 font-medium text-gray-500">Email</th>
-              <th className="p-4 font-medium text-gray-500 text-center">Telegram</th>
-              <th className="p-4 font-medium text-gray-500 text-center">Status</th>
-              <th className="p-4 font-medium text-gray-500 text-center">Aksi</th>
+      {/* User Table */}
+      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
+            <tr>
+              <th className="px-4 py-3 text-left">Nama</th>
+              <th className="px-4 py-3 text-left">Role</th>
+              <th className="px-4 py-3 text-left">Email</th>
+              <th className="px-4 py-3 text-center">Telegram</th>
+              <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-center">Aksi</th>
             </tr>
           </thead>
-          <tbody className="divide-y text-sm">
-            {users.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-gray-500">
-                  Tidak ada data user.
+          <tbody className="divide-y divide-gray-100">
+            {users.map((u) => (
+              <tr key={u.id} className={`hover:bg-gray-50 ${!u.is_active ? "opacity-50" : ""}`}>
+                <td className="px-4 py-3 font-medium text-gray-900">{u.name}</td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${ROLE_COLORS[u.role] || "bg-gray-300"}`}>
+                    {u.role.charAt(0).toUpperCase() + u.role.slice(1)}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                <td className="px-4 py-3 text-center">{u.has_telegram ? "✅" : "❌"}</td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                    {u.is_active ? "Aktif" : "Nonaktif"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {u.role === "owner" ? (
+                    <span className="text-gray-400 text-xs">—</span>
+                  ) : (
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        onClick={() => { setRoleModal(u); setNewRole(u.role as Role); }}
+                        className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition"
+                        title="Ubah Role"
+                      >✏️</button>
+                      <button
+                        onClick={() => setStatusModal(u)}
+                        className="p-1.5 rounded hover:bg-red-50 text-red-600 transition"
+                        title={u.is_active ? "Nonaktifkan" : "Aktifkan"}
+                      >{u.is_active ? "⛔" : "✅"}</button>
+                    </div>
+                  )}
                 </td>
               </tr>
-            ) : (
-              users.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50 transition">
-                  <td className="p-4 font-medium text-gray-900">{u.name}</td>
-                  <td className="p-4">{getRoleBadge(u.role)}</td>
-                  <td className="p-4 text-gray-600">{u.email}</td>
-                  <td className="p-4 text-center">
-                    {u.telegram_id ? (
-                      <span className="inline-flex items-center px-2 py-1 bg-green-50 text-green-700 rounded-full text-xs">
-                        <CheckCircle className="w-3 h-3 mr-1" /> Terhubung
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 bg-red-50 text-red-700 rounded-full text-xs">
-                        <XCircle className="w-3 h-3 mr-1" /> Belum
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-4 text-center">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${u.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                      {u.is_active ? "Aktif" : "Non-aktif"}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex justify-center space-x-3">
-                      {u.role !== "owner" && (
-                        <>
-                          <button onClick={() => openRoleModal(u)} className="text-gray-400 hover:text-blue-600 transition" title="Ubah Role">
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => openStatusModal(u)} className="text-gray-400 hover:text-red-600 transition" title={u.is_active ? "Nonaktifkan" : "Aktifkan"}>
-                            <Ban className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      {u.role === "owner" && <span className="text-gray-300 text-xs">—</span>}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>
-      
-      <div className="mt-6 bg-blue-50 border border-blue-100 rounded-lg p-4 flex gap-3 text-sm text-blue-800">
-        <span className="text-lg">ℹ️</span>
-        <p>Untuk menghubungkan Telegram, user baru harus login dan men-generate token di tab Telegram masing-masing. Role Owner secara otomatis memiliki akses penuh ke semua fitur.</p>
+
+      {/* Info Box */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+        ℹ️ Untuk link Telegram, user baru harus generate kode di Settings → tab Telegram masing-masing.
       </div>
 
-      {/* Modal Add User */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      {/* ── MODAL: Tambah User ─────────────────────────────────────────────── */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-bold mb-4">Tambah Anggota Tim</h3>
-            <form onSubmit={handleAddUser} className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
-                <input required type="text" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nama lengkap</label>
+                <input value={invName} onChange={e => setInvName(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="Nama lengkap" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input required type="email" value={addForm.email} onChange={e => setAddForm({...addForm, email: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input value={invEmail} onChange={e => setInvEmail(e.target.value)} type="email"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="email@example.com" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input required type="password" value={addForm.password} onChange={e => setAddForm({...addForm, password: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input value={invPassword} onChange={e => setInvPassword(e.target.value)} type="password"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="Min 6 karakter" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Role Akses</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <div className="space-y-2">
-                  <label className="flex items-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="role" value="admin" checked={addForm.role === "admin"} onChange={e => setAddForm({...addForm, role: e.target.value})} className="mr-3" />
-                    <div>
-                      <div className="font-medium text-sm">Admin</div>
-                      <div className="text-xs text-gray-500">Semua fitur kecuali kelola pengaturan user & sistem</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="role" value="kasir" checked={addForm.role === "kasir"} onChange={e => setAddForm({...addForm, role: e.target.value})} className="mr-3" />
-                    <div>
-                      <div className="font-medium text-sm">Kasir</div>
-                      <div className="text-xs text-gray-500">Input transaksi harian (belanja, serah, absen)</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="role" value="viewer" checked={addForm.role === "viewer"} onChange={e => setAddForm({...addForm, role: e.target.value})} className="mr-3" />
-                    <div>
-                      <div className="font-medium text-sm">Viewer</div>
-                      <div className="text-xs text-gray-500">Hanya melihat data & laporan (Read-only)</div>
-                    </div>
-                  </label>
-                  <label className="flex items-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="role" value="driver" checked={addForm.role === "driver"} onChange={e => setAddForm({...addForm, role: e.target.value})} className="mr-3" />
-                    <div>
-                      <div className="font-medium text-sm">Driver</div>
-                      <div className="text-xs text-gray-500">Melihat jadwal pengiriman (Modul Ekspedisi)</div>
-                    </div>
-                  </label>
+                  {ROLES.map(r => (
+                    <label key={r.value} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer border transition ${invRole === r.value ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
+                      <input type="radio" name="inv-role" value={r.value} checked={invRole === r.value}
+                        onChange={() => setInvRole(r.value)} className="mt-0.5" />
+                      <div><div className="font-medium text-sm">{r.label}</div><div className="text-xs text-gray-500">{r.desc}</div></div>
+                    </label>
+                  ))}
                 </div>
               </div>
-              <div className="mt-6 flex justify-end space-x-3 pt-4 border-t">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Batal</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Tambah User</button>
-              </div>
-            </form>
+              <p className="text-xs text-gray-500 mt-2">
+                Setelah ditambah, user bisa login ke web dengan email + password,
+                lalu link Telegram via /start [kode].
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowInvite(false)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition">Batal</button>
+              <button onClick={handleInvite} disabled={invLoading || !invName || !invEmail || !invPassword}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+                {invLoading ? "Menyimpan..." : "✅ Tambah User"}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal Update Role */}
-      {showRoleModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-lg font-bold mb-2">Ubah Role — {selectedUser.name}</h3>
-            <p className="text-sm text-gray-500 mb-4">Role saat ini: <span className="font-semibold uppercase">{selectedUser.role}</span></p>
-            <div className="space-y-2 mb-6">
-              {['admin', 'kasir', 'viewer', 'driver'].map(r => (
-                  <label key={r} className={`flex items-center p-3 border rounded-lg cursor-pointer ${newRole === r ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'}`}>
-                    <input type="radio" name="editRole" value={r} checked={newRole === r} onChange={e => setNewRole(e.target.value)} className="mr-3" />
-                    <span className="font-medium text-sm capitalize">{r}</span>
-                  </label>
+      {/* ── MODAL: Ubah Role ────────────────────────────────────────────────── */}
+      {roleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-1">Ubah Role — {roleModal.name}</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Role saat ini: <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ROLE_COLORS[roleModal.role]}`}>
+                {roleModal.role.charAt(0).toUpperCase() + roleModal.role.slice(1)}
+              </span>
+            </p>
+            <div className="space-y-2">
+              {ROLES.map(r => (
+                <label key={r.value} className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer border transition ${newRole === r.value ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
+                  <input type="radio" name="new-role" value={r.value} checked={newRole === r.value}
+                    onChange={() => setNewRole(r.value)} className="mt-0.5" />
+                  <div><div className="font-medium text-sm">{r.label}</div><div className="text-xs text-gray-500">{r.desc}</div></div>
+                </label>
               ))}
             </div>
-            <div className="flex justify-end space-x-3 pt-4 border-t">
-              <button type="button" onClick={() => setShowRoleModal(false)} className="px-4 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Batal</button>
-              <button type="button" onClick={handleUpdateRole} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center">
-                <CheckCircle className="w-4 h-4 mr-2"/>
-                Simpan
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setRoleModal(null)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition">Batal</button>
+              <button onClick={handleRoleChange} disabled={roleLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+                {roleLoading ? "Menyimpan..." : "✅ Simpan"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Status */}
-      {showStatusModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 text-center">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Ban className="w-8 h-8"/>
-            </div>
-            <h3 className="text-lg font-bold mb-2">{selectedUser.is_active ? 'Nonaktifkan' : 'Aktifkan'} {selectedUser.name}?</h3>
-            <p className="text-sm text-gray-500 mb-6">
-              {selectedUser.is_active 
-                ? "User yang dinonaktifkan tidak akan bisa login ke dalam sistem lagi hingga diaktifkan kembali." 
-                : "User akan bisa login kembali ke dalam sistem."}
+      {/* ── MODAL: Nonaktifkan / Aktifkan ──────────────────────────────────── */}
+      {statusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-lg font-bold mb-2">
+              {statusModal.is_active ? "Nonaktifkan" : "Aktifkan"} {statusModal.name}?
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              {statusModal.is_active
+                ? "User tidak bisa login lagi setelah dinonaktifkan."
+                : "User akan bisa login kembali setelah diaktifkan."}
             </p>
-            <div className="flex justify-center space-x-3">
-              <button type="button" onClick={() => setShowStatusModal(false)} className="px-4 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Batal</button>
-              <button type="button" onClick={handleToggleStatus} className={`px-4 py-2 text-white rounded-lg font-medium ${selectedUser.is_active ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
-                Ya, {selectedUser.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setStatusModal(null)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 transition">Batal</button>
+              <button onClick={handleStatusChange} disabled={statusLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition disabled:opacity-50 ${statusModal.is_active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}>
+                {statusLoading ? "Memproses..." : statusModal.is_active ? "⛔ Ya, Nonaktifkan" : "✅ Ya, Aktifkan"}
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }
