@@ -264,7 +264,36 @@ def get_me(current_user: UserInDB = Depends(get_current_user)):
     )
 
 
+@router.put("/users/{user_id}/telegram", response_model=Dict[str, Any])
+def update_user_telegram(
+    user_id: str,
+    body: Dict[str, int],
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Update telegram_id untuk user (untuk bot linkage)."""
+    from datetime import datetime
 
+    supabase = get_supabase()
+
+    telegram_id = body.get("telegram_id")
+    if not telegram_id:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=_build_error("telegram_id tidak boleh kosong"),
+        )
+
+    resp = supabase.table("users").update({
+        "telegram_id": telegram_id,
+        "updated_at": datetime.now().isoformat(),
+    }).eq("id", user_id).eq("tenant_id", current_user.tenant_id).execute()
+
+    if not getattr(resp, "data", None):
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=_build_error("User tidak ditemukan"),
+        )
+
+    return _build_success({"message": "Telegram ID linked", "user_id": user_id})
 
 
 

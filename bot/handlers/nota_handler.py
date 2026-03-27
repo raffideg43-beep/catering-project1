@@ -22,6 +22,7 @@ from utils.formatter import format_error
 from utils.image_utils import compress_photo
 from utils.session import get_role, get_token, is_authenticated
 from utils.number_parser import parse_id_number
+from handlers.security import requires_role
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def _batch_keyboard(n: int) -> InlineKeyboardMarkup:
 
 # ─── Handler: Tombol Catat Nota ──────────────────────────────────────────────
 
+@requires_role(['owner', 'admin', 'kasir'])
 async def catat_nota_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback ketika user tekan tombol 'Catat Nota'."""
     query = update.callback_query
@@ -66,6 +68,7 @@ async def catat_nota_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # ─── Handler: user kirim foto ─────────────────────────────────────────────────
 
+@requires_role(['owner', 'admin', 'kasir'])
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Terima foto dari user:

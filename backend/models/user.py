@@ -41,6 +41,14 @@ class UserInDB(BaseModel):
         """Return True jika user bisa lihat laporan (owner, admin, viewer)."""
         return self.role in ["owner", "admin", "viewer"]
 
+    def can_access_sensitive(self) -> bool:
+        """Return True jika user bisa akses fitur sensitif (OCR, Keuangan, Stok)."""
+        return self.role in ["owner", "admin"]
+
+    def is_driver(self) -> bool:
+        """Return True jika user adalah driver."""
+        return self.role == "driver"
+
 
 class UserResponse(BaseModel):
     id: str

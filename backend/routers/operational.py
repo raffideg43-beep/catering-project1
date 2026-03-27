@@ -137,7 +137,6 @@ async def create_operational_cost(
         "date": cost_data["cost_date"],
         "notes": body.name,
         "status": "confirmed",
-        "recorded_by": current_user.id
     }).execute()
     
     txn_data = getattr(txn_res, "data", None)

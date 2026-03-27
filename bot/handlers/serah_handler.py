@@ -28,6 +28,7 @@ from core.config import settings
 from utils.api_client import get_api_client
 from utils.formatter import format_error
 from utils.session import get_role, get_token, is_authenticated
+from handlers.security import requires_role
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ def _serah_keyboard(schools: dict) -> InlineKeyboardMarkup:
 
 # ─── Entry Point: /serah ──────────────────────────────────────────────────────
 
+@requires_role(['owner', 'admin', 'kasir', 'driver'])
 async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg = update.effective_message
     if not msg:

@@ -24,6 +24,7 @@ from keyboards.main_menu import get_main_menu
 from utils.api_client import get_api_client
 from utils.formatter import format_error
 from utils.session import get_role, get_token, is_authenticated
+from handlers.security import requires_role
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ async def hariini_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # ─── /laporan ─────────────────────────────────────────────────────────────────
 
+@requires_role(['owner', 'admin'])
 async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_message:
         return
@@ -262,6 +264,7 @@ async def laporan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 # ─── /stok ────────────────────────────────────────────────────────────────────
 
+@requires_role(['owner', 'admin'])
 async def stok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_message:
         return
