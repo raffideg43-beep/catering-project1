@@ -75,7 +75,7 @@ def create_school(
                 "contact_name": body.contact_name,
                 "default_portions": body.default_portions,
                 "notes": body.notes,
-                "mbg_allocation_type": body.mbg_allocation_type or "large",
+                "school_level": body.school_level or "sd_smp",
                 "is_active": True,
             }
         )
@@ -112,8 +112,8 @@ def update_school(
         update_data["default_portions"] = body.default_portions
     if body.notes is not None:
         update_data["notes"] = body.notes
-    if body.mbg_allocation_type is not None:
-        update_data["mbg_allocation_type"] = body.mbg_allocation_type
+    if body.school_level is not None:
+        update_data["school_level"] = body.school_level
 
     response = (
         supabase.table("schools")
@@ -172,22 +172,22 @@ def get_school_deliveries(
     }
 
 
-@router.put("/{school_id}/mbg-allocation", dependencies=[Depends(require_role(["owner", "admin"]))])
-def update_school_mbg_allocation(
+@router.put("/{school_id}/level", dependencies=[Depends(require_role(["owner", "admin"]))])
+def update_school_level(
     school_id: str,
     body: Dict[str, str],
     current_user: UserInDB = Depends(get_current_user)
 ):
-    """Set MBG allocation preference untuk sekolah"""
+    """Set school level preference untuk sekolah"""
     supabase = get_supabase()
     
-    allocation_type = body.get("allocation_type", "large")
-    if allocation_type not in ["large", "small"]:
-        raise HTTPException(status_code=400, detail="Invalid allocation_type. Use 'large' or 'small'")
+    level = body.get("school_level", "sd_smp")
+    if level not in ["sd_smp", "paud_tk"]:
+        raise HTTPException(status_code=400, detail="Invalid school_level. Use 'sd_smp' or 'paud_tk'")
     
     # Update school
     update_resp = supabase.table("schools").update({
-        "mbg_allocation_type": allocation_type,
+        "school_level": level,
         "updated_at": datetime.now().isoformat()
     }).eq("id", school_id).eq("tenant_id", current_user.tenant_id).execute()
     
@@ -197,5 +197,5 @@ def update_school_mbg_allocation(
     return {
         "success": True,
         "school_id": school_id,
-        "allocation_type": allocation_type
+        "school_level": level
     }

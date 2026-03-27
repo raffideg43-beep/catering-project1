@@ -1,20 +1,13 @@
-# Prompt Modul 21.5d: Web Dashboard (Bagian C)
+# Prompt Modul 21.5d: Frontend Compliance Operations UI
 
-**STATUS: ✅ READY** | Est. 4-5 hours | ~900 LOC  
-**Priority: 4 (After 21.5c endpoints deployed)**
-
----
-
-## ⚠️ DEPENDENCIES
-
-Must complete BEFORE starting:
-- [ ] Modul 21.5c (Compliance Endpoints) — DEPLOYED & TESTED
+**STATUS: 📋 READY FOR IMPLEMENTATION** | Est. 3-4 weeks | ~2500+ LOC  
+**Priority: 3 (After 21.5b & 21.5c)**
 
 ---
 
 ## Tujuan
 
-Build React/Next.js dashboard untuk monitoring compliance dengan charts, alerts, dan data entry forms.
+Implementasi frontend web dashboard untuk compliance operations SPPG dengan fokus pada UI/UX yang intuitif untuk berbagai user roles (Admin, Kitchen Staff, School Staff, Inspector, QC Supervisor).
 
 ---
 

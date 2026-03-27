@@ -136,6 +136,7 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         schools[sid] = {
             "name": s.get("name") or "Sekolah",
             "portions": int(s.get("default_portions") or s.get("quota") or 100),
+            "school_level": s.get("school_level") or "sd_smp",
         }
 
     context.user_data["serah_data"] = {
@@ -244,27 +245,35 @@ async def serah_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     token = get_token(context)
     api = get_api_client(settings.backend_url)
     try:
-        settings_resp = await api.get("/mbg/allocation-settings", token=token)
+        settings_resp = await api.get("/tenants/mbg-settings", token=token)
         alloc_set = (settings_resp or {}).get("data") or {}
     except Exception:
         alloc_set = {}
 
-    price_per_portion = float(alloc_set.get("price_per_portion") or 15000)
-    food_pct  = float(alloc_set.get("food_pct")  or 0.80)
-    labor_pct = float(alloc_set.get("labor_pct") or 0.15)
-    ops_pct   = float(alloc_set.get("ops_pct")   or 0.05)
+    rate_bahan_sd = float(alloc_set.get("bahan_sd_smp", 10000))
+    rate_bahan_tk = float(alloc_set.get("bahan_paud_tk", 8000))
+    rate_ops = float(alloc_set.get("ops_per_porsi", 3000))
+    insentif_harian = float(alloc_set.get("insentif_harian", 6000000))
 
-    total_rev  = price_per_portion * total_portions
-    budget_food  = round(total_rev * food_pct, 0)
-    budget_labor = round(total_rev * labor_pct, 0)
-    budget_ops   = round(total_rev * ops_pct, 0)
+    budget_bahan = 0
+    budget_ops = 0
+
+    for info in schools.values():
+        portions = info["portions"]
+        level = info.get("school_level", "sd_smp")
+        bahan_rate = rate_bahan_tk if level == "paud_tk" else rate_bahan_sd
+        budget_bahan += portions * bahan_rate
+        budget_ops += portions * rate_ops
+        
+    budget_insentif = insentif_harian
+    total_rev = budget_bahan + budget_ops + budget_insentif
 
     # Simpan estimasi alokasi untuk submit
     context.user_data["serah_alloc"] = {
         "total_revenue": total_rev,
-        "budget_food": budget_food,
-        "budget_labor": budget_labor,
+        "budget_bahan": budget_bahan,
         "budget_ops": budget_ops,
+        "budget_insentif": budget_insentif,
     }
 
     lines = ["📋 *RINGKASAN PENYERAHAN*\n"]
@@ -275,9 +284,9 @@ async def serah_lanjut(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     lines.append(f"\n💰 *Estimasi Pendapatan:*")
     lines.append(f"Total    : {_esc(_fmt_rp(total_rev))}")
     lines.append(f"\n📊 *Alokasi:*")
-    lines.append(f"Bahan  : {_esc(_fmt_rp(budget_food))} \\({int(food_pct*100)}%\\)")
-    lines.append(f"Upah   : {_esc(_fmt_rp(budget_labor))} \\({int(labor_pct*100)}%\\)")
-    lines.append(f"Ops    : {_esc(_fmt_rp(budget_ops))} \\({int(ops_pct*100)}%\\)")
+    lines.append(f"Bahan  : {_esc(_fmt_rp(budget_bahan))}")
+    lines.append(f"Ops    : {_esc(_fmt_rp(budget_ops))}")
+    lines.append(f"Insentif: {_esc(_fmt_rp(budget_insentif))} \\(Fixed/Hari\\)")
 
     await query.edit_message_text(
         "\n".join(lines),

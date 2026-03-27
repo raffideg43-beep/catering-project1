@@ -92,10 +92,10 @@ class BudgetService:
         alloc = alloc_rows[0] if alloc_rows else {}
         price_pp = _d(alloc.get("price_per_portion", 15000))
 
-        # ── Total porsi bulan ini (dan aggregasi target per porsi) ──
+        # ─── Total porsi bulan ini (dan aggregasi target per porsi) ──
         ba_resp = (
             supabase.table("mbg_budget_allocations")
-            .select("total_portions, budget_raw_material, budget_food, operational_salary, budget_labor, operational_fuel, operational_utilities, budget_ops, budget_kitchen_rent")
+            .select("total_portions, budget_bahan, budget_ops, budget_insentif")
             .eq("tenant_id", tenant_id)
             .gte("date", first.isoformat())
             .lte("date", last.isoformat())
@@ -105,25 +105,13 @@ class BudgetService:
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
         
         target_bahan = Decimal("0")
-        target_upah = Decimal("0")
+        target_insentif = Decimal("0")
         target_ops = Decimal("0")
-        target_rent = Decimal("0")
 
         for r in ba_rows:
-            raw_mat = _d(r.get("budget_raw_material"))
-            target_bahan += raw_mat if raw_mat > 0 else _d(r.get("budget_food"))
-            
-            # Upah can be either operational_salary or fallback to legacy budget_labor
-            upah = _d(r.get("operational_salary"))
-            target_upah += upah if upah > 0 else _d(r.get("budget_labor"))
-            
-            # Operational is fuel + utilities OR fallback to legacy budget_ops
-            fuel = _d(r.get("operational_fuel"))
-            utils = _d(r.get("operational_utilities"))
-            total_ops_sub = fuel + utils
-            target_ops += total_ops_sub if total_ops_sub > 0 else _d(r.get("budget_ops"))
-            
-            target_rent += _d(r.get("budget_kitchen_rent"))
+            target_bahan += _d(r.get("budget_bahan"))
+            target_insentif += _d(r.get("budget_insentif"))
+            target_ops += _d(r.get("budget_ops"))
 
         def _breakdown(cat_key: str, target: Decimal, label: str):
             real = realisasi.get(cat_key, Decimal("0"))
@@ -169,15 +157,8 @@ class BudgetService:
             "kas_balances": kas_balances,
             "juknis_breakdown": {
                 "bahan_pangan": _breakdown("bahan_pangan", target_bahan, "Bahan Pangan"),
-                "insentif": _breakdown("insentif", target_upah, "Gaji & Upah"),
+                "insentif": _breakdown("insentif", target_insentif, "Gaji & Upah"),
                 "operasional": _breakdown("operasional", target_ops, "Operasional"),
-                "sewa_dapur": {
-                    "realisasi": "0.00",
-                    "target": str(target_rent),
-                    "label": "Sewa Dapur (Laba Bersih)",
-                    "pct": 0.0,
-                    "over_budget": False,
-                }
             },
             "disbursements": [
                 {

@@ -249,3 +249,38 @@ def telegram_auto_login(body: TelegramAutoLoginRequest):
             "user": user_resp,
         },
     }
+
+class MbgSettingsUpdate(BaseModel):
+    bahan_sd_smp: float
+    bahan_paud_tk: float
+    ops_per_porsi: float
+    insentif_harian: float
+    hari_kerja_bulan: int
+
+@router.get("/mbg-settings", response_model=Dict[str, Any])
+def get_mbg_settings(current_user: UserInDB = Depends(get_current_user)):
+    supabase = get_supabase()
+    resp = supabase.table("mbg_allocation_settings").select("*").eq("tenant_id", current_user.tenant_id).limit(1).execute()
+    rows = getattr(resp, "data", None) or []
+    if not rows:
+        # Auto-create default if not exist
+        default_data = {
+            "tenant_id": current_user.tenant_id,
+        }
+        ins = supabase.table("mbg_allocation_settings").insert(default_data).execute()
+        rows = getattr(ins, "data", None) or [{}]
+    
+    return {"success": True, "data": rows[0]}
+
+@router.put("/mbg-settings", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+def update_mbg_settings(body: MbgSettingsUpdate, current_user: UserInDB = Depends(get_current_user)):
+    supabase = get_supabase()
+    update_data = body.model_dump()
+    resp = supabase.table("mbg_allocation_settings").update(update_data).eq("tenant_id", current_user.tenant_id).execute()
+    rows = getattr(resp, "data", None) or []
+    if not rows:
+        update_data["tenant_id"] = current_user.tenant_id
+        ins = supabase.table("mbg_allocation_settings").insert(update_data).execute()
+        rows = getattr(ins, "data", None) or [{}]
+        
+    return {"success": True, "data": rows[0]}

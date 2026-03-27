@@ -256,7 +256,7 @@ function OverviewTab() {
                     </div>
 
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi Alokasi Anggaran (Per Porsi)</h2>
+                        <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi vs Budget Keseluruhan (Bulan Ini)</h2>
                         <div className="space-y-4">
                             {Object.values(data.juknis_breakdown).map((bd, idx) => {
                                 const barPct = Math.min(bd.pct, 150);

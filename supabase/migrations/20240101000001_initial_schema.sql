@@ -71,11 +71,14 @@ CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_id ON suppliers(tenant_id);
 CREATE TABLE IF NOT EXISTS schools (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id        UUID REFERENCES tenants(id) ON DELETE CASCADE,
-  name             TEXT NOT NULL,
+  external_id      VARCHAR(100), -- ID dari spreadsheet lama, if any
+  name             VARCHAR(255) NOT NULL,
   address          TEXT,
-  contact_name     TEXT,
-  contact_phone    TEXT,
+  principal_name   VARCHAR(255),
+  contact_number   VARCHAR(50),
   default_portions INTEGER DEFAULT 0,
+  school_level     VARCHAR(20) DEFAULT 'sd_smp', -- 'sd_smp' or 'paud_tk'
+  target_portions  INTEGER DEFAULT 0,
   is_active        BOOLEAN DEFAULT true,
   notes            TEXT,
   created_at       TIMESTAMPTZ DEFAULT NOW(),

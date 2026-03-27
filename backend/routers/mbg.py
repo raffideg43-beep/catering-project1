@@ -621,50 +621,47 @@ async def create_bulk_delivery(
             raise HTTPException(500, detail=f"Gagal potong stok: {e}")
 
     # ─── Langkah 6: Ambil allocation settings per sekolah + hitung ────────────────
+    # Fetch allocation settings
+    alloc_settings_resp = (
+        supabase.table("mbg_allocation_settings")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .limit(1)
+        .execute()
+    )
+    alloc_rows = getattr(alloc_settings_resp, "data", None) or [{}]
+    settings = alloc_rows[0] if alloc_rows else {}
+    
+    rate_bahan_sd = float(settings.get("bahan_sd_smp", 10000))
+    rate_bahan_tk = float(settings.get("bahan_paud_tk", 8000))
+    rate_ops = float(settings.get("ops_per_porsi", 3000))
+    insentif_harian = float(settings.get("insentif_harian", 6000000))
+
     total_portions = 0
-    total_revenue = 0.0
-    budget_raw_material = 0.0
-    budget_operational = 0.0
-    budget_kitchen_rent = 0
-    op_salary_total = 0
-    op_fuel_total = 0
-    op_utils_total = 0
-    allocation_types_used = set()
+    budget_bahan = 0.0
+    budget_ops = 0.0
 
     for d in body.deliveries:
         school = db_schools.get(d.school_id, {})
-        alloc_type = school.get("mbg_allocation_type", "large")
-        if not alloc_type: alloc_type = "large"
-        allocation_types_used.add(alloc_type)
+        school_level = school.get("school_level", "sd_smp")
         
         portions = d.portions_sent
-        price = 15000 if alloc_type == "large" else 13000
-        raw_mat = 10000 if alloc_type == "large" else 8000
-        ops = 3000
-        rent = 2000
+        rate_bahan = rate_bahan_tk if school_level == "paud_tk" else rate_bahan_sd
         
         total_portions += portions
-        total_revenue += portions * price
-        budget_raw_material += portions * raw_mat
-        budget_operational += portions * ops
-        budget_kitchen_rent += portions * rent
-        
-        # Breakdown operational
-        op_salary_total += portions * 1500
-        op_fuel_total += portions * 1200
-        op_utils_total += portions * 300
-        
-        # Tally the subtotals (need variables for these)
+        budget_bahan += portions * rate_bahan
+        budget_ops += portions * rate_ops
 
-    final_alloc_type = list(allocation_types_used)[0] if len(allocation_types_used) == 1 else "mixed"
+    # Total Insentif is flat per day
+    budget_insentif = insentif_harian
+    total_revenue = budget_bahan + budget_ops + budget_insentif
 
     allocation = {
         "total_revenue": total_revenue,
         "total_portions": total_portions,
-        "budget_raw_material": budget_raw_material,
-        "budget_operational": budget_operational,
-        "budget_kitchen_rent": budget_kitchen_rent,
-        "allocation_type": final_alloc_type,
+        "budget_bahan": budget_bahan,
+        "budget_ops": budget_ops,
+        "budget_insentif": budget_insentif,
     }
 
     # ─── Langkah 6b: Insert mbg_budget_allocations ───────────────────
@@ -676,21 +673,13 @@ async def create_bulk_delivery(
         "total_revenue": str(total_revenue),
         "pph22_deduction": "0.00",
         "net_revenue": str(total_revenue),
-        "budget_food": str(budget_raw_material), # For backward compatibility in old reporting
-        "budget_labor": str(budget_operational), # For backward compatibility in old reporting
-        "budget_ops": "0.00",                    # Backward compat
-        "actual_food_cost": "0.00",
-        "actual_labor_cost": str(budget_operational),
+        "budget_bahan": str(budget_bahan),
+        "budget_ops": str(budget_ops),
+        "budget_insentif": str(budget_insentif),
+        "actual_bahan_cost": "0.00",
         "actual_ops_cost": "0.00",
+        "actual_insentif_cost": "0.00",
         "net_profit": "0.00",
-        # New per-portion columns 
-        "allocation_type": final_alloc_type,
-        "budget_raw_material": str(budget_raw_material),
-        "budget_operational": str(budget_operational),
-        "budget_kitchen_rent": str(budget_kitchen_rent),
-        "operational_salary": str(op_salary_total),
-        "operational_fuel": str(op_fuel_total),
-        "operational_utilities": str(op_utils_total),
     }
     alloc_insert_resp = supabase.table("mbg_budget_allocations").insert(alloc_row).execute()
     alloc_db = (getattr(alloc_insert_resp, "data", None) or [{}])[0]
