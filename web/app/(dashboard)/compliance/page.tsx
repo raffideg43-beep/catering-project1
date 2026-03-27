@@ -1,0 +1,650 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { apiGet, apiPost, apiPatch } from "@/lib/api";
+
+/* ─── Types ─────────────────────────────────────────────────────────────── */
+type Tab = "hygiene" | "temperature" | "samples" | "waste" | "incidents" | "slhs";
+
+const TABS: { key: Tab; label: string; icon: string }[] = [
+  { key: "hygiene", label: "Higiene", icon: "🧹" },
+  { key: "temperature", label: "Suhu", icon: "🌡️" },
+  { key: "samples", label: "Bank Sampel", icon: "🧪" },
+  { key: "waste", label: "Sisa Makanan", icon: "🍽️" },
+  { key: "incidents", label: "Insiden", icon: "🚨" },
+  { key: "slhs", label: "SLHS", icon: "📜" },
+];
+
+const HYGIENE_AREAS = [
+  "Kebersihan Lantai & Dinding",
+  "Suhu Penyimpanan (Chiller/Freezer)",
+  "Kebersihan Peralatan Masak",
+  "Atribut Personel (Masker/Apron/Hairnet)",
+  "Kualitas Air Bersih",
+  "Kebersihan Area Penyimpanan",
+  "Kondisi Tempat Sampah",
+];
+
+const TEMP_AREAS = ["gudang_kering", "chiller", "freezer"] as const;
+const TEMP_LIMITS: Record<string, { min: number; max: number }> = {
+  gudang_kering: { min: 0, max: 25 },
+  chiller: { min: 0, max: 5 },
+  freezer: { min: -30, max: -18 },
+};
+
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+const today = () => new Date().toISOString().split("T")[0];
+const fmtDate = (d: string) => {
+  try { return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }); } catch { return d; }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+export default function CompliancePage() {
+  const [tab, setTab] = useState<Tab>("hygiene");
+  const [alertCounts, setAlertCounts] = useState({ temp: 0, sample: 0, incident: 0 });
+
+  // Fetch global alert counts
+  useEffect(() => {
+    const now = new Date();
+    Promise.allSettled([
+      apiGet("/compliance/temperature", { log_date: today() }),
+      apiGet("/compliance/food-samples"),
+      apiGet("/compliance/incidents", { month: now.getMonth() + 1, year: now.getFullYear() }),
+    ]).then(([tempR, smpR, incR]) => {
+      setAlertCounts({
+        temp: tempR.status === "fulfilled" ? (tempR.value?.anomalies ?? 0) : 0,
+        sample: smpR.status === "fulfilled" ? (smpR.value?.alerts_count ?? 0) : 0,
+        incident: incR.status === "fulfilled" ? (incR.value?.data?.filter((i: any) => i.status === "investigasi")?.length ?? 0) : 0,
+      });
+    });
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {/* Alert banner */}
+      {(alertCounts.temp + alertCounts.sample + alertCounts.incident) > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-1">
+          {alertCounts.temp > 0 && <p className="text-red-800">⚠️ {alertCounts.temp} anomali suhu terdeteksi hari ini</p>}
+          {alertCounts.sample > 0 && <p className="text-orange-800">⚠️ {alertCounts.sample} sampel akan kadaluarsa dalam 4 jam</p>}
+          {alertCounts.incident > 0 && <p className="text-red-900">🚨 {alertCounts.incident} insiden dalam investigasi</p>}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto flex-nowrap">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+              tab === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <span>{t.icon}</span>
+            <span className="hidden sm:inline">{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {tab === "hygiene" && <HygieneTab />}
+      {tab === "temperature" && <TemperatureTab />}
+      {tab === "samples" && <SamplesTab />}
+      {tab === "waste" && <WasteTab />}
+      {tab === "incidents" && <IncidentsTab />}
+      {tab === "slhs" && <SLHSTab />}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 1: Hygiene
+   ═══════════════════════════════════════════════════════════════════════════ */
+function HygieneTab() {
+  const [checks, setChecks] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [items, setItems] = useState(HYGIENE_AREAS.map((a) => ({ area: a, status: "baik", catatan: "" })));
+  const [checkDate, setCheckDate] = useState(today());
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const now = new Date();
+    apiGet("/compliance/hygiene", { month: now.getMonth() + 1, year: now.getFullYear() })
+      .then((d) => setChecks(d.data || []))
+      .catch(() => {});
+  }, []);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("/compliance/hygiene", { check_date: checkDate, items, notes });
+      setChecks([res.data, ...checks]);
+      setShowForm(false);
+      setItems(HYGIENE_AREAS.map((a) => ({ area: a, status: "baik", catatan: "" })));
+      setNotes("");
+    } catch { }
+    setLoading(false);
+  };
+
+  const statusBadge = (s: string) => {
+    if (s === "baik") return <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">✓ Baik</span>;
+    if (s === "perlu_perbaikan") return <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800">⚠️ Perlu Perbaikan</span>;
+    return <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800">✗ Tidak Layak</span>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Checklist Higiene</h2>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          {showForm ? "Batal" : "+ Checklist Baru"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700">Tanggal</label>
+            <input type="date" value={checkDate} onChange={(e) => setCheckDate(e.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          {items.map((item, idx) => (
+            <div key={idx} className="p-3 bg-gray-50 rounded-lg space-y-2">
+              <p className="text-sm font-medium">{item.area}</p>
+              <select
+                value={item.status}
+                onChange={(e) => { const n = [...items]; n[idx].status = e.target.value; setItems(n); }}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm"
+              >
+                <option value="baik">✓ Baik</option>
+                <option value="perlu_perbaikan">⚠️ Perlu Perbaikan</option>
+              </select>
+              <input placeholder="Catatan (opsional)" value={item.catatan}
+                onChange={(e) => { const n = [...items]; n[idx].catatan = e.target.value; setItems(n); }}
+                className="w-full border rounded-lg px-3 py-1.5 text-sm" />
+            </div>
+          ))}
+          <input placeholder="Catatan umum" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Menyimpan..." : "Simpan Checklist"}
+          </button>
+        </div>
+      )}
+
+      {checks.map((c) => (
+        <div key={c.id} className="bg-white border rounded-xl p-4">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <p className="font-semibold">{fmtDate(c.check_date)}</p>
+            </div>
+            {statusBadge(c.overall_status)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(c.items || []).map((item: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg text-sm">
+                <span>{item.status === "baik" ? "✅" : "⚠️"}</span>
+                <span className="truncate">{item.area}</span>
+              </div>
+            ))}
+          </div>
+          {c.notes && <p className="mt-2 text-sm text-gray-600 bg-blue-50 p-2 rounded">📝 {c.notes}</p>}
+        </div>
+      ))}
+      {checks.length === 0 && <p className="text-center text-gray-400 py-8">Belum ada checklist bulan ini</p>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 2: Temperature
+   ═══════════════════════════════════════════════════════════════════════════ */
+function TemperatureTab() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ log_date: today(), log_time: "08:00", area: "chiller", temperature: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiGet("/compliance/temperature", { log_date: today() })
+      .then((d) => setLogs(d.data || []))
+      .catch(() => {});
+  }, []);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("/compliance/temperature", { ...form, temperature: parseFloat(form.temperature) });
+      setLogs([res.data, ...logs]);
+      setShowForm(false);
+      setForm({ log_date: today(), log_time: "08:00", area: "chiller", temperature: "" });
+    } catch { }
+    setLoading(false);
+  };
+
+  const anomalies = logs.filter((l) => !l.is_normal);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Monitoring Suhu</h2>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          {showForm ? "Batal" : "+ Catat Suhu"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Tanggal</label><input type="date" value={form.log_date} onChange={(e) => setForm({ ...form, log_date: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Jam</label><input type="time" value={form.log_time} onChange={(e) => setForm({ ...form, log_time: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div><label className="text-sm font-medium">Area</label>
+            <select value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
+              {TEMP_AREAS.map((a) => <option key={a} value={a}>{a} ({TEMP_LIMITS[a].min}~{TEMP_LIMITS[a].max}°C)</option>)}
+            </select>
+          </div>
+          <div><label className="text-sm font-medium">Suhu (°C)</label><input type="number" step="0.1" placeholder="Contoh: 3.5" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Menyimpan..." : "Simpan"}
+          </button>
+        </div>
+      )}
+
+      {anomalies.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <h3 className="font-semibold text-red-900 mb-1">⚠️ Anomali Suhu</h3>
+          <ul className="text-sm text-red-800 space-y-0.5">
+            {anomalies.map((a, i) => <li key={i}>{a.area}: {a.temperature}°C pada {a.log_time}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50"><tr>
+            <th className="text-left px-4 py-2.5">Jam</th><th className="text-left px-4 py-2.5">Area</th>
+            <th className="text-right px-4 py-2.5">Suhu (°C)</th><th className="text-center px-4 py-2.5">Status</th>
+          </tr></thead>
+          <tbody>{logs.map((l) => (
+            <tr key={l.id} className="border-t">
+              <td className="px-4 py-2">{l.log_time}</td>
+              <td className="px-4 py-2">{l.area}</td>
+              <td className="text-right px-4 py-2 font-mono">{l.temperature}</td>
+              <td className="text-center px-4 py-2">{l.is_normal ? <span className="text-green-600">✓</span> : <span className="text-red-600">⚠️</span>}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {logs.length === 0 && <p className="text-center text-gray-400 py-6">Belum ada log suhu hari ini</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 3: Food Samples
+   ═══════════════════════════════════════════════════════════════════════════ */
+function SamplesTab() {
+  const [samples, setSamples] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ sample_date: today(), menu_name: "", taken_at: "08:00", weight_gram: 50, storage_temp: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiGet("/compliance/food-samples")
+      .then((d) => { setSamples(d.data || []); setAlerts(d.alerts || []); })
+      .catch(() => {});
+  }, []);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("/compliance/food-samples", {
+        ...form, weight_gram: parseFloat(String(form.weight_gram)),
+        storage_temp: form.storage_temp ? parseFloat(form.storage_temp) : null
+      });
+      setSamples([res.data, ...samples]);
+      setShowForm(false);
+    } catch { }
+    setLoading(false);
+  };
+
+  const dispose = async (id: string) => {
+    try {
+      await apiPatch(`/compliance/food-samples/${id}/dispose`, { reason: "normal_disposal" });
+      setSamples(samples.map((s) => s.id === id ? { ...s, status: "dibuang" } : s));
+    } catch { }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Bank Sampel Makanan</h2>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+          {showForm ? "Batal" : "+ Ambil Sampel"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Tanggal</label><input type="date" value={form.sample_date} onChange={(e) => setForm({ ...form, sample_date: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Jam Ambil</label><input type="time" value={form.taken_at} onChange={(e) => setForm({ ...form, taken_at: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div><label className="text-sm font-medium">Menu</label><input placeholder="Nasi Goreng" value={form.menu_name} onChange={(e) => setForm({ ...form, menu_name: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Berat (g)</label><input type="number" value={form.weight_gram} onChange={(e) => setForm({ ...form, weight_gram: parseFloat(e.target.value) })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Suhu (°C, opsional)</label><input type="number" step="0.1" value={form.storage_temp} onChange={(e) => setForm({ ...form, storage_temp: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+            {loading ? "Menyimpan..." : "Simpan Sampel"}
+          </button>
+        </div>
+      )}
+
+      {alerts.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+          <h3 className="font-semibold text-orange-900 mb-1">⚠️ Sampel Akan Kadaluarsa</h3>
+          <ul className="text-sm text-orange-800 space-y-0.5">
+            {alerts.map((a: any, i: number) => <li key={i}>{a.sample_code} ({a.menu}) — {a.hours_left?.toFixed(1)} jam lagi</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="grid gap-3">
+        {samples.map((s) => (
+          <div key={s.id} className={`bg-white border rounded-xl p-4 ${s.status === "dibuang" ? "opacity-50" : ""}`}>
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-semibold">{s.sample_code}</p>
+                <p className="text-sm text-gray-600">{s.menu_name}</p>
+                <p className="text-xs text-gray-400 mt-1">Diambil: {fmtDate(s.sample_date)} {s.taken_at}</p>
+              </div>
+              <div className="text-right">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  s.hours_remaining && s.hours_remaining > 4 ? "bg-green-100 text-green-800"
+                  : s.hours_remaining && s.hours_remaining > 0 ? "bg-orange-100 text-orange-800"
+                  : "bg-red-100 text-red-800"
+                }`}>
+                  {s.hours_remaining ? (s.hours_remaining > 0 ? `⏱️ ${s.hours_remaining.toFixed(1)}h` : "❌ Expired") : s.status}
+                </span>
+                {s.status === "disimpan" && (
+                  <button onClick={() => dispose(s.id)} className="mt-2 block text-xs text-red-600 hover:underline">🗑️ Buang</button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        {samples.length === 0 && <p className="text-center text-gray-400 py-8">Belum ada sampel</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 4: Food Waste
+   ═══════════════════════════════════════════════════════════════════════════ */
+function WasteTab() {
+  const [reports, setReports] = useState<any[]>([]);
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ school_id: "", report_date: today(), portions_sent: "", portions_consumed: "", comstock_score: 3, waste_reason: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiGet("/compliance/food-waste", { month, year })
+      .then((d) => setReports(d.data || []))
+      .catch(() => {});
+  }, [month, year]);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("/compliance/food-waste", {
+        ...form,
+        portions_sent: parseInt(form.portions_sent),
+        portions_consumed: parseInt(form.portions_consumed),
+        comstock_score: form.comstock_score,
+      });
+      setReports([res.data, ...reports]);
+      setShowForm(false);
+    } catch { }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <h2 className="text-xl font-bold">Laporan Sisa Makanan</h2>
+        <div className="flex gap-2 items-center">
+          <select value={month} onChange={(e) => setMonth(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm">
+            {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{new Date(2024, i).toLocaleDateString("id-ID", { month: "long" })}</option>)}
+          </select>
+          <select value={year} onChange={(e) => setYear(+e.target.value)} className="border rounded-lg px-2 py-1.5 text-sm">
+            <option value={2025}>2025</option><option value={2026}>2026</option>
+          </select>
+          <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">+</button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <input placeholder="ID Sekolah" value={form.school_id} onChange={(e) => setForm({ ...form, school_id: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <input type="date" value={form.report_date} onChange={(e) => setForm({ ...form, report_date: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Porsi Kirim</label><input type="number" value={form.portions_sent} onChange={(e) => setForm({ ...form, portions_sent: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Porsi Konsumsi</label><input type="number" value={form.portions_consumed} onChange={(e) => setForm({ ...form, portions_consumed: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div><label className="text-sm font-medium">Skor Comstock (1-5)</label>
+            <select value={form.comstock_score} onChange={(e) => setForm({ ...form, comstock_score: +e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
+              <option value={1}>1 ⭐ Habis</option><option value={2}>2 ⭐ &lt;25% sisa</option><option value={3}>3 ⭐ 25-50%</option>
+              <option value={4}>4 ⭐ 50-75%</option><option value={5}>5 ⭐ &gt;75% sisa</option>
+            </select>
+          </div>
+          <input placeholder="Alasan sisa (kenyang, tidak suka, dll)" value={form.waste_reason} onChange={(e) => setForm({ ...form, waste_reason: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            {loading ? "Menyimpan..." : "Simpan Laporan"}
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50"><tr>
+            <th className="text-left px-4 py-2.5">Tanggal</th><th className="text-right px-4 py-2.5">Kirim</th>
+            <th className="text-right px-4 py-2.5">Konsumsi</th><th className="text-right px-4 py-2.5">% Sisa</th>
+            <th className="text-center px-4 py-2.5">Comstock</th>
+          </tr></thead>
+          <tbody>{reports.map((r) => (
+            <tr key={r.id} className="border-t">
+              <td className="px-4 py-2">{r.report_date}</td>
+              <td className="text-right px-4 py-2">{r.portions_sent}</td>
+              <td className="text-right px-4 py-2">{r.portions_consumed}</td>
+              <td className="text-right px-4 py-2 font-semibold">{r.waste_pct}%</td>
+              <td className="text-center px-4 py-2">⭐{r.comstock_score}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {reports.length === 0 && <p className="text-center text-gray-400 py-6">Belum ada laporan bulan ini</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 5: Incidents
+   ═══════════════════════════════════════════════════════════════════════════ */
+function IncidentsTab() {
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ school_id: "", incident_time: new Date().toISOString().substring(0, 16), location: "", victim_count: "", symptoms: [""], first_action: "", sample_secured: false });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const now = new Date();
+    apiGet("/compliance/incidents", { month: now.getMonth() + 1, year: now.getFullYear() })
+      .then((d) => setIncidents(d.data || []))
+      .catch(() => {});
+  }, []);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("/compliance/incidents", {
+        ...form,
+        victim_count: parseInt(form.victim_count),
+        symptoms: form.symptoms.filter(Boolean),
+      });
+      setIncidents([res.data, ...incidents]);
+      setShowForm(false);
+    } catch { }
+    setLoading(false);
+  };
+
+  const pending = incidents.filter((i) => i.status === "investigasi").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Laporan Insiden</h2>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+          {showForm ? "Batal" : "+ Laporkan Insiden"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <input placeholder="ID Sekolah (opsional)" value={form.school_id} onChange={(e) => setForm({ ...form, school_id: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Waktu</label><input type="datetime-local" value={form.incident_time} onChange={(e) => setForm({ ...form, incident_time: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Jumlah Korban</label><input type="number" value={form.victim_count} onChange={(e) => setForm({ ...form, victim_count: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <input placeholder="Lokasi" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <div>
+            <label className="text-sm font-medium">Gejala</label>
+            {form.symptoms.map((s, idx) => (
+              <input key={idx} placeholder="mual, muntah, diare" value={s}
+                onChange={(e) => { const n = [...form.symptoms]; n[idx] = e.target.value; setForm({ ...form, symptoms: n }); }}
+                className="w-full mt-1 border rounded-lg px-3 py-1.5 text-sm" />
+            ))}
+            <button onClick={() => setForm({ ...form, symptoms: [...form.symptoms, ""] })} className="text-xs text-blue-600 mt-1">+ Tambah gejala</button>
+          </div>
+          <input placeholder="Tindakan pertama" value={form.first_action} onChange={(e) => setForm({ ...form, first_action: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.sample_secured} onChange={(e) => setForm({ ...form, sample_secured: e.target.checked })} />
+            Sampel makanan diamankan
+          </label>
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+            {loading ? "Mengirim..." : "Kirim Laporan"}
+          </button>
+        </div>
+      )}
+
+      {pending > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <p className="font-semibold text-red-900">🚨 {pending} insiden dalam investigasi</p>
+        </div>
+      )}
+
+      {incidents.map((inc) => (
+        <div key={inc.id} className={`bg-white border rounded-xl p-4 ${inc.status === "investigasi" ? "border-red-300 bg-red-50" : ""}`}>
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <p className="font-semibold">{inc.incident_code}</p>
+              <p className="text-sm text-gray-600">{fmtDate((inc.incident_time || "").substring(0, 10))}</p>
+            </div>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              inc.status === "investigasi" ? "bg-red-200 text-red-900"
+              : inc.status === "selesai" ? "bg-green-200 text-green-900" : "bg-gray-200 text-gray-700"
+            }`}>{inc.status}</span>
+          </div>
+          <div className="text-sm space-y-1">
+            <p><strong>Lokasi:</strong> {inc.location}</p>
+            <p><strong>Korban:</strong> {inc.victim_count} orang</p>
+            <p><strong>Gejala:</strong> {(inc.symptoms || []).join(", ") || "—"}</p>
+            <p><strong>Sampel:</strong> {inc.sample_secured ? "✓ Diamankan" : "✗ Tidak"}</p>
+          </div>
+        </div>
+      ))}
+      {incidents.length === 0 && <p className="text-center text-gray-400 py-8">Tidak ada insiden</p>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TAB 6: SLHS
+   ═══════════════════════════════════════════════════════════════════════════ */
+function SLHSTab() {
+  const [docs, setDocs] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ cert_number: "", issued_date: "", expires_date: "", label_expires: "", file_url: "", notes: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiGet("/compliance/slhs").then((d) => setDocs(d.data || [])).catch(() => {});
+  }, []);
+
+  const submit = async () => {
+    setLoading(true);
+    try {
+      const body: any = { cert_number: form.cert_number, issued_date: form.issued_date, expires_date: form.expires_date };
+      if (form.label_expires) body.label_expires = form.label_expires;
+      if (form.file_url) body.file_url = form.file_url;
+      if (form.notes) body.notes = form.notes;
+      const res = await apiPost("/compliance/slhs", body);
+      setDocs([res.data, ...docs]);
+      setShowForm(false);
+    } catch { }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold">Dokumen SLHS</h2>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
+          {showForm ? "Batal" : "+ Sertifikat Baru"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-xl p-4 space-y-3">
+          <input placeholder="Nomor Sertifikat" value={form.cert_number} onChange={(e) => setForm({ ...form, cert_number: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-sm font-medium">Tanggal Terbit</label><input type="date" value={form.issued_date} onChange={(e) => setForm({ ...form, issued_date: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium">Kadaluarsa</label><input type="date" value={form.expires_date} onChange={(e) => setForm({ ...form, expires_date: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div><label className="text-sm font-medium">Label Habis (opsional)</label><input type="date" value={form.label_expires} onChange={(e) => setForm({ ...form, label_expires: e.target.value })} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></div>
+          <input placeholder="URL Dokumen (opsional)" value={form.file_url} onChange={(e) => setForm({ ...form, file_url: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <input placeholder="Catatan (opsional)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          <button onClick={submit} disabled={loading} className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+            {loading ? "Menyimpan..." : "Simpan SLHS"}
+          </button>
+        </div>
+      )}
+
+      {docs.map((s) => {
+        const daysLeft = s.days_until_expiry ?? Math.ceil((new Date(s.expires_date).getTime() - Date.now()) / 86400000);
+        const isExpiring = daysLeft <= 90;
+        return (
+          <div key={s.id} className={`bg-white border rounded-xl p-4 ${isExpiring ? "border-yellow-300 bg-yellow-50" : ""}`}>
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-semibold">{s.cert_number}</p>
+                <p className="text-sm text-gray-600">Terbit: {fmtDate(s.issued_date)}</p>
+                <p className="text-sm text-gray-600">Kadaluarsa: {fmtDate(s.expires_date)}</p>
+              </div>
+              <div className="text-right">
+                <span className={`text-sm font-semibold ${daysLeft <= 30 ? "text-red-600" : daysLeft <= 90 ? "text-yellow-600" : "text-green-600"}`}>
+                  {daysLeft > 0 ? `${daysLeft} hari` : "Kadaluarsa"}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {docs.length === 0 && <p className="text-center text-gray-400 py-8">Belum ada dokumen SLHS</p>}
+    </div>
+  );
+}

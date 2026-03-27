@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/pembukuan", icon: "📋", label: "Pembukuan" },
   { href: "/mbg", icon: "🍱", label: "MBG" },
   { href: "/stok", icon: "📦", label: "Stok", children: [{ href: "/stok", label: "📦 Stok Utama" }, { href: "/stok/riwayat", label: "📋 Riwayat" }] },
+  { href: "/compliance", icon: "✅", label: "Compliance" },
   
   { type: "divider", label: "KEUANGAN" },
   { href: "/keuangan", icon: "💳", label: "Piutang & Hutang" },
