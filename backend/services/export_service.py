@@ -909,21 +909,30 @@ class ExportService:
 
         row = 6
         lbl_font = Font(name=GLOBAL_FONT, bold=True)
-        val_font = Font(name=GLOBAL_FONT, color=HDR_FILL_COLOR, bold=True)
-        border = Border(bottom=Side(style='thin', color=BORDER_COLOR))
+        val_font = Font(name=GLOBAL_FONT, color="000000", bold=True)
+        border_all = Border(
+            left=Side(style='thin', color=BORDER_COLOR),
+            right=Side(style='thin', color=BORDER_COLOR),
+            top=Side(style='thin', color=BORDER_COLOR),
+            bottom=Side(style='thin', color=BORDER_COLOR)
+        )
 
         for sec_title, items in sections:
             # Section Header
             ws.cell(row, 1, sec_title).font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
             ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+            ws.cell(row, 1).border = border_all
+            ws.cell(row, 2).border = border_all
             row += 1
             
             for label, val in items:
                 lbl_cell = ws.cell(row, 1, label)
                 lbl_cell.font = lbl_font
+                lbl_cell.border = border_all
                 
                 val_cell = ws.cell(row, 2, val)
                 val_cell.font = val_font
+                val_cell.border = border_all
                 if isinstance(val, (float, Decimal, int)) and "porsi" not in str(val):
                     val_cell.number_format = ACCOUNTING_FORMAT
                 
@@ -932,6 +941,9 @@ class ExportService:
 
         # Piutang & Hutang
         ws.cell(row, 1, "STATUS PIUTANG & HUTANG").font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        ws.cell(row, 1).border = border_all
+        ws.cell(row, 2).border = border_all
         row += 1
         
         piutang = float(sum(_d(r.get("amount")) for r in data.get("receivables", [])))
@@ -939,9 +951,11 @@ class ExportService:
 
         ws.cell(row, 1, "Total Piutang (Receivables)"); ws.cell(row, 2, piutang).number_format = ACCOUNTING_FORMAT
         ws.cell(row, 1).font = lbl_font; ws.cell(row, 2).font = val_font
+        ws.cell(row, 1).border = border_all; ws.cell(row, 2).border = border_all
         row += 1
         ws.cell(row, 1, "Total Hutang (Payables)");    ws.cell(row, 2, hutang).number_format = ACCOUNTING_FORMAT
         ws.cell(row, 1).font = lbl_font; ws.cell(row, 2).font = val_font
+        ws.cell(row, 1).border = border_all; ws.cell(row, 2).border = border_all
 
         ws.column_dimensions["A"].width = 35
         ws.column_dimensions["B"].width = 25

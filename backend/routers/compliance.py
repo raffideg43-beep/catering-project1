@@ -449,36 +449,45 @@ def get_food_waste_targets(
     """Ambil daftar sekolah, menu, dan porsi kirim untuk hari tertentu dari mbg_deliveries."""
     supabase = get_supabase()
 
-    # 1. Fetch deliveries
+    # 1. Fetch schools
+    s_resp = (
+        supabase.table("schools")
+        .select("id, name, default_portions")
+        .eq("tenant_id", current_user.tenant_id)
+        .execute()
+    )
+    schools = getattr(s_resp, "data", None) or []
+
+    # 2. Fetch deliveries
     d_resp = (
-        supabase.table("mbg_deliveries").select("school_id, menu_name, portions_sent, schools(name)")
+        supabase.table("mbg_deliveries").select("school_id, menu_name, portions_sent")
         .eq("tenant_id", current_user.tenant_id)
         .eq("delivery_date", target_date.isoformat())
         .execute()
     )
-    deliveries = getattr(d_resp, "data", None) or []
+    deliveries = {d["school_id"]: d for d in (getattr(d_resp, "data", None) or [])}
 
-    # 2. Fetch existing reports to cross-check
+    # 3. Fetch existing reports to cross-check
     r_resp = (
         supabase.table("food_waste_reports").select("school_id, id")
         .eq("tenant_id", current_user.tenant_id)
         .eq("report_date", target_date.isoformat())
         .execute()
     )
-    reports = getattr(r_resp, "data", None) or []
-    reported_schools = {r["school_id"]: r["id"] for r in reports}
+    reports = {r["school_id"]: r["id"] for r in (getattr(r_resp, "data", None) or [])}
 
-    # 3. Format result
+    # 4. Format result
     targets = []
-    for d in deliveries:
-        sid = d.get("school_id")
+    for s in schools:
+        sid = s["id"]
+        d = deliveries.get(sid, {})
         targets.append({
             "school_id": sid,
-            "school_name": d.get("schools", {}).get("name", "Unknown School") if d.get("schools") else "Unknown",
+            "school_name": s["name"],
             "menu_name": d.get("menu_name", ""),
-            "portions_sent": d.get("portions_sent", 0),
-            "report_id": reported_schools.get(sid),
-            "is_reported": sid in reported_schools
+            "portions_sent": d.get("portions_sent", s.get("default_portions", 0)),
+            "report_id": reports.get(sid),
+            "is_reported": sid in reports
         })
 
     return {"success": True, "target_date": target_date.isoformat(), "data": targets}
