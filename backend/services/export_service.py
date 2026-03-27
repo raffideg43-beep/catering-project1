@@ -28,10 +28,16 @@ BULAN = {
 
 TEMPLATE_PATH = Path(__file__).parent.parent / "templates" / "pembukuan_template.xlsx"
 
-# ─── Konstanta styling ────────────────────────────────────────────────────────
-HDR_FILL_COLOR   = "1F4E79"
-ALT_ROW_COLOR    = "F2F2F2"
-TOTAL_FILL_COLOR = "D6E4F0"
+# ─── Konstanta styling (Dashboard Biru Modern v25) ─────────────────────────────
+HDR_FILL_COLOR   = "0D47A1"  # Navy Blue
+ALT_ROW_COLOR    = "F0F7FF"  # Very Light Blue (Zebra)
+TOTAL_FILL_COLOR = "E3F2FD"  # Light Blue for Totals
+BORDER_COLOR     = "D1D1D1"  # Soft Grey Border
+GLOBAL_FONT      = "Segoe UI"
+GLOBAL_FONT_SIZE = 11
+
+# Accounting format: _($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)
+ACCOUNTING_FORMAT = '_($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)'
 
 
 def _d(v, default: Decimal = Decimal("0")) -> Decimal:
@@ -584,7 +590,7 @@ class ExportService:
                 ws.cell(row, 6, keluar).number_format = '"Rp "#,##0'
                 ws.cell(row, 7, float(entry.get("balance_after", 0))).number_format = '"Rp "#,##0'
                 
-                self._alt_row(ws, row, 3)
+                self._alt_row(ws, row, 7)
                 row += 1
 
         # Total row
@@ -605,21 +611,20 @@ class ExportService:
                     if trx.get("status") not in ("void", "cancelled"):
                         total_kredit += _d(trx.get("total"))
 
-            ws.cell(row, 4, "TOTAL").font = Font(bold=True)
-            ws.cell(row, 5, float(total_debit)).number_format = '"Rp "#,##0'
-            ws.cell(row, 5).font = Font(bold=True)
-            ws.cell(row, 6, float(total_kredit)).number_format = '"Rp "#,##0'
-            ws.cell(row, 6).font = Font(bold=True)
-            ws.cell(row, 7, float(total_debit - total_kredit)).number_format = '"Rp "#,##0'
-            ws.cell(row, 7).font = Font(bold=True)
+            self._write_total_row(ws, row, {
+                5: float(total_debit), 
+                6: float(total_kredit),
+                7: float(total_debit - total_kredit)
+            }, max_col=7)
 
         self._set_column_widths(ws)
+        ws.freeze_panes = "A4"
+        ws.auto_filter.ref = f"A3:G{row if n > 0 else 3}"
 
     def _fill_penerima_manfaat(self, ws, data: dict) -> None:
         from openpyxl.styles import Font, Alignment, PatternFill
         ws.merge_cells("A1:I1")
-        ws["A1"] = "DATA PENERIMA MANFAAT & LOGISTIK PENGIRIMAN MBG"
-        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = [
@@ -678,7 +683,12 @@ class ExportService:
                     for c in range(7, 10):
                         ws.cell(row, c, "-")
 
-                self._alt_row(ws, row, len(headers) - 1)
+                self._alt_row(ws, row, 9)
+                # Center align time columns
+                from openpyxl.styles import Alignment
+                ws.cell(row, 7).alignment = Alignment(horizontal="center")
+                ws.cell(row, 8).alignment = Alignment(horizontal="center")
+                ws.cell(row, 9).alignment = Alignment(horizontal="center")
                 row += 1
 
             # Add schools that have logistics but no beneficiary entry
@@ -694,6 +704,13 @@ class ExportService:
                     ws.cell(row, 7, logistic.get("depart_time", "-"))
                     ws.cell(row, 8, logistic.get("target_arrival", "-"))
                     ws.cell(row, 9, logistic.get("done_at_school", "-"))
+                    
+                    self._alt_row(ws, row, 9)
+                    from openpyxl.styles import Alignment
+                    ws.cell(row, 7).alignment = Alignment(horizontal="center")
+                    ws.cell(row, 8).alignment = Alignment(horizontal="center")
+                    ws.cell(row, 9).alignment = Alignment(horizontal="center")
+                    
                     seen_schools.add(sid)
 
         # Totals row
@@ -703,9 +720,7 @@ class ExportService:
         ) if sb_data else 0
         total_delivered = sum(delivered_by_school.values())
         row += 1
-        ws.cell(row, 4, "TOTAL").font = Font(bold=True)
-        ws.cell(row, 5, total_target).font = Font(bold=True)
-        ws.cell(row, 6, total_delivered).font = Font(bold=True)
+        self._write_total_row(ws, row, {5: total_target, 6: total_delivered}, max_col=9)
 
         # Add master summary below table
         row += 2
@@ -804,94 +819,132 @@ class ExportService:
             if rd[0] == "-":
                 row += 1
                 continue
-            ws.cell(row, 2, float(rd[1])).number_format = '"Rp "#,##0'
-            ws.cell(row, 3, float(rd[2])).number_format = '"Rp "#,##0'
-            ws.cell(row, 4, float(rd[3])).number_format = '"Rp "#,##0'
+            
+            # Values
+            ws.cell(row, 2, float(rd[1])).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 3, float(rd[2])).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 4, float(rd[3])).number_format = ACCOUNTING_FORMAT
             ws.cell(row, 5, rd[4])
+            
+            # Styling
+            self._alt_row(ws, row, 5)
+            
+            # Highlight Total Keseluruhan
+            if rd[0] == "Total Keseluruhan":
+                from openpyxl.styles import PatternFill, Font
+                highlight = PatternFill("solid", fgColor="BBDEFB") # Light Blue
+                for c in range(1, 6):
+                    ws.cell(row, c).fill = highlight
+                    ws.cell(row, c).font = Font(name=GLOBAL_FONT, bold=True, size=12)
+            
             row += 1
             
         self._set_column_widths(ws)
+        ws.freeze_panes = "A4"
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
-        from openpyxl.styles import Font, PatternFill, Alignment
-        logger.info(f"Fill ringkasan: transactions={len(data.get('transactions', []))}, deliveries={len(data.get('deliveries', []))}")
-
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
 
-        # Header
-        ws.merge_cells("A1:G1")
+        # Global Font
+        ws.sheet_view.showGridLines = False
+        default_font = Font(name=GLOBAL_FONT, size=GLOBAL_FONT_SIZE)
+
+        # Header Title
+        ws.merge_cells("A1:C1")
         ws["A1"] = f"PEMBUKUAN CATERING MBG — {bulan_str} {year}"
-        ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=16, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
-        ws["A1"].alignment = Alignment(horizontal="center")
+        ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 30
 
-        ws["A2"] = "Nama SPPG:"; ws["B2"] = tenant_name
-        ws["A3"] = "Periode:"
-        ws["B3"] = f"{data['first'].strftime('%d/%m/%Y')} s/d {data['last'].strftime('%d/%m/%Y')}"
+        # Info Section
+        ws["A3"] = "Nama SPPG:"; ws["A3"].font = Font(name=GLOBAL_FONT, bold=True)
+        ws["B3"] = tenant_name;   ws["B3"].font = default_font
+        ws["A4"] = "Periode:";    ws["A4"].font = Font(name=GLOBAL_FONT, bold=True)
+        ws["B4"] = f"{data['first'].strftime('%d/%m/%Y')} s/d {data['last'].strftime('%d/%m/%Y')}"
+        ws["B4"].font = default_font
 
-        # Kalkulasi ringkasan
+        # Calculations
         deliveries = data["deliveries"]
         transactions = data["transactions"]
         budget = data.get("budget_summary", {})
         total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
         total_days = len({d["delivery_date"] for d in deliveries})
-        price_pp = Decimal(str(data["price_per_portion"]))
         
-        # Pagu dan Dana Pencairan (Real dari UI Anggaran)
         pagu_amount = Decimal(budget.get("pagu_amount", 0))
         total_disbursed = Decimal(budget.get("total_disbursed", 0))
         sisa_anggaran = Decimal(budget.get("sisa_anggaran", 0))
 
-        # Menghitung estimasi jika menggunakan portion based vs actual pencairan
         revenue_net = total_disbursed
         exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
         exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
         exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
         total_exp = exp_bahan + exp_upah + exp_ops
-        
         gross_profit = revenue_net - total_exp
 
-        rows = [
-            ("Pagu Anggaran",     float(pagu_amount)),
-            ("Dana Masuk / Cair", float(total_disbursed)),
-            ("Sisa Anggaran",     float(sisa_anggaran)),
-            ("Total Porsi (Terkirim)", f"{total_portions:,} porsi"),
-            ("Total Hari Kirim",  f"{total_days} hari"),
-            ("Total Transaksi",   f"{len(transactions)} nota"),
-            ("Pengeluaran Bahan Pangan", float(exp_bahan)),
-            ("Pengeluaran Insentif/Upah", float(exp_upah)),
-            ("Pengeluaran Operasional", float(exp_ops)),
-            ("Total Pengeluaran", float(total_exp)),
-            ("Laba Kotor / Sisa Dana", float(gross_profit)),
+        # Layout Tables
+        sections = [
+            ("ANGGARAN & PENDAPATAN", [
+                ("Pagu Anggaran", float(pagu_amount)),
+                ("Dana Masuk / Cair", float(total_disbursed)),
+                ("Sisa Anggaran", float(sisa_anggaran)),
+            ]),
+            ("OPERASIONAL (VOLUME)", [
+                ("Total Porsi Terkirim", f"{total_portions:,} porsi"),
+                ("Total Hari Kirim", f"{total_days} hari"),
+                ("Total Transaksi (Nota)", f"{len(transactions)} nota"),
+            ]),
+            ("REALISASI PENGELUARAN", [
+                ("Bahan Pangan", float(exp_bahan)),
+                ("Insentif / Upah", float(exp_upah)),
+                ("Operasional (BBM/Listrik)", float(exp_ops)),
+                ("TOTAL PENGELUARAN", float(total_exp)),
+            ]),
+            ("RINGKASAN AKHIR", [
+                ("LABA KOTOR / SISA DANA", float(gross_profit)),
+            ])
         ]
 
-        ws["A5"] = "Keterangan"; ws["B5"] = "Jumlah"
-        self._apply_header_style(ws, 5)
+        row = 6
+        lbl_font = Font(name=GLOBAL_FONT, bold=True)
+        val_font = Font(name=GLOBAL_FONT, color=HDR_FILL_COLOR, bold=True)
+        border = Border(bottom=Side(style='thin', color=BORDER_COLOR))
 
-        for i, (label, val) in enumerate(rows, start=6):
-            ws[f"A{i}"] = label
-            ws[f"B{i}"] = val
-            if isinstance(val, float):
-                ws[f"B{i}"].number_format = '"Rp "#,##0'
+        for sec_title, items in sections:
+            # Section Header
+            ws.cell(row, 1, sec_title).font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+            row += 1
+            
+            for label, val in items:
+                lbl_cell = ws.cell(row, 1, label)
+                lbl_cell.font = lbl_font
+                
+                val_cell = ws.cell(row, 2, val)
+                val_cell.font = val_font
+                if isinstance(val, (float, Decimal, int)) and "porsi" not in str(val):
+                    val_cell.number_format = ACCOUNTING_FORMAT
+                
+                row += 1
+            row += 1 # Spacer
 
-        # Piutang & Hutang summary
-        receivables = data.get("receivables", [])
-        payables = data.get("payables", [])
-        total_piutang = sum(_d(r.get("amount")) for r in receivables)
-        total_hutang = sum(_d(p.get("amount")) for p in payables)
+        # Piutang & Hutang
+        ws.cell(row, 1, "STATUS PIUTANG & HUTANG").font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
+        row += 1
+        
+        piutang = float(sum(_d(r.get("amount")) for r in data.get("receivables", [])))
+        hutang = float(sum(_d(p.get("amount")) for p in data.get("payables", [])))
 
-        last_row = 6 + len(rows)
-        ws[f"A{last_row}"] = "Total Piutang"
-        ws[f"B{last_row}"] = float(total_piutang)
-        ws[f"B{last_row}"].number_format = '"Rp "#,##0'
-        last_row += 1
-        ws[f"A{last_row}"] = "Total Hutang"
-        ws[f"B{last_row}"] = float(total_hutang)
-        ws[f"B{last_row}"].number_format = '"Rp "#,##0'
+        ws.cell(row, 1, "Total Piutang (Receivables)"); ws.cell(row, 2, piutang).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 1).font = lbl_font; ws.cell(row, 2).font = val_font
+        row += 1
+        ws.cell(row, 1, "Total Hutang (Payables)");    ws.cell(row, 2, hutang).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 1).font = lbl_font; ws.cell(row, 2).font = val_font
 
-        self._set_column_widths(ws)
-        ws.freeze_panes = "A6"
+        ws.column_dimensions["A"].width = 35
+        ws.column_dimensions["B"].width = 25
 
     # ─── Sheet 2: Bulanan (gabungan semua transaksi + penyerahan) ─────────────
 
@@ -909,7 +962,7 @@ class ExportService:
         # ── Section A: PENYERAHAN MBG ──
         ws.merge_cells("A1:I1")
         ws["A1"] = f"PENYERAHAN MBG — {bulan_str} {year}"
-        ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=12, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
 
@@ -1073,10 +1126,11 @@ class ExportService:
 
         self._write_total_row(ws, row, {
             8: float(tot_sub), 9: float(tot_pay),
-        })
+        }, max_col=12)
 
         self._set_column_widths(ws)
         ws.freeze_panes = "A3"
+        ws.auto_filter.ref = "A2:L2"
 
     # ─── Sheet 3: Stok ────────────────────────────────────────────────────────
 
@@ -1125,16 +1179,18 @@ class ExportService:
             ws.cell(row, 7, round(float(masuk) / factor, 3))
             ws.cell(row, 8, round(float(keluar) / factor, 3))
             ws.cell(row, 9, round(stk_akhir_display, 3))
-            ws.cell(row, 10, round(nilai, 2)).number_format = '"Rp "#,##0'
-            self._alt_row(ws, row, 2)
+            ws.cell(row, 10, round(nilai, 2)).number_format = ACCOUNTING_FORMAT
+            self._alt_row(ws, row, 10)
             row += 1
 
         if not data.get("products"):
             ws.cell(row, 1, "—")
             ws.cell(row, 2, "Tidak ada data produk/bahan")
+            row += 1
 
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:J{row-1}"
 
     # ─── Sheet 4: Laporan Pemerintah ──────────────────────────────────────────
 
@@ -1295,15 +1351,17 @@ class ExportService:
                 ws.cell(row, 9, subtotal).number_format = '"Rp "#,##0'
                 ws.cell(row, 10, total_nota).number_format = '"Rp "#,##0'
                 ws.cell(row, 11, method)
-                self._alt_row(ws, row, 2)
+                self._alt_row(ws, row, 11)
                 row += 1
 
         if not data.get("transactions"):
             ws.cell(row, 1, "—")
             ws.cell(row, 2, "Tidak ada riwayat nota bulan ini")
+            row += 1
 
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:K{row-1}"
 
     # ─── Sheet 6: Operasional & Upah ──────────────────────────────────────────
 
@@ -1364,9 +1422,10 @@ class ExportService:
         row += 1
 
         # ── Section B: DETAIL BIAYA OPERASIONAL ──
+        ops_start = row
         ws.merge_cells(f"A{row}:G{row}")
         ws[f"A{row}"] = f"DETAIL BIAYA OPERASIONAL — {bulan_str} {year}"
-        ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws[f"A{row}"].font = Font(name=GLOBAL_FONT, bold=True, size=12, color="FFFFFF")
         ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws[f"A{row}"].alignment = Alignment(horizontal="center")
         row += 1
@@ -1387,10 +1446,10 @@ class ExportService:
             ws.cell(row, 2, cost.get("cost_date", ""))
             ws.cell(row, 3, cost.get("name", ""))
             ws.cell(row, 4, cost.get("category", ""))
-            ws.cell(row, 5, amt).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, amt).number_format = ACCOUNTING_FORMAT
             ws.cell(row, 6, "Ya" if cost.get("is_recurring") else "Tidak")
             ws.cell(row, 7, cost.get("notes", ""))
-            self._alt_row(ws, row, 2)
+            self._alt_row(ws, row, 7)
             row += 1
 
         if not data.get("operational_costs"):
@@ -1398,13 +1457,14 @@ class ExportService:
             ws.cell(row, 2, "Tidak ada biaya operasional bulan ini")
             row += 1
 
-        self._write_total_row(ws, row, {5: float(total_ops_detail)})
+        self._write_total_row(ws, row, {5: float(total_ops_detail)}, max_col=7)
         row += 2
 
         # ── Section C: GAJI & UPAH ──
+        upah_start = row
         ws.merge_cells(f"A{row}:J{row}")
         ws[f"A{row}"] = f"GAJI & UPAH (BERDASARKAN PERIODE) — {bulan_str} {year}"
-        ws[f"A{row}"].font = Font(bold=True, size=12, color="FFFFFF")
+        ws[f"A{row}"].font = Font(name=GLOBAL_FONT, bold=True, size=12, color="FFFFFF")
         ws[f"A{row}"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws[f"A{row}"].alignment = Alignment(horizontal="center")
         row += 1
@@ -1431,9 +1491,9 @@ class ExportService:
             ws.cell(row, 6, item.get("position_name", ""))
             ws.cell(row, 7, item.get("present_days", 0))
             ws.cell(row, 8, item.get("absent_days", 0))
-            ws.cell(row, 9, float(_d(item.get("deductions")))).number_format = '"Rp "#,##0'
-            ws.cell(row, 10, net).number_format = '"Rp "#,##0'
-            self._alt_row(ws, row, 2)
+            ws.cell(row, 9, float(_d(item.get("deductions")))).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 10, net).number_format = ACCOUNTING_FORMAT
+            self._alt_row(ws, row, 10)
             row += 1
             
         if not data.get("payroll_items"):
@@ -1441,66 +1501,108 @@ class ExportService:
             ws.cell(row, 2, "Tidak ada data gaji bulan ini")
             row += 1
             
-        self._write_total_row(ws, row, {10: float(total_upah_detail)})
+        self._write_total_row(ws, row, {10: float(total_upah_detail)}, max_col=10)
         
         self._set_column_widths(ws)
         ws.freeze_panes = "A3"
+        ws.auto_filter.ref = f"A{ops_start+1}:G{ops_start+1}" # Just a filter on one of the headers
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
     def _write_headers(self, ws, row: int, headers: list) -> None:
-        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
-        font = Font(bold=True, color="FFFFFF", size=10)
+        font = Font(name=GLOBAL_FONT, bold=True, color="FFFFFF", size=GLOBAL_FONT_SIZE)
+        border = Border(
+            left=Side(style='thin', color=BORDER_COLOR),
+            right=Side(style='thin', color=BORDER_COLOR),
+            top=Side(style='thin', color=BORDER_COLOR),
+            bottom=Side(style='thin', color=BORDER_COLOR)
+        )
         for i, h in enumerate(headers, 1):
             c = ws.cell(row, i, h)
             c.font = font
             c.fill = fill
-            c.alignment = Alignment(horizontal="center")
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = border
 
     def _apply_header_style(self, ws, row: int) -> None:
-        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
-        font = Font(bold=True, color="FFFFFF", size=10)
+        font = Font(name=GLOBAL_FONT, bold=True, color="FFFFFF", size=GLOBAL_FONT_SIZE)
+        border = Border(
+            left=Side(style='thin', color=BORDER_COLOR),
+            right=Side(style='thin', color=BORDER_COLOR),
+            top=Side(style='thin', color=BORDER_COLOR),
+            bottom=Side(style='thin', color=BORDER_COLOR)
+        )
         for cell in ws[row]:
             cell.font = font
             cell.fill = fill
-            cell.alignment = Alignment(horizontal="center")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = border
 
-    def _alt_row(self, ws, row: int, min_col: int = 1) -> None:
+    def _alt_row(self, ws, row: int, max_col: int) -> None:
+        from openpyxl.styles import PatternFill, Font, Border, Side
+        fill = None
         if row % 2 == 0:
-            from openpyxl.styles import PatternFill
             fill = PatternFill("solid", fgColor=ALT_ROW_COLOR)
-            for cell in ws[row]:
+        
+        border = Border(
+            left=Side(style='thin', color=BORDER_COLOR),
+            right=Side(style='thin', color=BORDER_COLOR),
+            top=Side(style='thin', color=BORDER_COLOR),
+            bottom=Side(style='thin', color=BORDER_COLOR)
+        )
+        font = Font(name=GLOBAL_FONT, size=GLOBAL_FONT_SIZE)
+        
+        for c in range(1, max_col + 1):
+            cell = ws.cell(row, c)
+            if fill:
                 cell.fill = fill
+            cell.border = border
+            if not cell.font or cell.font.name != GLOBAL_FONT:
+                cell.font = font
 
-    def _write_total_row(self, ws, row: int, col_values: dict) -> None:
-        from openpyxl.styles import Font, PatternFill, Alignment
+    def _write_total_row(self, ws, row: int, col_values: dict, max_col: int = 0) -> None:
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         fill = PatternFill("solid", fgColor=TOTAL_FILL_COLOR)
-        font = Font(bold=True)
-        ws.cell(row, 1, "TOTAL").font = font
-        ws.cell(row, 1).fill = fill
-        for col, val in col_values.items():
-            c = ws.cell(row, col)
-            c.fill = fill
-            c.font = font
-            if val is not None:
-                c.value = val
-                if isinstance(val, (int, float)):
-                    c.number_format = '"Rp "#,##0'
+        font = Font(name=GLOBAL_FONT, bold=True, size=GLOBAL_FONT_SIZE)
+        border = Border(
+            left=Side(style='thin', color=BORDER_COLOR),
+            right=Side(style='thin', color=BORDER_COLOR),
+            top=Side(style='thin', color=BORDER_COLOR),
+            bottom=Side(style='thin', color=BORDER_COLOR)
+        )
 
-    def _set_column_widths(self, ws) -> None:
+        # Apply style to the whole row up to max_col
+        limit = max_col if max_col > 0 else max(col_values.keys()) if col_values else 10
+        for c in range(1, limit + 1):
+            cell = ws.cell(row, c)
+            cell.fill = fill
+            cell.font = font
+            cell.border = border
+
+        ws.cell(row, 1, "TOTAL")
+        for col, val in col_values.items():
+            if val is not None:
+                c = ws.cell(row, col, val)
+                if isinstance(val, (int, float, Decimal)):
+                    c.number_format = ACCOUNTING_FORMAT
+
+    def _set_column_widths(self, ws, padding: int = 4) -> None:
         from openpyxl.utils import get_column_letter
         for col in ws.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)
             for cell in col:
                 try:
-                    length = len(str(cell.value or ""))
-                    max_len = max(max_len, length)
+                    if cell.value:
+                        length = len(str(cell.value))
+                        max_len = max(max_len, length)
                 except Exception:
                     pass
-            ws.column_dimensions[col_letter].width = min(max_len + 2, 40)
+            ws.column_dimensions[col_letter].width = min(max_len + padding, 50)
 
     # ─── Storage + DB ─────────────────────────────────────────────────────────
 
@@ -1569,7 +1671,7 @@ class ExportService:
 
         ws.merge_cells("A1:J1")
         ws["A1"] = f"LAPORAN CHECKLIST HIGIENE — {bulan_str} {year}"
-        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = [
@@ -1604,18 +1706,23 @@ class ExportService:
 
             status = check.get("overall_status", "")
             status_cell = ws.cell(row=idx, column=9, value=status.upper())
-            if status == "tidak_layak":
-                status_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
-                status_cell.font = Font(color="FFFFFF", bold=True)
-            elif status == "perlu_perbaikan":
-                status_cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+            
+            # Dashboard Biru Modern Style: Green for Safe, Red for Incident
+            if status == "layak":
+                status_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                status_cell.font = Font(name=GLOBAL_FONT, color="006100", bold=True)
+            elif status == "tidak_layak":
+                status_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                status_cell.font = Font(name=GLOBAL_FONT, color="9C0006", bold=True)
+            else: # perlu_perbaikan
+                status_cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+                status_cell.font = Font(name=GLOBAL_FONT, color="9C6500", bold=True)
 
             ws.cell(row=idx, column=10, value=check.get("notes", ""))
+            self._alt_row(ws, idx, 10)
 
-        ws.column_dimensions["A"].width = 12
-        for col_letter in ["B", "C", "D", "E", "F", "G", "H", "I"]:
-            ws.column_dimensions[col_letter].width = 14
-        ws.column_dimensions["J"].width = 22
+        ws.freeze_panes = "A4"
+        self._set_column_widths(ws)
 
     def _fill_suhu(self, ws, data: dict, year: int, month: int) -> None:
         """Sheet 12: Monitoring Suhu."""
@@ -1624,7 +1731,7 @@ class ExportService:
 
         ws.merge_cells("A1:F1")
         ws["A1"] = f"LAPORAN MONITORING SUHU — {bulan_str} {year}"
-        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = ["Tanggal", "Jam", "Area", "Suhu (°C)", "Status", "Catatan"]
@@ -1647,17 +1754,18 @@ class ExportService:
             status_cell = ws.cell(row=idx, column=5)
             if not log.get("is_normal"):
                 status_cell.value = "⚠️ ABNORMAL"
-                status_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
-                status_cell.font = Font(color="FFFFFF", bold=True)
+                status_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                status_cell.font = Font(name=GLOBAL_FONT, color="9C0006", bold=True)
             else:
                 status_cell.value = "✓ Normal"
-                status_cell.fill = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
-                status_cell.font = Font(color="FFFFFF")
+                status_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                status_cell.font = Font(name=GLOBAL_FONT, color="006100", bold=True)
 
             ws.cell(row=idx, column=6, value=log.get("notes", ""))
+            self._alt_row(ws, idx, 6)
 
-        for col_letter in ["A", "B", "C", "D", "E", "F"]:
-            ws.column_dimensions[col_letter].width = 16
+        ws.freeze_panes = "A4"
+        self._set_column_widths(ws)
 
     def _fill_bank_sampel(self, ws, data: dict) -> None:
         """Sheet 13: Bank Sampel Makanan."""
@@ -1665,7 +1773,7 @@ class ExportService:
 
         ws.merge_cells("A1:H1")
         ws["A1"] = "DAFTAR BANK SAMPEL MAKANAN"
-        ws["A1"].font = Font(bold=True, size=14)
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         headers = ["Kode Sampel", "Menu", "Tanggal", "Jam Ambil", "Berat (g)", "Kadaluarsa", "Status", "Sisa Waktu"]

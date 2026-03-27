@@ -296,6 +296,109 @@ def update_user_telegram(
     return _build_success({"message": "Telegram ID linked", "user_id": user_id})
 
 
+@router.get("/users", response_model=Dict[str, Any])
+def get_users(current_user: UserInDB = Depends(get_current_user)):
+    """List semua user dalam tenant, hanya owner yang bisa akses."""
+    if current_user.role != "owner":
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=_build_error("Hanya owner yang dapat melihat daftar user"))
+    
+    supabase = get_supabase()
+    resp = supabase.table("users").select("id, name, email, role, telegram_id, is_active, created_at").eq("tenant_id", current_user.tenant_id).execute()
+    return _build_success(getattr(resp, "data", []) or [])
+
+
+class UserInviteRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str
+
+@router.post("/users/invite", response_model=Dict[str, Any])
+def invite_user(body: UserInviteRequest, current_user: UserInDB = Depends(get_current_user)):
+    """Tambah user baru ke tenant."""
+    if current_user.role != "owner":
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=_build_error("Hanya owner yang dapat menambah user"))
+    
+    valid_roles = ["owner", "admin", "kasir", "viewer", "driver"]
+    if body.role not in valid_roles:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_build_error(f"Role harus salah satu dari: {valid_roles}"))
+        
+    supabase = get_supabase()
+    
+    # Cek email exist in the tenant
+    existing = supabase.table("users").select("id").eq("email", body.email).eq("tenant_id", current_user.tenant_id).execute()
+    if getattr(existing, "data", []):
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_build_error("Email sudah terdaftar di tenant ini"))
+    
+    hashed_password = get_password_hash(body.password)
+    insert_data = {
+        "tenant_id": current_user.tenant_id,
+        "name": body.name,
+        "email": body.email,
+        "role": body.role,
+        "password_hash": hashed_password,
+        "is_active": True
+    }
+    
+    resp = supabase.table("users").insert(insert_data).execute()
+    new_users = getattr(resp, "data", [])
+    if not new_users:
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=_build_error("Gagal membuat user"))
+    
+    user = new_users[0]
+    user.pop("password_hash", None)
+    return _build_success(user)
+
+
+class UserRoleRequest(BaseModel):
+    role: str
+
+@router.put("/users/{user_id}/role", response_model=Dict[str, Any])
+def update_user_role(user_id: str, body: UserRoleRequest, current_user: UserInDB = Depends(get_current_user)):
+    """Owner ubah role user lain."""
+    if current_user.role != "owner":
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=_build_error("Hanya owner yang dapat mengubah role"))
+        
+    valid_roles = ["owner", "admin", "kasir", "viewer", "driver"]
+    if body.role not in valid_roles:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_build_error(f"Role harus salah satu dari: {valid_roles}"))
+        
+    if user_id == current_user.id:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_build_error("Tidak bisa mengubah role diri sendiri"))
+        
+    from datetime import datetime
+    supabase = get_supabase()
+    resp = supabase.table("users").update({"role": body.role, "updated_at": datetime.now().isoformat()}).eq("id", user_id).eq("tenant_id", current_user.tenant_id).execute()
+    
+    if not getattr(resp, "data", []):
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=_build_error("User tidak ditemukan"))
+        
+    return _build_success({"success": True, "user_id": user_id, "new_role": body.role})
+
+
+class UserStatusRequest(BaseModel):
+    is_active: bool
+
+@router.put("/users/{user_id}/status", response_model=Dict[str, Any])
+def update_user_status(user_id: str, body: UserStatusRequest, current_user: UserInDB = Depends(get_current_user)):
+    """Owner ubah status aktif user lain."""
+    if current_user.role != "owner":
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=_build_error("Hanya owner yang dapat mengubah status user"))
+        
+    if user_id == current_user.id and not body.is_active:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_build_error("Tidak dapat menonaktifkan diri sendiri"))
+        
+    from datetime import datetime
+    supabase = get_supabase()
+    resp = supabase.table("users").update({"is_active": body.is_active, "updated_at": datetime.now().isoformat()}).eq("id", user_id).eq("tenant_id", current_user.tenant_id).execute()
+    
+    if not getattr(resp, "data", []):
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=_build_error("User tidak ditemukan"))
+        
+    return _build_success({"success": True})
+
+
+
 
 
 
