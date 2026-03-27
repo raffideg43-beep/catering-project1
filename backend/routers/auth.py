@@ -323,7 +323,7 @@ def list_users(current_user: UserInDB = Depends(get_current_user)):
     supabase = get_supabase()
     result = (
         supabase.table("users")
-        .select("id,name,email,role,telegram_id,is_active,created_at,last_login")
+        .select("id,name,email,role,telegram_id,is_active,created_at")
         .eq("tenant_id", current_user.tenant_id)
         .order("created_at")
         .execute()
