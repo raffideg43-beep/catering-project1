@@ -150,7 +150,7 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
 
         mss_resp = (
             supabase.table("master_schedule_schools")
-            .select("*, schools(id, name, default_portions)")
+            .select("*, schools(id, name, default_portions, is_active)")
             .eq("master_id", master_id)
             .eq("is_active", True)
             .order("target_arrival")
@@ -161,6 +161,10 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
         schools = []
         for st in school_timings:
             school_data = st.get("schools") or {}
+            # Filter inactive schools
+            if school_data.get("is_active") is False:
+                continue
+
             target = _time_str(st.get("target_arrival", "10:30"))
             travel = st.get("travel_minutes", 30)
             delivery_window = st.get("delivery_window_minutes", 15)
