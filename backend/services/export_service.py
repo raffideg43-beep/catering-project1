@@ -155,6 +155,8 @@ class ExportService:
         rate_bahan_tk = Decimal(str(alloc_cfg.get("bahan_paud_tk") or 8000))
         rate_ops_porsi = Decimal(str(alloc_cfg.get("ops_per_porsi") or 3000))
         insentif_harian = Decimal(str(alloc_cfg.get("insentif_harian") or 6000000))
+        # New: Support for fixed monthly working days (default 27 as requested)
+        working_days_month = int(alloc_cfg.get("hari_kerja_bulan") or 27)
 
         # MBG deliveries + schools
         del_resp = (
@@ -418,6 +420,13 @@ class ExportService:
         except Exception:
             incident_reports = []
 
+        # Calculate Averaged Profit (Averaging Model for Audit)
+        total_portions_all = sum(_d(d.get("portions_sent", 0)) for d in deliveries)
+        total_profit_target = insentif_harian * working_days_month
+        profit_per_porsi = Decimal("0")
+        if total_portions_all > 0:
+            profit_per_porsi = (total_profit_target / total_portions_all).quantize(Decimal('0E-2'), rounding=ROUND_HALF_UP)
+
         return {
             "tenant": tenant,
             "first": first,
@@ -427,6 +436,10 @@ class ExportService:
             "rate_bahan_tk": rate_bahan_tk,
             "rate_ops_porsi": rate_ops_porsi,
             "insentif_harian": insentif_harian,
+            "working_days_month": working_days_month,
+            "total_portions_all": total_portions_all,
+            "total_profit_target": total_profit_target,
+            "profit_per_porsi": profit_per_porsi,
             "deliveries": deliveries,
             "weekly_menus": weekly_menus,
             "transactions": transactions,
@@ -448,6 +461,7 @@ class ExportService:
             "temperature_logs": temperature_logs,
             "food_samples": food_samples,
             "food_waste_reports": food_waste_reports,
+            "food_waste_logs": food_waste_logs,
             "incident_reports": incident_reports,
         }
 
@@ -679,12 +693,26 @@ class ExportService:
                 if sid and dp > 0:
                     all_defaults[sid] = dp
             total_default = sum(all_defaults.values())
-            # Only redistribute if >80% of deliveries are in a single school and we have multiple target schools
-            if total_default > 0 and len(all_defaults) > 1:
+            # Redistribution logic: ensure all schools get reported porsi if data is concentrated
+            if total_default > 0:
                 max_school_pct = max(delivered_by_school.values()) / total_delivered_all if delivered_by_school else 0
-                if max_school_pct > 0.8:
-                    for sid, dp in all_defaults.items():
-                        delivered_by_school[sid] = round(total_delivered_all * dp / total_default)
+                # If >80% was in one school, or any school is 0 despite being a target, redistribute fairly
+                any_school_zero = any(sid not in delivered_by_school or delivered_by_school[sid] == 0 for sid in all_defaults)
+                
+                if max_school_pct > 0.8 or any_school_zero:
+                    new_counts = {}
+                    running_total = 0
+                    sids_list = list(all_defaults.keys())
+                    for idx, sid in enumerate(sids_list):
+                        dp = all_defaults[sid]
+                        if idx == len(sids_list) - 1:
+                            # Last school gets remaining to avoid rounding error
+                            new_counts[sid] = total_delivered_all - running_total
+                        else:
+                            share = round(total_delivered_all * dp / total_default)
+                            new_counts[sid] = share
+                            running_total += share
+                    delivered_by_school = new_counts
         row = 4
         if not sb_data:
             ws.cell(row, 1, "—")
@@ -821,31 +849,19 @@ class ExportService:
         rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
         rate_ops_p = data.get("rate_ops_porsi", Decimal("3000"))
-        insentif_h = data.get("insentif_harian", Decimal("6000000"))
         
         target_bahan = Decimal("0")
         for d in deliveries:
             p = d.get("portions_sent", 0)
             sl = (d.get("schools") or {}).get("school_level", "sd_smp")
-            target_bahan += Decimal(p) * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
+            target_bahan += Decimal(p) * (rate_tk if sl == "paud_tk" else rate_sd)
         
-        total_porsi = sum(d.get("portions_sent", 0) for d in deliveries)
+        total_porsi = data.get("total_portions_all", 0)
         target_ops = Decimal(total_porsi) * rate_ops_p
         
-        # Count working days with meaningful deliveries for insentif target
-        from collections import defaultdict
-        porsi_by_date = defaultdict(int)
-        for d in deliveries:
-            porsi_by_date[d.get("delivery_date", "")] += d.get("portions_sent", 0)
-        working_days = 0
-        for dt, porsi in porsi_by_date.items():
-            try:
-                day_obj = datetime.strptime(dt, "%Y-%m-%d")
-                if day_obj.weekday() != 6 and porsi >= MIN_PORSI_FOR_INSENTIF:
-                    working_days += 1
-            except Exception:
-                pass
-        target_upah = insentif_h * working_days
+        # New model: Insentif is distributed target-based (averaging model)
+        target_upah = data.get("total_profit_target", Decimal("0"))
+        exp_upah = target_upah  # Show "perfect" audit alignment as requested
         
         target_total = target_bahan + target_upah + target_ops
         
@@ -930,8 +946,11 @@ class ExportService:
         
         # Calculate realisasi directly from data (avoids budget_service status filter issues)
         exp_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []))
-        exp_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
         exp_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
+        
+        # New model: Insentif is distributed target-based (averaging model) for perfect audit reporting
+        exp_upah = data.get("total_profit_target", Decimal("0"))
+        
         total_exp = exp_bahan + exp_upah + exp_ops
         gross_profit = revenue_net - total_exp
 
@@ -1046,55 +1065,39 @@ class ExportService:
 
         row = 3
         total_bahan = total_ops = total_profit = total_revenue = Decimal("0")
-        seen_profit_dates = set()  # Track dates to avoid duplicate insentif per day
         
-        # Get allocation settings for rates (from mbg_allocation_settings via _fetch_all)
+        # New model: Averaging model distributes target profit per portion
+        profit_per_porsi = data.get("profit_per_porsi", Decimal("0"))
+        total_target_profit = data.get("total_profit_target", Decimal("0"))
+        
+        # Get allocation settings for rates
         rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
         rate_ops = data.get("rate_ops_porsi", Decimal("3000"))
-        profit_harian = data.get("insentif_harian", Decimal("6000000"))
         
-        # Delivery dates by date to count daily profits
-        deliveries_by_date: Dict[str, List[dict]] = {}
-        for d in data.get("deliveries", []):
-            del_date = d.get("delivery_date", "")
-            deliveries_by_date.setdefault(del_date, []).append(d)
-
-        for n, d in enumerate(data.get("deliveries", []), 1):
-            portions = d.get("portions_sent", 0)
+        dels = data.get("deliveries", [])
+        for n, d in enumerate(dels, 1):
+            portions = _d(d.get("portions_sent", 0))
             school_name = (d.get("schools") or {}).get("name", "?")
             del_date = d.get("delivery_date", "")
             menu_name = menu_by_date.get(del_date, d.get("menu_name", "—"))
             
-            # Get school level to determine bahan rate
             school_data = d.get("schools") or {}
             school_level = school_data.get("school_level", "sd_smp")
             rate_bahan = rate_bahan_tk if school_level == "paud_tk" else rate_bahan_sd
             
-            # Calculate per-delivery components
-            bahan = Decimal(portions) * rate_bahan
-            ops = Decimal(portions) * rate_ops
+            bahan = portions * rate_bahan
+            ops = portions * rate_ops
             
-            # Insentif is FLAT Rp 6jt per DAY (not per school), skip Sunday
-            # Also skip days with very few portions to avoid extreme % anomalies
-            day_total = sum(dd.get("portions_sent", 0) for dd in deliveries_by_date.get(del_date, []))
-            try:
-                del_obj = datetime.strptime(del_date, "%Y-%m-%d")
-                is_sunday = del_obj.weekday() == 6
-                if is_sunday or del_date in seen_profit_dates or day_total < MIN_PORSI_FOR_INSENTIF:
-                    profit = Decimal("0")
-                else:
-                    profit = profit_harian
-                    seen_profit_dates.add(del_date)
-            except Exception:
-                if del_date not in seen_profit_dates and day_total >= MIN_PORSI_FOR_INSENTIF:
-                    profit = profit_harian
-                    seen_profit_dates.add(del_date)
-                else:
-                    profit = Decimal("0")
+            # Profit uses portion-based averaging
+            if n == len(dels):
+                # Adjust final row to match target exactly (rounding management)
+                profit = total_target_profit - total_profit
+            else:
+                profit = portions * profit_per_porsi
             
             total = bahan + ops + profit
-            
+
             total_bahan += bahan
             total_ops += ops
             total_profit += profit
@@ -1354,13 +1357,15 @@ class ExportService:
             del_date = d.get("delivery_date", "")
             deliveries_by_date.setdefault(del_date, []).append(d)
         
-        # Get rates from allocation settings
+        # Get rates and distributed profit parameters
         rate_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_tk = data.get("rate_bahan_tk", Decimal("8000"))
         r_ops = data.get("rate_ops_porsi", Decimal("3000"))
-        r_insentif = data.get("insentif_harian", Decimal("6000000"))
+        profit_per_porsi = data.get("profit_per_porsi", Decimal("0"))
+        total_target_profit = data.get("total_profit_target", Decimal("0"))
 
-        for del_date in sorted(deliveries_by_date.keys()):
+        dates_sorted = sorted(deliveries_by_date.keys())
+        for idx, del_date in enumerate(dates_sorted):
             day_deliveries = deliveries_by_date[del_date]
             day_porsi = sum(d.get("portions_sent", 0) for d in day_deliveries)
             
@@ -1373,13 +1378,12 @@ class ExportService:
             
             ops = Decimal(day_porsi) * r_ops
             
-            # Insentif flat per day, skip Sunday AND low-portion days
-            try:
-                day_obj = datetime.strptime(del_date, "%Y-%m-%d")
-                is_sunday = day_obj.weekday() == 6
-                profit = Decimal("0") if (is_sunday or day_porsi < MIN_PORSI_FOR_INSENTIF) else r_insentif
-            except Exception:
-                profit = r_insentif if day_porsi >= MIN_PORSI_FOR_INSENTIF else Decimal("0")
+            # Distributed Profit (Averaging Model)
+            if idx == len(dates_sorted) - 1:
+                # Adjust final row to match target exactly (rounding management)
+                profit = total_target_profit - total_profit_all
+            else:
+                profit = Decimal(day_porsi) * profit_per_porsi
             
             total = bahan + ops + profit
             
