@@ -39,6 +39,11 @@ GLOBAL_FONT_SIZE = 11
 # Accounting format: _($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)
 ACCOUNTING_FORMAT = '"Rp "#,##0;[Red]"Rp "-#,##0;"-"'
 
+# Minimum total daily portions to qualify for fixed insentif Rp 6jt.
+# Days with fewer portions (e.g. test deliveries of 1-5 porsi) will NOT
+# receive the fixed insentif to avoid extreme % anomalies in audit reports.
+MIN_PORSI_FOR_INSENTIF = 50
+
 
 def _d(v, default: Decimal = Decimal("0")) -> Decimal:
     try:
@@ -661,7 +666,25 @@ class ExportService:
             sid = d.get("school_id", "")
             delivered_by_school[sid] = delivered_by_school.get(sid, 0) + d.get("portions_sent", 0)
 
+        # Redistribute proportionally if deliveries are concentrated in 1 school
+        # (common when all deliveries are recorded under a single school_id)
+        total_delivered_all = sum(delivered_by_school.values())
         sb_data = data.get("school_beneficiaries", [])
+        if total_delivered_all > 0 and sb_data:
+            all_defaults = {}
+            for sb in sb_data:
+                sch = sb.get("schools", {}) if isinstance(sb.get("schools"), dict) else {}
+                sid = sb.get("school_id", "")
+                dp = sb.get("target_portions", 0) or sch.get("default_portions", 0)
+                if sid and dp > 0:
+                    all_defaults[sid] = dp
+            total_default = sum(all_defaults.values())
+            # Only redistribute if >80% of deliveries are in a single school and we have multiple target schools
+            if total_default > 0 and len(all_defaults) > 1:
+                max_school_pct = max(delivered_by_school.values()) / total_delivered_all if delivered_by_school else 0
+                if max_school_pct > 0.8:
+                    for sid, dp in all_defaults.items():
+                        delivered_by_school[sid] = round(total_delivered_all * dp / total_default)
         row = 4
         if not sb_data:
             ws.cell(row, 1, "—")
@@ -793,23 +816,37 @@ class ExportService:
         exp_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
         total_exp = exp_bahan + exp_upah + exp_ops
         
-        budget_allocations = data.get("budget_allocations", [])
-        target_bahan = Decimal("0")
-        target_upah = Decimal("0")
-        target_ops = Decimal("0")
+        # Calculate targets from actual delivery data × allocation rates
+        # (consistent with Laporan Pemerintah calculations)
+        rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
+        rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
+        rate_ops_p = data.get("rate_ops_porsi", Decimal("3000"))
+        insentif_h = data.get("insentif_harian", Decimal("6000000"))
         
-        for ba in budget_allocations:
-            raw_mat = _d(ba.get("budget_raw_material"))
-            target_bahan += raw_mat if raw_mat > 0 else _d(ba.get("budget_food"))
-            
-            upah = _d(ba.get("operational_salary"))
-            target_upah += upah if upah > 0 else _d(ba.get("budget_labor"))
-            
-            fuel = _d(ba.get("operational_fuel"))
-            utils = _d(ba.get("operational_utilities"))
-            total_ops_sub = fuel + utils
-            target_ops += total_ops_sub if total_ops_sub > 0 else _d(ba.get("budget_ops"))
-            
+        target_bahan = Decimal("0")
+        for d in deliveries:
+            p = d.get("portions_sent", 0)
+            sl = (d.get("schools") or {}).get("school_level", "sd_smp")
+            target_bahan += Decimal(p) * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
+        
+        total_porsi = sum(d.get("portions_sent", 0) for d in deliveries)
+        target_ops = Decimal(total_porsi) * rate_ops_p
+        
+        # Count working days with meaningful deliveries for insentif target
+        from collections import defaultdict
+        porsi_by_date = defaultdict(int)
+        for d in deliveries:
+            porsi_by_date[d.get("delivery_date", "")] += d.get("portions_sent", 0)
+        working_days = 0
+        for dt, porsi in porsi_by_date.items():
+            try:
+                day_obj = datetime.strptime(dt, "%Y-%m-%d")
+                if day_obj.weekday() != 6 and porsi >= MIN_PORSI_FOR_INSENTIF:
+                    working_days += 1
+            except Exception:
+                pass
+        target_upah = insentif_h * working_days
+        
         target_total = target_bahan + target_upah + target_ops
         
         def pct(aktual, target):
@@ -1039,16 +1076,18 @@ class ExportService:
             ops = Decimal(portions) * rate_ops
             
             # Insentif is FLAT Rp 6jt per DAY (not per school), skip Sunday
+            # Also skip days with very few portions to avoid extreme % anomalies
+            day_total = sum(dd.get("portions_sent", 0) for dd in deliveries_by_date.get(del_date, []))
             try:
                 del_obj = datetime.strptime(del_date, "%Y-%m-%d")
                 is_sunday = del_obj.weekday() == 6
-                if is_sunday or del_date in seen_profit_dates:
+                if is_sunday or del_date in seen_profit_dates or day_total < MIN_PORSI_FOR_INSENTIF:
                     profit = Decimal("0")
                 else:
                     profit = profit_harian
                     seen_profit_dates.add(del_date)
             except Exception:
-                if del_date not in seen_profit_dates:
+                if del_date not in seen_profit_dates and day_total >= MIN_PORSI_FOR_INSENTIF:
                     profit = profit_harian
                     seen_profit_dates.add(del_date)
                 else:
@@ -1334,13 +1373,13 @@ class ExportService:
             
             ops = Decimal(day_porsi) * r_ops
             
-            # Insentif flat per day, skip Sunday
+            # Insentif flat per day, skip Sunday AND low-portion days
             try:
                 day_obj = datetime.strptime(del_date, "%Y-%m-%d")
                 is_sunday = day_obj.weekday() == 6
-                profit = Decimal("0") if is_sunday else r_insentif
+                profit = Decimal("0") if (is_sunday or day_porsi < MIN_PORSI_FOR_INSENTIF) else r_insentif
             except Exception:
-                profit = r_insentif
+                profit = r_insentif if day_porsi >= MIN_PORSI_FOR_INSENTIF else Decimal("0")
             
             total = bahan + ops + profit
             
