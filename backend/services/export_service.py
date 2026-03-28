@@ -37,7 +37,7 @@ GLOBAL_FONT      = "Segoe UI"
 GLOBAL_FONT_SIZE = 11
 
 # Accounting format: _($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)
-ACCOUNTING_FORMAT = '_($* #,##0_);_($* (#,##0);_($* "-"??_);_(@_)'
+ACCOUNTING_FORMAT = '"Rp "#,##0;[Red]"Rp "-#,##0;"-"'
 
 
 def _d(v, default: Decimal = Decimal("0")) -> Decimal:
@@ -146,11 +146,15 @@ class ExportService:
         )
         alloc_cfg = (getattr(alloc_resp, "data", None) or [{}])[0]
         price_per_portion = float(alloc_cfg.get("price_per_portion") or 15000)
+        rate_bahan_sd = Decimal(str(alloc_cfg.get("bahan_sd_smp") or 10000))
+        rate_bahan_tk = Decimal(str(alloc_cfg.get("bahan_paud_tk") or 8000))
+        rate_ops_porsi = Decimal(str(alloc_cfg.get("ops_per_porsi") or 3000))
+        insentif_harian = Decimal(str(alloc_cfg.get("insentif_harian") or 6000000))
 
         # MBG deliveries + schools
         del_resp = (
             supabase.table("mbg_deliveries")
-            .select("*, schools(name)")
+            .select("*, schools(name, school_level)")
             .eq("tenant_id", tenant_id)
             .gte("delivery_date", first.isoformat())
             .lte("delivery_date", last.isoformat())
@@ -311,7 +315,7 @@ class ExportService:
         # School Beneficiaries (for Sheet 9) — include mbg_allocation_type
         sb_res = (
             supabase.table("school_beneficiaries")
-            .select("*, schools(name, mbg_allocation_type, default_portions), beneficiary_types(name)")
+            .select("*, schools(name, mbg_allocation_type, default_portions, school_level), beneficiary_types(name)")
             .eq("tenant_id", tenant_id)
             .execute()
         )
@@ -414,6 +418,10 @@ class ExportService:
             "first": first,
             "last": last,
             "price_per_portion": price_per_portion,
+            "rate_bahan_sd": rate_bahan_sd,
+            "rate_bahan_tk": rate_bahan_tk,
+            "rate_ops_porsi": rate_ops_porsi,
+            "insentif_harian": insentif_harian,
             "deliveries": deliveries,
             "weekly_menus": weekly_menus,
             "transactions": transactions,
@@ -524,6 +532,13 @@ class ExportService:
             acc_info = e.get("kas_accounts")
             if isinstance(acc_info, dict) and acc_info.get("type") == kas_type:
                 filtered_ledger.append(e)
+
+        # Sort: entry_date → saldo awal entries first → created_at
+        filtered_ledger.sort(key=lambda e: (
+            e.get("entry_date", ""),
+            0 if "saldo" in (e.get("description", "") or "").lower() else 1,
+            e.get("created_at", ""),
+        ))
 
         row = 4
         n = 0
@@ -658,8 +673,8 @@ class ExportService:
                 sch_name = sch.get("name", "")
                 sch_id = sb.get("school_id", "")
                 bt_name = sb.get("beneficiary_types", {}).get("name", "") if isinstance(sb.get("beneficiary_types"), dict) else ""
-                alloc_type = sch.get("mbg_allocation_type", "large")
-                alloc_label = "Rp 15.000" if alloc_type != "small" else "Rp 13.000"
+                school_level = sch.get("school_level", "sd_smp")
+                alloc_label = "Rp 8.000 (PAUD/TK)" if school_level == "paud_tk" else "Rp 10.000 (SD/SMP/SMA)"
 
                 # Use default_portions from schools table as daily target
                 target_portions = sb.get("target_portions", 0) or sch.get("default_portions", 0)
@@ -772,18 +787,16 @@ class ExportService:
         # Gunakan Pencairan aktual dari budget_service alih-alih estimasi porsi
         total_disbursed = Decimal(budget.get("total_disbursed", 0))
         
-        # Ambil realisasi dari budget_summary yang sudah terpusat
-        juknis_real = budget.get("juknis_breakdown", {})
-        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
-        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
-        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
+        # Calculate realisasi directly from data (avoids budget_service status filter issues)
+        exp_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []))
+        exp_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
+        exp_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
         total_exp = exp_bahan + exp_upah + exp_ops
         
         budget_allocations = data.get("budget_allocations", [])
         target_bahan = Decimal("0")
         target_upah = Decimal("0")
         target_ops = Decimal("0")
-        target_rent = Decimal("0")
         
         for ba in budget_allocations:
             raw_mat = _d(ba.get("budget_raw_material"))
@@ -797,9 +810,7 @@ class ExportService:
             total_ops_sub = fuel + utils
             target_ops += total_ops_sub if total_ops_sub > 0 else _d(ba.get("budget_ops"))
             
-            target_rent += _d(ba.get("budget_kitchen_rent"))
-            
-        target_total = target_bahan + target_upah + target_ops + target_rent
+        target_total = target_bahan + target_upah + target_ops
         
         def pct(aktual, target):
             return f"{round(float(aktual/target*100), 1)}%" if target > 0 else "0%"
@@ -807,10 +818,9 @@ class ExportService:
         rows_data = [
             ("Dana Masuk (Pencairan MBG)", total_disbursed, total_disbursed, 0, "100%"),
             ("-", "-", "-", "-", "-"),
-            ("A. Bahan Pangan (Raw Material)", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
-            ("B. Gaji & Upah Karyawan", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
-            ("C. Operasional (BBM & Listrik)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
-            ("D. Sewa Dapur (Laba Bersih)", target_rent, Decimal("0"), target_rent, "0%"),
+            ("A. Bahan Baku Pangan", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
+            ("B. Operasional (BBM & Logistik)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
+            ("C. Insentif Tenaga Kerja SPPG", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
             ("-", "-", "-", "-", "-"),
             ("Total Keseluruhan", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total))
         ]
@@ -881,11 +891,10 @@ class ExportService:
 
         revenue_net = total_disbursed
         
-        # Ambil realisasi dari budget_summary yang sudah terpusat
-        juknis_real = budget.get("juknis_breakdown", {})
-        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
-        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
-        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
+        # Calculate realisasi directly from data (avoids budget_service status filter issues)
+        exp_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []))
+        exp_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
+        exp_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
         total_exp = exp_bahan + exp_upah + exp_ops
         gross_profit = revenue_net - total_exp
 
@@ -969,7 +978,6 @@ class ExportService:
 
     def _fill_bulanan(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
-        ppn_rate   = Decimal("0.11")
         logger.info(
             f"Fill bulanan: {len(data.get('deliveries', []))} deliveries, "
             f"{len(data.get('transactions', []))} transactions, "
@@ -1001,13 +1009,13 @@ class ExportService:
 
         row = 3
         total_bahan = total_ops = total_profit = total_revenue = Decimal("0")
+        seen_profit_dates = set()  # Track dates to avoid duplicate insentif per day
         
-        # Get allocation settings for rates
-        budget_allocs = data.get("budget_allocations", [])
-        rate_bahan_sd = Decimal("10000")
-        rate_bahan_tk = Decimal("8000")
-        rate_ops = Decimal("3000")
-        profit_harian = Decimal("6000000")
+        # Get allocation settings for rates (from mbg_allocation_settings via _fetch_all)
+        rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
+        rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
+        rate_ops = data.get("rate_ops_porsi", Decimal("3000"))
+        profit_harian = data.get("insentif_harian", Decimal("6000000"))
         
         # Delivery dates by date to count daily profits
         deliveries_by_date: Dict[str, List[dict]] = {}
@@ -1030,13 +1038,21 @@ class ExportService:
             bahan = Decimal(portions) * rate_bahan
             ops = Decimal(portions) * rate_ops
             
-            # Profit is per-day, check if Sunday
+            # Insentif is FLAT Rp 6jt per DAY (not per school), skip Sunday
             try:
                 del_obj = datetime.strptime(del_date, "%Y-%m-%d")
                 is_sunday = del_obj.weekday() == 6
-                profit = Decimal("0") if is_sunday else profit_harian
+                if is_sunday or del_date in seen_profit_dates:
+                    profit = Decimal("0")
+                else:
+                    profit = profit_harian
+                    seen_profit_dates.add(del_date)
             except Exception:
-                profit = profit_harian
+                if del_date not in seen_profit_dates:
+                    profit = profit_harian
+                    seen_profit_dates.add(del_date)
+                else:
+                    profit = Decimal("0")
             
             total = bahan + ops + profit
             
@@ -1299,15 +1315,33 @@ class ExportService:
             del_date = d.get("delivery_date", "")
             deliveries_by_date.setdefault(del_date, []).append(d)
         
+        # Get rates from allocation settings
+        rate_sd = data.get("rate_bahan_sd", Decimal("10000"))
+        rate_tk = data.get("rate_bahan_tk", Decimal("8000"))
+        r_ops = data.get("rate_ops_porsi", Decimal("3000"))
+        r_insentif = data.get("insentif_harian", Decimal("6000000"))
+
         for del_date in sorted(deliveries_by_date.keys()):
             day_deliveries = deliveries_by_date[del_date]
             day_porsi = sum(d.get("portions_sent", 0) for d in day_deliveries)
             
-            # Get allocation data for this date
-            alloc = alloc_by_date.get(del_date, {})
-            bahan = _d(alloc.get("budget_bahan", 0))
-            ops = _d(alloc.get("budget_ops", 0))
-            profit = _d(alloc.get("budget_insentif", 0))  # 0 jika Minggu
+            # Calculate dynamically from deliveries (fixes Rp 0 bug)
+            bahan = Decimal("0")
+            for dd in day_deliveries:
+                p = dd.get("portions_sent", 0)
+                sl = (dd.get("schools") or {}).get("school_level", "sd_smp")
+                bahan += Decimal(p) * (rate_tk if sl == "paud_tk" else rate_sd)
+            
+            ops = Decimal(day_porsi) * r_ops
+            
+            # Insentif flat per day, skip Sunday
+            try:
+                day_obj = datetime.strptime(del_date, "%Y-%m-%d")
+                is_sunday = day_obj.weekday() == 6
+                profit = Decimal("0") if is_sunday else r_insentif
+            except Exception:
+                profit = r_insentif
+            
             total = bahan + ops + profit
             
             if total > 0:
@@ -1393,7 +1427,7 @@ class ExportService:
     def _fill_riwayat_nota(self, ws, data: dict) -> None:
         logger.info(f"Fill riwayat nota: {len(data.get('transactions', []))} transactions, {len(data.get('items_all', []))} items")
         headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
-                   "Harga", "PPN", "Subtotal", "Total Nota", "Metode Bayar"]
+                   "Harga", "Subtotal", "Total Nota", "Metode Bayar"]
         self._write_headers(ws, 1, headers)
 
         items_by_trx: Dict[str, List[dict]] = {}
@@ -1420,9 +1454,9 @@ class ExportService:
                 ws.cell(row, 2, del_date)
                 ws.cell(row, 3, supplier)
                 ws.cell(row, 4, "(tanpa detail)")
-                ws.cell(row, 10, total_nota).number_format = '"Rp "#,##0'
-                ws.cell(row, 11, method)
-                self._alt_row(ws, row, 2)
+                ws.cell(row, 9, total_nota).number_format = '"Rp "#,##0'
+                ws.cell(row, 10, method)
+                self._alt_row(ws, row, 10)
                 row += 1
                 continue
 
@@ -1433,7 +1467,6 @@ class ExportService:
                 sat = item.get("unit", "pcs")
                 harga = float(_d(item.get("price")))
                 subtotal = float(_d(item.get("subtotal")) or (_d(item.get("qty")) * _d(item.get("price"))))
-                ppn = 0  # PPN dihitung hanya untuk PKP
 
                 ws.cell(row, 1, n)
                 ws.cell(row, 2, del_date)
@@ -1442,11 +1475,10 @@ class ExportService:
                 ws.cell(row, 5, qty)
                 ws.cell(row, 6, sat)
                 ws.cell(row, 7, harga).number_format = '"Rp "#,##0'
-                ws.cell(row, 8, ppn)
-                ws.cell(row, 9, subtotal).number_format = '"Rp "#,##0'
-                ws.cell(row, 10, total_nota).number_format = '"Rp "#,##0'
-                ws.cell(row, 11, method)
-                self._alt_row(ws, row, 11)
+                ws.cell(row, 8, subtotal).number_format = '"Rp "#,##0'
+                ws.cell(row, 9, total_nota).number_format = '"Rp "#,##0'
+                ws.cell(row, 10, method)
+                self._alt_row(ws, row, 10)
                 row += 1
 
         if not data.get("transactions"):
@@ -1456,7 +1488,7 @@ class ExportService:
 
         self._set_column_widths(ws)
         ws.freeze_panes = "A2"
-        ws.auto_filter.ref = f"A1:K{row-1}"
+        ws.auto_filter.ref = f"A1:J{row-1}"
 
     # ─── Sheet 6: Operasional & Upah ──────────────────────────────────────────
 
@@ -1478,7 +1510,6 @@ class ExportService:
         budget_allocations = data.get("budget_allocations", [])
         target_upah = Decimal("0")
         target_ops = Decimal("0")
-        target_rent = Decimal("0")
         for ba in budget_allocations:
             u = _d(ba.get("operational_salary"))
             target_upah += u if u > 0 else _d(ba.get("budget_labor"))
@@ -1486,7 +1517,6 @@ class ExportService:
             ut = _d(ba.get("operational_utilities"))
             sub = f + ut
             target_ops += sub if sub > 0 else _d(ba.get("budget_ops"))
-            target_rent += _d(ba.get("budget_kitchen_rent"))
 
         # Calculate actuals from payroll and operational costs
         actual_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
@@ -1494,9 +1524,8 @@ class ExportService:
 
         row = 3
         summary_items = [
-            ("Gaji & Upah (Rp 1.500/porsi)", target_upah, actual_upah),
-            ("Operasional / BBM / Listrik (Rp 1.500/porsi)", target_ops, actual_ops),
-            ("Sewa Dapur / Laba Bersih (Rp 2.000/porsi)", target_rent, Decimal("0")),
+            ("Insentif Tenaga Kerja SPPG (Rp 6jt/hari)", target_upah, actual_upah),
+            ("Operasional / BBM / Logistik (Rp 3.000/porsi)", target_ops, actual_ops),
         ]
         for label, tgt, act in summary_items:
             selisih = tgt - act

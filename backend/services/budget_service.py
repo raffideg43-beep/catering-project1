@@ -93,7 +93,7 @@ class BudgetService:
             supabase.table("payroll_periods")
             .select("id")
             .eq("tenant_id", tenant_id)
-            .eq("status", "confirmed")
+            .neq("status", "draft")
             .gte("start_date", first.isoformat())
             .lte("start_date", last.isoformat())
             .execute()
