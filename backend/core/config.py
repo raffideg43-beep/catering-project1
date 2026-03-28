@@ -40,11 +40,18 @@ class Settings(BaseSettings):
     photo_rate_limit_per_user: int = 10
     photo_rate_limit_window_seconds: int = 60
 
-    # --- MBG settings (sesuai MASTER_PLAN v1.7) ---
-    mbg_price_per_portion: int = 15000
-    mbg_food_allocation: float = 0.80
-    mbg_labor_allocation: float = 0.15
-    mbg_ops_allocation: float = 0.05
+    # --- MBG settings ---
+    # ⚠️ DEPRECATED: Old per-portion model (15k/13k) — DO NOT USE
+    # mbg_price_per_portion: int = 15000
+    # mbg_food_allocation: float = 0.80      # Old: 80% bahan
+    # mbg_labor_allocation: float = 0.15     # Old: 15% upah
+    # mbg_ops_allocation: float = 0.05       # Old: 5% ops
+    #
+    # NEW Model (v2.0): Breakdown pricing (configured in mbg_allocation_settings table)
+    # - Bahan Baku: 10k (SD/SMP) | 8k (PAUD/TK) per porsi
+    # - Operasional: 3k per porsi
+    # - Profit Harian: 6jt FIXED per hari (tidak ada Minggu)
+    # Settings diambil dari DB, bukan dari config ini.
 
     # --- OCR / Worker ---
     ocr_worker_count: int = 2

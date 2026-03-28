@@ -127,6 +127,36 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     hari = HARI_INDO.get(today.strftime("%A"), today.strftime("%A"))
     tanggal = today.strftime("%d/%m/%Y")
 
+    # ─── Check if Sunday (Minggu) ───────────────────────────────────────
+    is_sunday = today.weekday() == 6  # 6 = Sunday
+    
+    if is_sunday:
+        # Show warning dialog
+        sunday_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Tetap Lanjut", callback_data="serah_sunday_confirm"),
+                InlineKeyboardButton("❌ Batal", callback_data="serah_batal"),
+            ]
+        ])
+        await msg.reply_text(
+            f"⚠️ *PERINGATAN*\n\n"
+            f"Hari ini *{_esc(hari)}* ({_esc(tanggal)}) — *bukan hari kerja MBG*\\.\n\n"
+            f"MBG beroperasi Senin\\-Sabtu saja \\(26 hari kerja/bulan\\)\\.\n\n"
+            f"Yakin ingin input penyerahan hari ini\\?",
+            reply_markup=sunday_keyboard,
+            parse_mode="MarkdownV2",
+        )
+        # Store delivery data untuk jika user confirm
+        context.user_data["serah_data"] = {
+            "delivery_date": today.isoformat(),
+            "schools": {},  # will be filled after confirm
+            "menu_name": menu_name,
+            "schools_raw": schools_raw,  # store raw data
+        }
+        return INPUT_PORTIONS
+    
+    # ─── Normal weekday flow ───────────────────────────────────────────────
+
     # Bangun schools dict dengan default = default_portions
     schools: Dict[str, dict] = {}
     for s in schools_raw:
@@ -515,6 +545,51 @@ async def edit_kembali(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return INPUT_PORTIONS
 
 
+# ─── Callback: Sunday warning confirmation ──────────────────────────────────
+
+async def serah_sunday_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User tetap lanjut meski hari Minggu — ambil schools dan lanjut ke INPUT_PORTIONS."""
+    query = update.callback_query
+    if not query:
+        return INPUT_PORTIONS
+    await query.answer()
+
+    serah_data = context.user_data.get("serah_data", {})
+    schools_raw = serah_data.get("schools_raw", [])
+    menu_name = serah_data.get("menu_name", "Belum diset")
+    
+    # Bangun schools dict
+    schools: Dict[str, dict] = {}
+    for s in schools_raw:
+        sid = s.get("id", "")
+        if not sid:
+            continue
+        schools[sid] = {
+            "name": s.get("name") or "Sekolah",
+            "portions": int(s.get("default_portions") or s.get("quota") or 100),
+            "school_level": s.get("school_level") or "sd_smp",
+        }
+    
+    # Update serah_data dengan schools yang sudah built
+    serah_data["schools"] = schools
+    context.user_data["serah_data"] = serah_data
+    context.user_data.pop("editing_school_id", None)
+    
+    today = date.today()
+    hari = HARI_INDO.get(today.strftime("%A"), today.strftime("%A"))
+    tanggal = today.strftime("%d/%m/%Y")
+
+    await query.edit_message_text(
+        f"🍱 *KONFIRMASI PENYERAHAN MBG*\n"
+        f"📅 {_esc(hari)}, {_esc(tanggal)}\n"
+        f"🍽️ Menu: {_esc(menu_name)}\n\n"
+        f"Tap sekolah untuk edit porsi, atau klik Lanjut:",
+        reply_markup=_serah_keyboard(schools),
+        parse_mode="MarkdownV2",
+    )
+    return INPUT_PORTIONS
+
+
 # ─── Callback batal ───────────────────────────────────────────────────────────
 
 async def serah_batal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -548,6 +623,7 @@ def build_serah_conversation() -> ConversationHandler:
         ],
         states={
             INPUT_PORTIONS: [
+                CallbackQueryHandler(serah_sunday_confirm, pattern=r"^serah_sunday_confirm$"),
                 CallbackQueryHandler(edit_porsi,       pattern=r"^edit_porsi_"),
                 CallbackQueryHandler(serah_lanjut,     pattern=r"^serah_lanjut$"),
                 CallbackQueryHandler(serah_batal,      pattern=r"^serah_batal$"),

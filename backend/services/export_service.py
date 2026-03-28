@@ -978,15 +978,15 @@ class ExportService:
 
         bulan_str = BULAN[month]
 
-        # ── Section A: PENYERAHAN MBG ──
-        ws.merge_cells("A1:I1")
+        # ── Section A: PENYERAHAN MBG (NEW MODEL: Bahan + Ops + Profit) ──
+        ws.merge_cells("A1:K1")
         ws["A1"] = f"PENYERAHAN MBG — {bulan_str} {year}"
         ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=12, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
 
         penyerahan_headers = ["No", "Tanggal", "Sekolah", "Menu", "Porsi",
-                              "Harga/Porsi", "Gross", "Bersih"]
+                              "Bahan (Rp)", "Ops (Rp)", "Profit (Rp)", "Total (Rp)"]
         self._write_headers(ws, 2, penyerahan_headers)
 
         # Build menu lookup
@@ -1000,28 +1000,60 @@ class ExportService:
                 pass
 
         row = 3
-        total_gross = total_bersih = Decimal("0")
-        price_pp = Decimal(str(data["price_per_portion"]))
+        total_bahan = total_ops = total_profit = total_revenue = Decimal("0")
+        
+        # Get allocation settings for rates
+        budget_allocs = data.get("budget_allocations", [])
+        rate_bahan_sd = Decimal("10000")
+        rate_bahan_tk = Decimal("8000")
+        rate_ops = Decimal("3000")
+        profit_harian = Decimal("6000000")
+        
+        # Delivery dates by date to count daily profits
+        deliveries_by_date: Dict[str, List[dict]] = {}
+        for d in data.get("deliveries", []):
+            del_date = d.get("delivery_date", "")
+            deliveries_by_date.setdefault(del_date, []).append(d)
 
         for n, d in enumerate(data.get("deliveries", []), 1):
             portions = d.get("portions_sent", 0)
             school_name = (d.get("schools") or {}).get("name", "?")
             del_date = d.get("delivery_date", "")
             menu_name = menu_by_date.get(del_date, d.get("menu_name", "—"))
-            gross = price_pp * portions
-            bersih = gross
-
-            total_gross  += gross
-            total_bersih += bersih
+            
+            # Get school level to determine bahan rate
+            school_data = d.get("schools") or {}
+            school_level = school_data.get("school_level", "sd_smp")
+            rate_bahan = rate_bahan_tk if school_level == "paud_tk" else rate_bahan_sd
+            
+            # Calculate per-delivery components
+            bahan = Decimal(portions) * rate_bahan
+            ops = Decimal(portions) * rate_ops
+            
+            # Profit is per-day, check if Sunday
+            try:
+                del_obj = datetime.strptime(del_date, "%Y-%m-%d")
+                is_sunday = del_obj.weekday() == 6
+                profit = Decimal("0") if is_sunday else profit_harian
+            except Exception:
+                profit = profit_harian
+            
+            total = bahan + ops + profit
+            
+            total_bahan += bahan
+            total_ops += ops
+            total_profit += profit
+            total_revenue += total
 
             ws.cell(row, 1, n)
             ws.cell(row, 2, del_date)
             ws.cell(row, 3, school_name)
             ws.cell(row, 4, menu_name)
             ws.cell(row, 5, portions)
-            ws.cell(row, 6, float(price_pp)).number_format = '"Rp "#,##0'
-            ws.cell(row, 7, float(gross)).number_format = '"Rp "#,##0'
-            ws.cell(row, 8, float(bersih)).number_format = '"Rp "#,##0'
+            ws.cell(row, 6, float(bahan)).number_format = '"Rp "#,##0'
+            ws.cell(row, 7, float(ops)).number_format = '"Rp "#,##0'
+            ws.cell(row, 8, float(profit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 9, float(total)).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
             row += 1
 
@@ -1033,7 +1065,10 @@ class ExportService:
         # Total penyerahan
         self._write_total_row(ws, row, {
             5: sum(d.get("portions_sent", 0) for d in data.get("deliveries", [])),
-            7: float(total_gross), 8: float(total_bersih)
+            6: float(total_bahan), 
+            7: float(total_ops), 
+            8: float(total_profit),
+            9: float(total_revenue)
         })
         row += 2
 
@@ -1215,106 +1250,141 @@ class ExportService:
 
     def _fill_laporan_pemerintah(self, ws, data: dict, year: int, month: int) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment
-        logger.info(f"Fill laporan pemerintah")
+        logger.info(f"Fill laporan pemerintah (NEW MODEL: Bahan:Ops:Profit breakdown)")
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
 
-        # Section A: Identitas
-        ws.merge_cells("A1:E1")
+        # Section A: Header
+        ws.merge_cells("A1:I1")
         ws["A1"] = f"LAPORAN PEMERINTAH MBG — {bulan_str} {year}"
         ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
 
+        # Section B: Identitas SPPG
         ws["A3"] = "Identitas SPPG"
         ws["A3"].font = Font(bold=True, size=11)
         ws["A4"] = "Nama SPPG"; ws["B4"] = tenant_name
         ws["A5"] = "Periode"; ws["B5"] = f"{bulan_str} {year}"
 
-        # Section B: Logistik & Distribusi
+        # Section C: Daily Breakdown (Tanggal per Hari)
         deliveries = data.get("deliveries", [])
-        total_portions = sum(d.get("portions_sent", 0) for d in deliveries)
-        total_days = len({d["delivery_date"] for d in deliveries})
-        price_pp = Decimal(str(data["price_per_portion"]))
-        revenue_gross = price_pp * total_portions
-
-        ws["A7"] = "Logistik & Distribusi"
-        ws["A7"].font = Font(bold=True, size=11)
-        ws["A8"] = "Total Porsi"; ws["B8"] = total_portions
-        ws["A9"] = "Total Hari Kirim"; ws["B9"] = total_days
-        ws["A10"] = "Rata-rata Porsi/Hari"; ws["B10"] = round(total_portions / max(total_days, 1))
-        ws["A11"] = "Jumlah Sekolah"; ws["B11"] = len({d.get("school_id") for d in deliveries})
-
-        # Section C: Komposisi Biaya (Berdasarkan Alokasi Per Porsi)
-        transactions = data.get("transactions", [])
-        total_exp = sum(_d(t.get("total")) for t in transactions)
-        
         budget_allocations = data.get("budget_allocations", [])
         
-        target_bahan = Decimal("0")
-        target_upah = Decimal("0")
-        target_ops = Decimal("0")
-        target_rent = Decimal("0")
-
+        # Group allocations by date
+        alloc_by_date: Dict[str, dict] = {}
         for ba in budget_allocations:
-            raw_mat = _d(ba.get("budget_raw_material"))
-            target_bahan += raw_mat if raw_mat > 0 else _d(ba.get("budget_food"))
+            d = ba.get("date", "")
+            if d:
+                alloc_by_date[d] = ba
+
+        ws["A7"] = "Rincian Harian - Breakdown Biaya: Bahan : Operasional : Profit"
+        ws["A7"].font = Font(bold=True, size=11)
+        
+        headers_daily = ["Tanggal", "Porsi", "Bahan Baku (Rp)", "Operasional (Rp)", 
+                        "Profit (Rp)", "Total (Rp)", "% Bahan", "% Ops", "% Profit"]
+        for i, h in enumerate(headers_daily, 1):
+            ws.cell(8, i, h).font = Font(bold=True)
+
+        row = 9
+        total_bahan_all = Decimal("0")
+        total_ops_all = Decimal("0")
+        total_profit_all = Decimal("0")
+        total_revenue_all = Decimal("0")
+        total_porsi_all = 0
+        
+        # Group deliveries by date to summarize per day
+        deliveries_by_date: Dict[str, List[dict]] = {}
+        for d in deliveries:
+            del_date = d.get("delivery_date", "")
+            deliveries_by_date.setdefault(del_date, []).append(d)
+        
+        for del_date in sorted(deliveries_by_date.keys()):
+            day_deliveries = deliveries_by_date[del_date]
+            day_porsi = sum(d.get("portions_sent", 0) for d in day_deliveries)
             
-            upah = _d(ba.get("operational_salary"))
-            target_upah += upah if upah > 0 else _d(ba.get("budget_labor"))
+            # Get allocation data for this date
+            alloc = alloc_by_date.get(del_date, {})
+            bahan = _d(alloc.get("budget_bahan", 0))
+            ops = _d(alloc.get("budget_ops", 0))
+            profit = _d(alloc.get("budget_insentif", 0))  # 0 jika Minggu
+            total = bahan + ops + profit
             
-            fuel = _d(ba.get("operational_fuel"))
-            utils = _d(ba.get("operational_utilities"))
-            total_ops_sub = fuel + utils
-            target_ops += total_ops_sub if total_ops_sub > 0 else _d(ba.get("budget_ops"))
+            if total > 0:
+                pct_bahan = (bahan / total) * 100
+                pct_ops = (ops / total) * 100
+                pct_profit = (profit / total) * 100
+            else:
+                pct_bahan = pct_ops = pct_profit = Decimal("0")
             
-            target_rent += _d(ba.get("budget_kitchen_rent"))
+            ws.cell(row, 1, del_date)
+            ws.cell(row, 2, day_porsi)
+            ws.cell(row, 3, float(bahan)).number_format = '"Rp "#,##0'
+            ws.cell(row, 4, float(ops)).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, float(profit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 6, float(total)).number_format = '"Rp "#,##0'
+            ws.cell(row, 7, float(pct_bahan)).number_format = '0.00"%"'
+            ws.cell(row, 8, float(pct_ops)).number_format = '0.00"%"'
+            ws.cell(row, 9, float(pct_profit)).number_format = '0.00"%"'
+            self._alt_row(ws, row, 2)
+            
+            total_bahan_all += bahan
+            total_ops_all += ops
+            total_profit_all += profit
+            total_revenue_all += total
+            total_porsi_all += day_porsi
+            row += 1
 
-        # Ambil realisasi dari budget_summary yang sudah terpusat
-        juknis_real = budget.get("juknis_breakdown", {})
-        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
-        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
-        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
+        # Total row
+        if total_revenue_all > 0:
+            pct_b = (total_bahan_all / total_revenue_all) * 100
+            pct_o = (total_ops_all / total_revenue_all) * 100
+            pct_p = (total_profit_all / total_revenue_all) * 100
+        else:
+            pct_b = pct_o = pct_p = Decimal("0")
 
-        ws["A13"] = "Komposisi Biaya (Target vs Realisasi)"
-        ws["A13"].font = Font(bold=True, size=11)
-        headers_biaya = ["Kategori", "Satuan Porsi", "Target (Rp)", "Realisasi (Rp)", "Selisih"]
-        for i, h in enumerate(headers_biaya, 1):
-            ws.cell(14, i, h).font = Font(bold=True)
-
-        # Bahan Baku
-        ws.cell(15, 1, "Bahan Baku Pangan")
-        ws.cell(15, 2, "Rp 10k / 8k")
-        ws.cell(15, 3, float(target_bahan)).number_format = '"Rp "#,##0'
-        ws.cell(15, 4, float(exp_bahan)).number_format = '"Rp "#,##0'
-        ws.cell(15, 5, float(target_bahan - exp_bahan)).number_format = '"Rp "#,##0'
-
-        # Upah Pekerja
-        ws.cell(16, 1, "Upah Pekerja (Gaji)")
-        ws.cell(16, 2, "Rp 1.500")
-        ws.cell(16, 3, float(target_upah)).number_format = '"Rp "#,##0'
-        ws.cell(16, 4, float(exp_upah)).number_format = '"Rp "#,##0'
-        ws.cell(16, 5, float(target_upah - exp_upah)).number_format = '"Rp "#,##0'
-
-        # Operasional (BBM, Listrik, Utility)
-        ws.cell(17, 1, "Operasional (BBM & Utility)")
-        ws.cell(17, 2, "Rp 1.500")
-        ws.cell(17, 3, float(target_ops)).number_format = '"Rp "#,##0'
-        ws.cell(17, 4, float(exp_ops)).number_format = '"Rp "#,##0'
-        ws.cell(17, 5, float(target_ops - exp_ops)).number_format = '"Rp "#,##0'
-
-        # Sewa Dapur (Laba Bersih)
-        ws.cell(18, 1, "Sewa Dapur (Laba Bersih)")
-        ws.cell(18, 2, "Rp 2.000")
-        ws.cell(18, 3, float(target_rent)).number_format = '"Rp "#,##0'
-        ws.cell(18, 4, "—")
-        ws.cell(18, 5, float(target_rent)).number_format = '"Rp "#,##0'
-
-        # Section D: Detail Pendapatan
-        ws["A20"] = "Detail Pendapatan"
-        ws["A20"].font = Font(bold=True, size=11)
-        ws["A21"] = "Pendapatan Bruto"; ws["B21"] = float(revenue_gross); ws["B21"].number_format = '"Rp "#,##0'
-        ws["A22"] = "Pendapatan Netto"; ws["B22"] = float(revenue_gross); ws["B22"].number_format = '"Rp "#,##0'
+        ws.cell(row, 1, "TOTAL BULANAN")
+        ws.cell(row, 1).font = Font(bold=True)
+        ws.cell(row, 2, total_porsi_all)
+        ws.cell(row, 2).font = Font(bold=True)
+        ws.cell(row, 3, float(total_bahan_all)).number_format = '"Rp "#,##0'
+        ws.cell(row, 3).font = Font(bold=True)
+        ws.cell(row, 4, float(total_ops_all)).number_format = '"Rp "#,##0'
+        ws.cell(row, 4).font = Font(bold=True)
+        ws.cell(row, 5, float(total_profit_all)).number_format = '"Rp "#,##0'
+        ws.cell(row, 5).font = Font(bold=True)
+        ws.cell(row, 6, float(total_revenue_all)).number_format = '"Rp "#,##0'
+        ws.cell(row, 6).font = Font(bold=True)
+        ws.cell(row, 7, float(pct_b)).number_format = '0.00"%"'
+        ws.cell(row, 7).font = Font(bold=True)
+        ws.cell(row, 8, float(pct_o)).number_format = '0.00"%"'
+        ws.cell(row, 8).font = Font(bold=True)
+        ws.cell(row, 9, float(pct_p)).number_format = '0.00"%"'
+        ws.cell(row, 9).font = Font(bold=True)
+        
+        # Section D: Summary & Catatan
+        row += 2
+        ws[f"A{row}"] = "Ringkasan Komposisi (Rata-rata % per Porsi)"
+        ws[f"A{row}"].font = Font(bold=True, size=11)
+        row += 1
+        
+        avg_bahan_pp = total_bahan_all / max(total_porsi_all, 1) if total_porsi_all > 0 else Decimal("0")
+        avg_ops_pp = total_ops_all / max(total_porsi_all, 1) if total_porsi_all > 0 else Decimal("0")
+        avg_profit_pp = (total_profit_all / max(total_porsi_all, 1) if total_porsi_all > 0 else Decimal("0"))
+        avg_total_pp = total_revenue_all / max(total_porsi_all, 1) if total_porsi_all > 0 else Decimal("0")
+        
+        summary_rows = [
+            ("Bahan Baku per Porsi", float(avg_bahan_pp), '"Rp "#,##0'),
+            ("Operasional per Porsi", float(avg_ops_pp), '"Rp "#,##0'),
+            ("Profit per Porsi", float(avg_profit_pp), '"Rp "#,##0'),
+            ("Total per Porsi", float(avg_total_pp), '"Rp "#,##0'),
+        ]
+        
+        for label, value, fmt in summary_rows:
+            ws[f"A{row}"] = label
+            ws[f"B{row}"] = value
+            ws[f"B{row}"].number_format = fmt
+            row += 1
 
         self._set_column_widths(ws)
 

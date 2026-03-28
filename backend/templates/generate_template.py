@@ -69,14 +69,18 @@ def main() -> None:
     ]
     ws4.append(headers4)
 
-    # Sheet 5: Laporan Pemerintah
+    # Sheet 5: Laporan Pemerintah (Breakdown: Bahan : Ops : Profit)
     ws5 = wb.create_sheet("Laporan Pemerintah")
     headers5 = [
-        "Identitas SPPG",
-        "Logistik & Distribusi",
-        "Komposisi Biaya 80:15:5",
-        "Detail Pajak",
-        "Evaluasi Gizi & Sampel",
+        "Tanggal",
+        "Bahan Baku (Rp)",
+        "Operasional (Rp)",
+        "Profit (Rp)",
+        "Total (Rp)",
+        "% Bahan",
+        "% Ops",
+        "% Profit",
+        "Catatan",
     ]
     ws5.append(headers5)
 

@@ -652,8 +652,12 @@ async def create_bulk_delivery(
         budget_bahan += portions * rate_bahan
         budget_ops += portions * rate_ops
 
-    # Total Insentif is flat per day
-    budget_insentif = insentif_harian
+    # ─── Check if Sunday: profit = 0 ─────────────────────────────
+    delivery_obj = datetime.strptime(body.delivery_date, "%Y-%m-%d")
+    is_sunday = delivery_obj.weekday() == 6  # 6 = Sunday
+    
+    # Total Insentif is flat per day (except Sunday: 0)
+    budget_insentif = 0.0 if is_sunday else insentif_harian
     total_revenue = budget_bahan + budget_ops + budget_insentif
 
     allocation = {
@@ -693,6 +697,9 @@ async def create_bulk_delivery(
         "transaction_id": None,  # bisa dihubungkan ke transaksi income MBG jika sudah ada
         "debtor_name": "Pemerintah - MBG",
         "amount": str(total_revenue),
+        "component_bahan": str(budget_bahan),      # Bahan baku (komponen variabel)
+        "component_ops": str(budget_ops),          # Operasional (komponen variabel)
+        "component_profit": str(budget_insentif),  # Profit harian (6jt atau 0 jika Minggu)
         "pph22_amount": "0.00",
         "paid_amount": "0.00",
         "due_date": due_date,
@@ -771,14 +778,28 @@ def get_delivery_summary(
     # Ambil deliveries
     del_resp = (
         supabase.table("mbg_deliveries")
-        .select("*, schools(name)")
+        .select("*, schools(name, default_portions)")
         .eq("tenant_id", tenant_id)
         .eq("delivery_date", target_date.isoformat())
         .execute()
     )
     deliveries_raw = getattr(del_resp, "data", None) or []
 
-    total_portions = sum(d.get("portions_sent", 0) for d in deliveries_raw)
+    # Hitung total porsi
+    if deliveries_raw:
+        # Jika ada delivery records, gunakan portions_sent
+        total_portions = sum(d.get("portions_sent", 0) for d in deliveries_raw)
+    else:
+        # Jika belum ada delivery, gunakan default_portions dari schools aktif
+        schools_resp = (
+            supabase.table("schools")
+            .select("default_portions")
+            .eq("tenant_id", tenant_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        schools_list = getattr(schools_resp, "data", None) or []
+        total_portions = sum(int(s.get("default_portions", 0)) for s in schools_list)
 
     # Ambil menu
     dow = target_date.weekday() + 1
@@ -825,15 +846,38 @@ def get_delivery_summary(
     alloc_rows = getattr(alloc_resp, "data", None) or []
     allocation = alloc_rows[0] if alloc_rows else None
 
-    deliveries_clean = [
-        {
-            "school_name": (d.get("schools") or {}).get("name", "?"),
-            "portions_sent": d.get("portions_sent"),
-            "receiver_name": d.get("receiver_name"),
-            "status": d.get("status"),
-        }
-        for d in deliveries_raw
-    ]
+    deliveries_clean = []
+    
+    if deliveries_raw:
+        # Jika ada deliveries, gunakan data actual
+        deliveries_clean = [
+            {
+                "school_name": (d.get("schools") or {}).get("name", "?"),
+                "portions_sent": d.get("portions_sent"),
+                "receiver_name": d.get("receiver_name"),
+                "status": d.get("status"),
+            }
+            for d in deliveries_raw
+        ]
+    else:
+        # Jika belum ada delivery, tampilkan schools aktif dengan default_portions (template)
+        schools_resp = (
+            supabase.table("schools")
+            .select("name, default_portions")
+            .eq("tenant_id", tenant_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        schools_list = getattr(schools_resp, "data", None) or []
+        deliveries_clean = [
+            {
+                "school_name": s.get("name", "?"),
+                "portions_sent": int(s.get("default_portions", 0)),
+                "receiver_name": None,
+                "status": "template",  # Belum actual delivery
+            }
+            for s in schools_list
+        ]
 
     return {
         "success": True,
