@@ -161,14 +161,16 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
         # FALLBACK: Jika master schedule tidak punya daftar sekolah, 
         # ambil semua sekolah aktif sebagai default.
         if not school_timings:
+            logger.info(f"[FALLBACK] No linked schools for master_id {master_id}. Fetching all active schools.")
             all_schools_resp = (
                 supabase.table("schools")
                 .select("id, name, default_portions, is_active")
                 .eq("tenant_id", tenant_id)
-                .eq("is_active", True)
                 .execute()
             )
             all_schools = getattr(all_schools_resp, "data", None) or []
+            logger.info(f"[FALLBACK] Found {len(all_schools)} schools for tenant {tenant_id}.")
+            
             school_timings = [
                 {
                     "school_id": s["id"],
@@ -178,8 +180,9 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
                     "delivery_window_minutes": 15,
                     "day_of_week": 0
                 }
-                for s in all_schools
+                for s in all_schools if s.get("is_active") is not False
             ]
+            logger.info(f"[FALLBACK] Final timing entries: {len(school_timings)}")
 
         schools = []
         for st in school_timings:
