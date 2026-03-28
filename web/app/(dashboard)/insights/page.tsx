@@ -153,6 +153,7 @@ function HargaTab() {
 
 /* ─── Jadwal Part ─── */
 interface TimelineEvent {
+    id?: string;
     time: string;
     activity: string;
     school_id: string | null;
@@ -248,7 +249,7 @@ function JadwalTab() {
     
     // States for Edit Day Feature
     const [editingDay, setEditingDay] = useState<DaySchedule | null>(null);
-    const [editPortions, setEditPortions] = useState<number>(0);
+    const [editTimeline, setEditTimeline] = useState<TimelineEvent[]>([]);
     const [savingEdit, setSavingEdit] = useState(false);
 
     const getMonday = (offset: number) => {
@@ -328,25 +329,27 @@ function JadwalTab() {
                  if(d.date === editingDay.date) {
                      return { 
                          ...d, 
-                         total_portions: editPortions, 
-                         timeline: d.timeline.map(t => 
-                            t.type === 'cook' ? {...t, activity: t.activity.replace(/\([\d.,]+\s*porsi\)/, `(${editPortions} porsi)`)} : t
-                         ) 
+                         timeline: editTimeline
                      }
                  }
                  return d;
              });
              setDraftData({...draftData, days: newDays});
              setEditingDay(null);
-             setToast(`✅ Draft hari ${editingDay.day_name} diupdate`);
+             setToast(`✅ Draft timeline hari ${editingDay.day_name} diupdate`);
         } else {
              try {
-                await apiPost("/schedules/update-day", { date: editingDay.date, total_portions: editPortions });
-                setToast(`✅ Porsi hari ${editingDay.day_name} berhasil diupdate`);
-                fetchWeek(getMonday(weekOffset));
+                const updates = editTimeline.map(t => ({ id: t.id, time: t.time })).filter(u => u.id);
+                if (updates.length > 0) {
+                    await apiPost("/schedules/update-timeline", { updates });
+                    setToast(`✅ Timeline hari ${editingDay.day_name} berhasil disimpan`);
+                    fetchWeek(getMonday(weekOffset));
+                } else {
+                    setToast("✅ Tidak ada jadwal valid untuk diupdate (draft belum diapprove)");
+                }
                 setEditingDay(null);
              } catch (e: any) {
-                setToast("❌ Gagal update porsi");
+                setToast("❌ Gagal update timeline: " + (e?.message || ""));
              }
         }
         setSavingEdit(false);
@@ -494,8 +497,8 @@ function JadwalTab() {
                                             </span>
                                         )}
                                         {!day.is_holiday && (
-                                            <button onClick={() => { setEditingDay(day); setEditPortions(day.total_portions); }} className="text-gray-400 hover:text-blue-600 bg-white shadow-sm border border-gray-100 px-2 py-1 rounded text-xs transition">
-                                                ✏️ Edit
+                                            <button onClick={() => { setEditingDay(day); setEditTimeline([...day.timeline]); }} className="text-gray-400 hover:text-blue-600 bg-white shadow-sm border border-gray-100 px-2 py-1 rounded text-xs transition">
+                                                ✏️ Edit Jam
                                             </button>
                                         )}
                                     </div>
@@ -570,23 +573,37 @@ function JadwalTab() {
 
             {editingDay && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-[fadeIn_0.2s]">
-                        <h3 className="font-bold text-lg mb-1">✏️ Edit Porsi Harian</h3>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-[fadeIn_0.2s] max-h-[90vh] overflow-y-auto">
+                        <h3 className="font-bold text-lg mb-1">✏️ Edit Jam Operasional</h3>
                         <p className="text-gray-500 text-sm mb-4">{editingDay.day_name}, {editingDay.date}</p>
-                        <div className="space-y-3">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Total Porsi</label>
-                                <input type="number" 
-                                    className="w-full border-gray-300 rounded-xl shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2.5 px-3 text-lg"
-                                    value={editPortions || ""} 
-                                    onChange={e => setEditPortions(parseInt(e.target.value) || 0)} 
-                                    placeholder="0" />
-                            </div>
+                        
+                        <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            {editTimeline.length === 0 ? (
+                                <p className="text-gray-400 text-sm text-center">Belum ada kegiatan untuk diedit</p>
+                            ) : (
+                                editTimeline.map((evt, idx) => (
+                                    <div key={idx} className="flex gap-4 items-center bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                                        <input type="time" 
+                                            className="border-gray-200 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1.5 px-2 text-sm font-mono w-28 bg-gray-50"
+                                            value={evt.time} 
+                                            onChange={e => {
+                                                const newT = [...editTimeline];
+                                                newT[idx].time = e.target.value;
+                                                setEditTimeline(newT);
+                                            }} />
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <span className="text-base leading-none">{eventIcon(evt.type)}</span>
+                                            <span className="text-sm text-gray-700 font-medium truncate" title={evt.activity}>{evt.activity}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </div>
+
                         <div className="mt-6 flex justify-end gap-3">
                             <button onClick={() => setEditingDay(null)} disabled={savingEdit} className="px-5 py-2.5 text-gray-500 hover:bg-gray-100 rounded-xl text-sm font-semibold transition">Batal</button>
-                            <button onClick={handleSaveEdit} disabled={savingEdit} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-md transition">
-                                {savingEdit ? "Menyimpan..." : "Simpan Porsi"}
+                            <button onClick={handleSaveEdit} disabled={savingEdit || editTimeline.length === 0} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-md transition">
+                                {savingEdit ? "Menyimpan..." : "Simpan Jadwal"}
                             </button>
                         </div>
                     </div>

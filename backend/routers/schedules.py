@@ -764,6 +764,7 @@ def get_week_schedule(
             notes = {}
 
         by_day.setdefault(d, []).append({
+            "id": row.get("id"),
             "time": _time_str(row.get("scheduled_time", "")),
             "activity": row.get("description", ""),
             "school_id": notes.get("school_id"),
@@ -809,46 +810,38 @@ def get_week_schedule(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# POST /schedules/update-day
+# POST /schedules/update-timeline
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post(
-    "/update-day",
+    "/update-timeline",
     response_model=Dict[str, Any],
     dependencies=[Depends(require_role(["owner", "admin"]))],
 )
-def update_schedule_day(
+def update_schedule_timeline(
     body: Dict[str, Any] = Body(...),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Update total_portions specifically for a day in schedules."""
+    """Update scheduled_time for multiple activities in a day."""
     supabase = get_supabase()
     tid = current_user.tenant_id
-    date_str = body.get("date")
-    new_portions = body.get("total_portions")
+    updates = body.get("updates", [])
     
-    if not date_str or new_portions is None:
-        raise HTTPException(400, "date and total_portions required")
+    if not updates:
+        raise HTTPException(400, "Tidak ada data update")
         
     try:
-        resp = (supabase.table("schedules")
-            .select("id, description")
-            .eq("tenant_id", tid)
-            .eq("type", "mbg_daily")
-            .eq("scheduled_date", date_str)
-            .execute()
-        )
-        rows = getattr(resp, "data", None) or []
-        for row in rows:
-            desc = row.get("description", "")
-            if "Mulai masak" in desc:
-                new_desc = re.sub(r"\([\d.,]+\s*porsi\)", f"({new_portions:,} porsi)".replace(",", "."), desc)
+        updated_count = 0
+        for upd in updates:
+            row_id = upd.get("id")
+            new_time = upd.get("time")
+            if row_id and new_time:
                 supabase.table("schedules").update({
-                    "description": new_desc,
-                    "qty": new_portions
-                }).eq("id", row["id"]).execute()
+                    "scheduled_time": new_time
+                }).eq("id", row_id).eq("tenant_id", tid).execute()
+                updated_count += 1
                 
-        return {"success": True, "message": "Porsi berhasil diupdate"}
+        return {"success": True, "message": f"{updated_count} jadwal diupdate"}
     except Exception as e:
-        logger.error(f"POST /schedules/update-day error: {e}")
-        raise HTTPException(500, "Gagal update porsi")
+        logger.error(f"POST /schedules/update-timeline error: {e}")
+        raise HTTPException(500, "Gagal update timeline")
