@@ -7,10 +7,7 @@
     },
     {
       "src": "backend/main.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxDuration": 10
-      }
+      "use": "@vercel/python"
     }
   ],
   "rewrites": [
@@ -20,7 +17,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "web/$1"
+      "destination": "/web/$1"
     }
   ]
 }
