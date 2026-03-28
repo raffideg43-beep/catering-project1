@@ -261,12 +261,19 @@ export default function DashboardPage() {
 
             {/* ─── Quick Links ──────────────────────────────────── */}
             <div>
-                <button
+            <button
                     onClick={async () => {
                         try {
                             const r = await apiGet("/reports/excel/download");
-                            if (r?.data?.file_url) window.open(r.data.file_url, "_blank");
-                        } catch { alert("Gagal generate Excel"); }
+                            const url = r?.data?.file_url;
+                            if (url) {
+                                window.open(url, "_blank");
+                            } else {
+                                alert("File Excel belum tersedia. Silakan generate dulu di halaman Pembukuan.");
+                            }
+                        } catch (e: any) {
+                            alert(e?.response?.data?.detail || "Gagal generate Excel. Coba lagi nanti.");
+                        }
                     }}
                     className="w-full sm:w-auto bg-blue-50 border border-blue-200 text-blue-700 shadow-sm px-6 py-3 rounded-xl font-medium hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
                 >

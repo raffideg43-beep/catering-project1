@@ -118,9 +118,12 @@ def generate_excel_dinas(
     try:
         url = svc.regenerate_monthly_excel(current_user.tenant_id, req.year, req.month, supabase)
         if url:
+            # Add cache-buster so browser always fetches fresh file
+            import time
+            busted_url = f"{url}?t={int(time.time())}" if "?" not in url else f"{url}&t={int(time.time())}"
             # Upsert legal doc for Excel Dinas tracking
-            SPTService._upsert_legal_doc(supabase, current_user.tenant_id, "excel_dinas", req.year, req.month, url)
-            return {"success": True, "file_url": url}
+            SPTService._upsert_legal_doc(supabase, current_user.tenant_id, "excel_dinas", req.year, req.month, busted_url)
+            return {"success": True, "file_url": busted_url}
         return {"success": False, "error": "Gagal generate Excel."}
     except Exception as e:
         logger.error(f"Generate Excel Error: {str(e)}", exc_info=True)

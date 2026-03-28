@@ -124,7 +124,7 @@ class ExportService:
         else:
             last = date(year, month + 1, 1) - timedelta(days=1)
 
-        print(f"DEBUG: Fetching data for {year}-{month} (Range: {first} to {last}), tenant={tenant_id}")
+        logger.info(f"Fetching data for {year}-{month} (Range: {first} to {last}), tenant={tenant_id}")
 
         # Tenant info
         t_resp = (

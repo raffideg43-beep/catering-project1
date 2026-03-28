@@ -56,7 +56,7 @@ def get_daily_report(
     # ─── MBG: allokasi + deliveries ──────────────────────────────────
     alloc_resp = (
         supabase.table("mbg_budget_allocations")
-        .select("total_portions, total_revenue, budget_food, budget_labor, budget_ops")
+        .select("total_portions, total_revenue, budget_bahan, budget_ops, budget_insentif")
         .eq("tenant_id", tid)
         .eq("date", date_str)
         .limit(1)
@@ -95,9 +95,9 @@ def get_daily_report(
         "total_schools": len(deliveries),
         "menu_name": menu_name,
         "revenue_gross": str(_d((alloc or {}).get("total_revenue"))),
-        "budget_food": str(_d((alloc or {}).get("budget_food"))),
-        "budget_labor": str(_d((alloc or {}).get("budget_labor"))),
+        "budget_bahan": str(_d((alloc or {}).get("budget_bahan"))),
         "budget_ops": str(_d((alloc or {}).get("budget_ops"))),
+        "budget_insentif": str(_d((alloc or {}).get("budget_insentif"))),
         "has_delivery": has_delivery,
     }
 
@@ -261,8 +261,50 @@ def get_monthly_report(
     payable_rows = getattr(payable_resp, "data", None) or []
     hutang_outstanding = sum(_d(r.get("amount")) for r in payable_rows)
 
-    # ─── Profit estimate ──────────────────────────────────────────────
-    gross_profit = revenue_gross - exp_total
+    # ─── Operational costs & Payroll ─────────────────────────────────
+    ops_resp = (
+        supabase.table("operational_costs")
+        .select("amount")
+        .eq("tenant_id", tid)
+        .gte("cost_date", first.isoformat())
+        .lte("cost_date", last.isoformat())
+        .execute()
+    )
+    total_ops = sum(_d(r.get("amount")) for r in (getattr(ops_resp, "data", None) or []))
+
+    pay_resp = (
+        supabase.table("payroll_periods")
+        .select("id")
+        .eq("tenant_id", tid)
+        .eq("status", "confirmed")
+        .gte("start_date", first.isoformat())
+        .lte("start_date", last.isoformat())
+        .execute()
+    )
+    p_ids = [p["id"] for p in (getattr(pay_resp, "data", None) or [])]
+    total_payroll = Decimal("0")
+    if p_ids:
+        item_resp = (
+            supabase.table("payroll_items")
+            .select("net_amount")
+            .in_("period_id", p_ids)
+            .execute()
+        )
+        total_payroll = sum(_d(i.get("net_amount")) for i in (getattr(item_resp, "data", None) or []))
+
+    total_all_expenses = exp_total + total_ops + total_payroll
+
+    # ─── Laba Estimasi: revenue - SEMUA biaya (bahan + ops + gaji) ────
+    # Insentif SPPG fixed Rp 6.000.000/hari × hari kerja (bukan Minggu)
+    import calendar
+    cal = calendar.Calendar()
+    working_days = sum(
+        1 for d in cal.itermonthdays2(y, m)
+        if d[0] != 0 and d[1] != 6  # d[1]=6 is Sunday
+    )
+    insentif_bulanan = Decimal("6000000") * working_days
+
+    gross_profit = (revenue_gross + insentif_bulanan) - total_all_expenses
 
     # ─── Stock summary ────────────────────────────────────────────────
     prod_resp = (
@@ -316,9 +358,16 @@ def get_monthly_report(
                 "top_suppliers": top_suppliers,
             },
             "profit_estimate": {
-                "revenue": str(revenue_gross),
-                "expenses": str(exp_total),
+                "revenue": str(revenue_gross + insentif_bulanan),
+                "expenses": str(total_all_expenses),
                 "gross_profit": str(gross_profit),
+                "detail": {
+                    "insentif_bulanan": str(insentif_bulanan),
+                    "hari_kerja": working_days,
+                    "bahan_pangan": str(exp_total),
+                    "operasional": str(total_ops),
+                    "gaji": str(total_payroll),
+                },
             },
             "stock_summary": {
                 "low_stock_count": len(low_items),
@@ -586,22 +635,12 @@ async def download_excel(
     - pending_regenerate → generate sync → return file_url
     - not_generated      → generate sync → return file_url
     """
-    import asyncio
     from services.export_service import ExportService
     supabase = get_supabase()
     tid = current_user.tenant_id
     today = date.today()
     y = year or today.year
     m = month or today.month
-    period_key = f"{y:04d}-{m:02d}"
-
-    # Hapus logika return cached file URL sesuai instruksi user
-    # file_url = excel_row.get("file_url")
-    # if status == "ready" and file_url:
-    #     import time
-    #     buster = int(time.time())
-    #     file_url = f"{file_url}?t={buster}" if "?" not in file_url else f"{file_url}&t={buster}"
-    #     return {"success": True, "data": {"file_url": file_url, "status": "ready"}}
 
     # Generate (sync — user menunggu)
     svc = ExportService()
