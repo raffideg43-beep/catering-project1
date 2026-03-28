@@ -772,9 +772,11 @@ class ExportService:
         # Gunakan Pencairan aktual dari budget_service alih-alih estimasi porsi
         total_disbursed = Decimal(budget.get("total_disbursed", 0))
         
-        exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
-        exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
-        exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
+        # Ambil realisasi dari budget_summary yang sudah terpusat
+        juknis_real = budget.get("juknis_breakdown", {})
+        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
+        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
+        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
         total_exp = exp_bahan + exp_upah + exp_ops
         
         budget_allocations = data.get("budget_allocations", [])
@@ -878,9 +880,12 @@ class ExportService:
         sisa_anggaran = Decimal(budget.get("sisa_anggaran", 0))
 
         revenue_net = total_disbursed
-        exp_bahan = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() not in ("insentif", "operasional"))
-        exp_upah = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "insentif")
-        exp_ops = sum(_d(t.get("total")) for t in transactions if str(t.get("juknis_category")).lower() == "operasional")
+        
+        # Ambil realisasi dari budget_summary yang sudah terpusat
+        juknis_real = budget.get("juknis_breakdown", {})
+        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
+        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
+        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
         total_exp = exp_bahan + exp_upah + exp_ops
         gross_profit = revenue_net - total_exp
 
@@ -1265,6 +1270,12 @@ class ExportService:
             
             target_rent += _d(ba.get("budget_kitchen_rent"))
 
+        # Ambil realisasi dari budget_summary yang sudah terpusat
+        juknis_real = budget.get("juknis_breakdown", {})
+        exp_bahan = _d(juknis_real.get("bahan_pangan", {}).get("realisasi", 0))
+        exp_upah = _d(juknis_real.get("insentif", {}).get("realisasi", 0))
+        exp_ops = _d(juknis_real.get("operasional", {}).get("realisasi", 0))
+
         ws["A13"] = "Komposisi Biaya (Target vs Realisasi)"
         ws["A13"].font = Font(bold=True, size=11)
         headers_biaya = ["Kategori", "Satuan Porsi", "Target (Rp)", "Realisasi (Rp)", "Selisih"]
@@ -1275,22 +1286,22 @@ class ExportService:
         ws.cell(15, 1, "Bahan Baku Pangan")
         ws.cell(15, 2, "Rp 10k / 8k")
         ws.cell(15, 3, float(target_bahan)).number_format = '"Rp "#,##0'
-        ws.cell(15, 4, float(total_exp)).number_format = '"Rp "#,##0'
-        ws.cell(15, 5, float(target_bahan - total_exp)).number_format = '"Rp "#,##0'
+        ws.cell(15, 4, float(exp_bahan)).number_format = '"Rp "#,##0'
+        ws.cell(15, 5, float(target_bahan - exp_bahan)).number_format = '"Rp "#,##0'
 
         # Upah Pekerja
         ws.cell(16, 1, "Upah Pekerja (Gaji)")
         ws.cell(16, 2, "Rp 1.500")
         ws.cell(16, 3, float(target_upah)).number_format = '"Rp "#,##0'
-        ws.cell(16, 4, "Belum tercatat (Ops)")
-        ws.cell(16, 5, "—")
+        ws.cell(16, 4, float(exp_upah)).number_format = '"Rp "#,##0'
+        ws.cell(16, 5, float(target_upah - exp_upah)).number_format = '"Rp "#,##0'
 
         # Operasional (BBM, Listrik, Utility)
         ws.cell(17, 1, "Operasional (BBM & Utility)")
         ws.cell(17, 2, "Rp 1.500")
         ws.cell(17, 3, float(target_ops)).number_format = '"Rp "#,##0'
-        ws.cell(17, 4, "Belum tercatat (Ops)")
-        ws.cell(17, 5, "—")
+        ws.cell(17, 4, float(exp_ops)).number_format = '"Rp "#,##0'
+        ws.cell(17, 5, float(target_ops - exp_ops)).number_format = '"Rp "#,##0'
 
         # Sewa Dapur (Laba Bersih)
         ws.cell(18, 1, "Sewa Dapur (Laba Bersih)")

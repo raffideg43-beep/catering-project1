@@ -77,6 +77,38 @@ class BudgetService:
             cat = t.get("juknis_category") or "lainnya"
             realisasi[cat] = realisasi.get(cat, Decimal("0")) + _d(t.get("total"))
 
+        # ── Tambahan: Biaya Operasional & Gaji (Payroll) ──
+        ops_resp = (
+            supabase.table("operational_costs")
+            .select("amount")
+            .eq("tenant_id", tenant_id)
+            .gte("cost_date", first.isoformat())
+            .lte("cost_date", last.isoformat())
+            .execute()
+        )
+        for o in (getattr(ops_resp, "data", None) or []):
+            realisasi["operasional"] = realisasi.get("operasional", Decimal("0")) + _d(o.get("amount"))
+
+        pay_resp = (
+            supabase.table("payroll_periods")
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("status", "confirmed")
+            .gte("start_date", first.isoformat())
+            .lte("start_date", last.isoformat())
+            .execute()
+        )
+        p_ids = [p["id"] for p in (getattr(pay_resp, "data", None) or [])]
+        if p_ids:
+            item_resp = (
+                supabase.table("payroll_items")
+                .select("net_amount")
+                .in_("period_id", p_ids)
+                .execute()
+            )
+            for i in (getattr(item_resp, "data", None) or []):
+                realisasi["insentif"] = realisasi.get("insentif", Decimal("0")) + _d(i.get("net_amount"))
+
         total_spent = sum(realisasi.values())
         sisa = total_disbursed - total_spent
 
