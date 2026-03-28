@@ -158,6 +158,29 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
         )
         school_timings = getattr(mss_resp, "data", None) or []
 
+        # FALLBACK: Jika master schedule tidak punya daftar sekolah, 
+        # ambil semua sekolah aktif sebagai default.
+        if not school_timings:
+            all_schools_resp = (
+                supabase.table("schools")
+                .select("id, name, default_portions, is_active")
+                .eq("tenant_id", tenant_id)
+                .eq("is_active", True)
+                .execute()
+            )
+            all_schools = getattr(all_schools_resp, "data", None) or []
+            school_timings = [
+                {
+                    "school_id": s["id"],
+                    "schools": s,
+                    "target_arrival": "10:30",
+                    "travel_minutes": 30,
+                    "delivery_window_minutes": 15,
+                    "day_of_week": 0
+                }
+                for s in all_schools
+            ]
+
         schools = []
         for st in school_timings:
             school_data = st.get("schools") or {}
