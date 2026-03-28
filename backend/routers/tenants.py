@@ -105,7 +105,7 @@ def update_tenant(
     return {"success": True, "data": TenantResponse(**tenant_resp)}
 
 
-@router.post("/telegram-link-code", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner"]))])
+@router.post("/telegram-link-code", response_model=Dict[str, Any])
 def generate_telegram_link_code(current_user: UserInDB = Depends(get_current_user)):
     """Generate linking code untuk Telegram."""
     supabase = get_supabase()
