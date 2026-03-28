@@ -789,17 +789,41 @@ def get_delivery_summary(
     if deliveries_raw:
         # Jika ada delivery records, gunakan portions_sent
         total_portions = sum(d.get("portions_sent", 0) for d in deliveries_raw)
+        logger.info(f"[Summary] Using actual deliveries: {total_portions} porsi")
     else:
         # Jika belum ada delivery, gunakan default_portions dari schools aktif
         schools_resp = (
             supabase.table("schools")
-            .select("default_portions")
+            .select("id, name, default_portions, is_active")
             .eq("tenant_id", tenant_id)
             .eq("is_active", True)
             .execute()
         )
         schools_list = getattr(schools_resp, "data", None) or []
-        total_portions = sum(int(s.get("default_portions", 0)) for s in schools_list)
+        logger.info(f"[Summary] Found {len(schools_list)} active schools: {[s.get('name') for s in schools_list]}")
+        
+        if not schools_list:
+            # Fallback: ambil semua schools (aktif atau tidak)
+            logger.warning(f"[Summary] No active schools found, trying all schools...")
+            schools_resp_fallback = (
+                supabase.table("schools")
+                .select("id, name, default_portions, is_active")
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+            schools_list = getattr(schools_resp_fallback, "data", None) or []
+            logger.info(f"[Summary] Found {len(schools_list)} total schools (active or not)")
+        
+        total_portions = 0
+        for s in schools_list:
+            def_port = s.get("default_portions", 0)
+            if def_port:
+                try:
+                    total_portions += int(def_port)
+                except (ValueError, TypeError):
+                    logger.warning(f"[Summary] Invalid default_portions for {s.get('name')}: {def_port}")
+        
+        logger.info(f"[Summary] Calculated total from schools: {total_portions} porsi")
 
     # Ambil menu
     dow = target_date.weekday() + 1
