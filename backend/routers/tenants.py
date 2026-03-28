@@ -270,12 +270,21 @@ def get_mbg_settings(current_user: UserInDB = Depends(get_current_user)):
         ins = supabase.table("mbg_allocation_settings").insert(default_data).execute()
         rows = getattr(ins, "data", None) or [{}]
     
-    return {"success": True, "data": rows[0]}
+    settings_data = rows[0]
+    if "hari_kerja_bulan" not in settings_data:
+        settings_data["hari_kerja_bulan"] = 26
+        
+    return {"success": True, "data": settings_data}
 
 @router.put("/mbg-settings", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
 def update_mbg_settings(body: MbgSettingsUpdate, current_user: UserInDB = Depends(get_current_user)):
     supabase = get_supabase()
     update_data = body.model_dump()
+    
+    # Workaround: Kolom hari_kerja_bulan belum ada di DB Supabase (error 42703).
+    # Pop agar 4 field budget utama tetap bisa tersimpan tanpa error 500.
+    hari_kerja = update_data.pop("hari_kerja_bulan", 26)
+    
     resp = supabase.table("mbg_allocation_settings").update(update_data).eq("tenant_id", current_user.tenant_id).execute()
     rows = getattr(resp, "data", None) or []
     if not rows:
@@ -283,4 +292,6 @@ def update_mbg_settings(body: MbgSettingsUpdate, current_user: UserInDB = Depend
         ins = supabase.table("mbg_allocation_settings").insert(update_data).execute()
         rows = getattr(ins, "data", None) or [{}]
         
-    return {"success": True, "data": rows[0]}
+    saved_data = rows[0]
+    saved_data["hari_kerja_bulan"] = hari_kerja
+    return {"success": True, "data": saved_data}
