@@ -55,7 +55,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MBG Catering Backend", version="1.0.0")
+app = FastAPI(title="MBG Catering Backend", version="1.0.1")
 
 
 # ─── CORS ──────────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ async def startup_event():
 
 @app.get("/")
 def root():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.0.1"}
 
 
 # ─── Test endpoint untuk verifikasi role checking (Modul 3) ───
