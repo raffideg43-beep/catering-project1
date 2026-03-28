@@ -245,6 +245,11 @@ function JadwalTab() {
     const [approving, setApproving] = useState(false);
     const [weekOffset, setWeekOffset] = useState(0);
     const [toast, setToast] = useState("");
+    
+    // States for Edit Day Feature
+    const [editingDay, setEditingDay] = useState<DaySchedule | null>(null);
+    const [editPortions, setEditPortions] = useState<number>(0);
+    const [savingEdit, setSavingEdit] = useState(false);
 
     const getMonday = (offset: number) => {
         const d = new Date();
@@ -313,6 +318,38 @@ function JadwalTab() {
             setToast("❌ " + (e?.message || "Gagal approve"));
         }
         setApproving(false);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingDay) return;
+        setSavingEdit(true);
+        if (draftData) {
+             const newDays = draftData.days.map(d => {
+                 if(d.date === editingDay.date) {
+                     return { 
+                         ...d, 
+                         total_portions: editPortions, 
+                         timeline: d.timeline.map(t => 
+                            t.type === 'cook' ? {...t, activity: t.activity.replace(/\([\d.,]+\s*porsi\)/, `(${editPortions} porsi)`)} : t
+                         ) 
+                     }
+                 }
+                 return d;
+             });
+             setDraftData({...draftData, days: newDays});
+             setEditingDay(null);
+             setToast(`✅ Draft hari ${editingDay.day_name} diupdate`);
+        } else {
+             try {
+                await apiPost("/schedules/update-day", { date: editingDay.date, total_portions: editPortions });
+                setToast(`✅ Porsi hari ${editingDay.day_name} berhasil diupdate`);
+                fetchWeek(getMonday(weekOffset));
+                setEditingDay(null);
+             } catch (e: any) {
+                setToast("❌ Gagal update porsi");
+             }
+        }
+        setSavingEdit(false);
     };
 
     const displayData = draftData || weekData;
@@ -405,7 +442,7 @@ function JadwalTab() {
                 <span className="text-sm text-gray-400 ml-auto">
                     {getMonday(weekOffset)} — {(() => {
                         const d = new Date(getMonday(weekOffset));
-                        d.setDate(d.getDate() + 4);
+                        d.setDate(d.getDate() + 5);
                         return d.toISOString().split("T")[0];
                     })()}
                 </span>
@@ -450,11 +487,18 @@ function JadwalTab() {
                                         <span className="text-gray-500 text-sm ml-2">{day.date}</span>
                                         {day.is_holiday && <span className="ml-2 text-red-600 text-sm font-medium">🎌 {day.holiday_name}</span>}
                                     </div>
-                                    {!day.is_holiday && day.total_portions > 0 && (
-                                        <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full text-sm">
-                                            {day.total_portions.toLocaleString("id-ID")} porsi
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {!day.is_holiday && day.total_portions > 0 && (
+                                            <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full text-sm">
+                                                {day.total_portions.toLocaleString("id-ID")} porsi
+                                            </span>
+                                        )}
+                                        {!day.is_holiday && (
+                                            <button onClick={() => { setEditingDay(day); setEditPortions(day.total_portions); }} className="text-gray-400 hover:text-blue-600 bg-white shadow-sm border border-gray-100 px-2 py-1 rounded text-xs transition">
+                                                ✏️ Edit
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 {!day.is_holiday && (
                                     <div className="mt-1">
@@ -521,6 +565,31 @@ function JadwalTab() {
             {displayData?.ai_notes && (
                 <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-800">
                     🤖 <strong>Catatan AI:</strong> {displayData.ai_notes}
+                </div>
+            )}
+
+            {editingDay && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-[fadeIn_0.2s]">
+                        <h3 className="font-bold text-lg mb-1">✏️ Edit Porsi Harian</h3>
+                        <p className="text-gray-500 text-sm mb-4">{editingDay.day_name}, {editingDay.date}</p>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Total Porsi</label>
+                                <input type="number" 
+                                    className="w-full border-gray-300 rounded-xl shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2.5 px-3 text-lg"
+                                    value={editPortions || ""} 
+                                    onChange={e => setEditPortions(parseInt(e.target.value) || 0)} 
+                                    placeholder="0" />
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button onClick={() => setEditingDay(null)} disabled={savingEdit} className="px-5 py-2.5 text-gray-500 hover:bg-gray-100 rounded-xl text-sm font-semibold transition">Batal</button>
+                            <button onClick={handleSaveEdit} disabled={savingEdit} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-md transition">
+                                {savingEdit ? "Menyimpan..." : "Simpan Porsi"}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

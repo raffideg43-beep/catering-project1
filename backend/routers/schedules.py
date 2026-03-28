@@ -158,10 +158,17 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
         )
         school_timings = getattr(mss_resp, "data", None) or []
 
-        # FALLBACK: Jika master schedule tidak punya daftar sekolah, 
-        # ambil semua sekolah aktif sebagai default.
-        if not school_timings:
-            logger.info(f"[FALLBACK] No linked schools for master_id {master_id}. Fetching all active schools.")
+        # Filter active schools first
+        valid_timings = []
+        for st in school_timings:
+            school_data = st.get("schools") or {}
+            # Hanya ambil yang beneran aktif
+            if school_data.get("is_active") is not False:
+                valid_timings.append(st)
+
+        # FALLBACK: Jika tidak ada sekolah valid, ambil semua sekolah aktif sebagai default
+        if not valid_timings:
+            logger.info(f"[FALLBACK] No active linked schools for master_id {master_id}. Fetching all active schools.")
             all_schools_resp = (
                 supabase.table("schools")
                 .select("id, name, default_portions, is_active")
@@ -171,7 +178,7 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
             all_schools = getattr(all_schools_resp, "data", None) or []
             logger.info(f"[FALLBACK] Found {len(all_schools)} schools for tenant {tenant_id}.")
             
-            school_timings = [
+            valid_timings = [
                 {
                     "school_id": s["id"],
                     "schools": s,
@@ -182,14 +189,11 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
                 }
                 for s in all_schools if s.get("is_active") is not False
             ]
-            logger.info(f"[FALLBACK] Final timing entries: {len(school_timings)}")
+            logger.info(f"[FALLBACK] Final timing entries: {len(valid_timings)}")
 
         schools = []
-        for st in school_timings:
+        for st in valid_timings:
             school_data = st.get("schools") or {}
-            # Filter inactive schools
-            if school_data.get("is_active") is False:
-                continue
 
             target = _time_str(st.get("target_arrival", "10:30"))
             travel = st.get("travel_minutes", 30)
@@ -258,12 +262,12 @@ def _build_timeline_from_master(
     schools = master["schools"]
 
     days = []
-    for i in range(5):  # Senin-Jumat
+    for i in range(6):  # Senin-Sabtu
         d = monday + timedelta(days=i)
         d_str = d.isoformat()
         holiday = NATIONAL_HOLIDAYS.get(d_str)
 
-        # Menu for this day (day_of_week: 1=Senin...5=Jumat)
+        # Menu for this day (day_of_week: 1=Senin...6=Sabtu)
         menu_data = menus.get(i + 1, {})
         menu_name = menu_data.get("menu_name")
         menu_id = menu_data.get("menu_id")
@@ -730,7 +734,7 @@ def get_week_schedule(
     supabase = get_supabase()
     tid = current_user.tenant_id
     monday = _get_monday(week_start)
-    sunday = monday + timedelta(days=6)
+    saturday = monday + timedelta(days=5)
 
     try:
         resp = (
@@ -739,7 +743,7 @@ def get_week_schedule(
             .eq("tenant_id", tid)
             .eq("type", "mbg_daily")
             .gte("scheduled_date", monday.isoformat())
-            .lte("scheduled_date", sunday.isoformat())
+            .lte("scheduled_date", saturday.isoformat())
             .order("scheduled_date")
             .order("scheduled_time")
             .execute()
@@ -772,7 +776,7 @@ def get_week_schedule(
 
     has_data = bool(rows)
     days = []
-    for i in range(7):
+    for i in range(6):
         d = monday + timedelta(days=i)
         d_str = d.isoformat()
         holiday = NATIONAL_HOLIDAYS.get(d_str)
@@ -802,3 +806,49 @@ def get_week_schedule(
             "days": days,
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST /schedules/update-day
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/update-day",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_role(["owner", "admin"]))],
+)
+def update_schedule_day(
+    body: Dict[str, Any] = Body(...),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Update total_portions specifically for a day in schedules."""
+    supabase = get_supabase()
+    tid = current_user.tenant_id
+    date_str = body.get("date")
+    new_portions = body.get("total_portions")
+    
+    if not date_str or new_portions is None:
+        raise HTTPException(400, "date and total_portions required")
+        
+    try:
+        resp = (supabase.table("schedules")
+            .select("id, description")
+            .eq("tenant_id", tid)
+            .eq("type", "mbg_daily")
+            .eq("scheduled_date", date_str)
+            .execute()
+        )
+        rows = getattr(resp, "data", None) or []
+        for row in rows:
+            desc = row.get("description", "")
+            if "Mulai masak" in desc:
+                new_desc = re.sub(r"\([\d.,]+\s*porsi\)", f"({new_portions:,} porsi)".replace(",", "."), desc)
+                supabase.table("schedules").update({
+                    "description": new_desc,
+                    "qty": new_portions
+                }).eq("id", row["id"]).execute()
+                
+        return {"success": True, "message": "Porsi berhasil diupdate"}
+    except Exception as e:
+        logger.error(f"POST /schedules/update-day error: {e}")
+        raise HTTPException(500, "Gagal update porsi")
