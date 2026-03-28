@@ -161,9 +161,6 @@ def _fetch_master_data(tenant_id: str) -> Optional[Dict[str, Any]]:
         schools = []
         for st in school_timings:
             school_data = st.get("schools") or {}
-            # Filter inactive schools
-            if school_data.get("is_active") is False:
-                continue
 
             target = _time_str(st.get("target_arrival", "10:30"))
             travel = st.get("travel_minutes", 30)
