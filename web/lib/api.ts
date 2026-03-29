@@ -6,7 +6,7 @@ export function getApiClient(): AxiosInstance {
   if (!apiClient) {
     apiClient = axios.create({
       baseURL: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000",
-      timeout: 30_000,
+      timeout: 120_000,
     });
 
     // Request interceptor: attach JWT token

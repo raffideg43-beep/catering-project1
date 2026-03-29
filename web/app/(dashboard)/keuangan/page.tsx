@@ -21,24 +21,17 @@ interface Receivable {
     id: string;
     debtor_name: string;
     amount: string;
-
-    due_date?: string;
     created_at: string;
     status: string;
-    days_overdue: number;
 }
 interface ReceivableSummary {
-    total_outstanding: string;
     total_all: string;
-    total_paid: string;
-    total_overdue: string;
     count: number;
     receivables: Receivable[];
 }
 
 function PiutangTab() {
     const now = new Date();
-    const [status, setStatus] = useState("unpaid");
     const [bulan, setBulan] = useState(now.getMonth() + 1);
     const [tahun, setTahun] = useState(now.getFullYear());
     const [data, setData] = useState<ReceivableSummary | null>(null);
@@ -47,42 +40,30 @@ function PiutangTab() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const params: any = { status };
+            const params: any = {};
             if (bulan && tahun) { params.month = bulan; params.year = tahun; }
             const r = await apiGet("/reports/receivables", params);
             setData(r?.data ?? null);
         } catch { }
         setLoading(false);
-    }, [status, bulan, tahun]);
+    }, [bulan, tahun]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const sorted = [...(data?.receivables ?? [])].sort((a, b) => {
-        if (b.days_overdue !== a.days_overdue) return b.days_overdue - a.days_overdue;
-        return (a.due_date ?? "").localeCompare(b.due_date ?? "");
-    });
+    const sorted = [...(data?.receivables ?? [])].sort((a, b) => 
+        b.created_at.localeCompare(a.created_at)
+    );
 
     return (
         <div className="space-y-5">
             {data && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatCard title="Total Piutang" value={formatRp(data.total_all)} icon="💰" />
-                    <StatCard title="Sudah Lunas" value={formatRp(data.total_paid)} icon="✅" />
-                    <StatCard title="Belum Lunas" value={formatRp(data.total_outstanding)} icon="📋" />
-                    <StatCard title="Terlambat" value={formatRp(data.total_overdue)} icon="⚠️" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <StatCard title="Total Tagihan (Porsi) Bulan Ini" value={formatRp(data.total_all)} icon="💰" />
+                    <StatCard title="Jumlah Pengiriman" value={`${data.count} Kali`} icon="📦" />
                 </div>
             )}
 
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-end">
-                <div>
-                    <label className="block text-xs text-gray-500 mb-1">Status</label>
-                    <select value={status} onChange={e => setStatus(e.target.value)}
-                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
-                        <option value="all">Semua</option>
-                        <option value="unpaid">Belum Lunas</option>
-                        <option value="paid">Lunas</option>
-                    </select>
-                </div>
                 <div>
                     <label className="block text-xs text-gray-500 mb-1">Bulan</label>
                     <select value={bulan} onChange={e => setBulan(Number(e.target.value))}
@@ -99,8 +80,8 @@ function PiutangTab() {
             </div>
 
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700">
-                💡 Piutang dibuat otomatis saat konfirmasi penyerahan MBG via Telegram Bot
-                <code className="bg-blue-100 px-1 rounded ml-1">/serah</code>
+                💡 List di bawah adalah riwayat hak tagih dari setiap pengiriman MBG. 
+                Nilai di bawah dihitung otomatis (Porsi × Harga Juknis Rp 10rb/8rb).
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -110,37 +91,27 @@ function PiutangTab() {
                     </div>
                 ) : sorted.length === 0 ? (
                     <div className="text-center py-12 text-gray-400 space-y-2">
-                        <p className="text-3xl">✅</p>
-                        <p>Tidak ada piutang untuk filter ini</p>
+                        <p className="text-3xl">📭</p>
+                        <p>Belum ada data pengiriman bulan ini</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    {["Tanggal", "Debitur", "Jumlah", "Jatuh Tempo", "Status", "Terlambat"].map(h => (
-                                        <th key={h} className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
+                                    {["Tanggal Pengiriman", "Debitur / Program", "Estimasi Hak Tagih (Bahan)"].map(h => (
+                                        <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {sorted.map((r, i) => {
                                     const amount = parseFloat(r.amount || "0");
-                                    const due = r.due_date
-                                        ? new Date(r.due_date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })
-                                        : "—";
                                     return (
                                         <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
-                                            <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{r.created_at}</td>
-                                            <td className="px-4 py-2.5 font-medium text-gray-800">{r.debtor_name}</td>
-                                            <td className="px-4 py-2.5 text-right font-semibold">{formatRp(amount)}</td>
-                                            <td className="px-4 py-2.5 text-xs whitespace-nowrap">{due}</td>
-                                            <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
-                                            <td className="px-4 py-2.5">
-                                                {r.days_overdue > 0
-                                                    ? <span className="text-red-500 font-semibold text-xs">{r.days_overdue} hari</span>
-                                                    : <span className="text-gray-300 text-xs">—</span>}
-                                            </td>
+                                            <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap font-mono">{r.created_at}</td>
+                                            <td className="px-4 py-3 font-medium text-gray-800">{r.debtor_name}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-blue-700">{formatRp(amount)}</td>
                                         </tr>
                                     );
                                 })}

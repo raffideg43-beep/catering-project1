@@ -694,16 +694,16 @@ async def create_bulk_delivery(
     due_date = (delivery_date + _td(days=30)).isoformat()
     recv_resp = supabase.table("receivables").insert({
         "tenant_id": tenant_id,
-        "transaction_id": None,  # bisa dihubungkan ke transaksi income MBG jika sudah ada
+        "transaction_id": None,
         "debtor_name": "Pemerintah - MBG",
-        "amount": str(total_revenue),
-        "component_bahan": str(budget_bahan),      # Bahan baku (komponen variabel)
-        "component_ops": str(budget_ops),          # Operasional (komponen variabel)
-        "component_profit": str(budget_insentif),  # Profit harian (6jt atau 0 jika Minggu)
+        "amount": str(budget_bahan),               # HANYA komponen bahan (10k/8k) sesuai Juknis
+        "component_bahan": str(budget_bahan),
+        "component_ops": str(budget_ops),
+        "component_profit": str(budget_insentif),
         "pph22_amount": "0.00",
         "paid_amount": "0.00",
         "due_date": due_date,
-        "status": "unpaid",
+        "status": "recorded",                      # Ganti 'unpaid' jadi 'recorded' (Riwayat)
     }).execute()
     receivable_id = ((getattr(recv_resp, "data", None) or [{}])[0]).get("id")
 

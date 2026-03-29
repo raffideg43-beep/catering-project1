@@ -452,70 +452,45 @@ def get_stock_report(
     dependencies=[Depends(require_role(["owner", "admin"]))],
 )
 def get_receivables_report(
-    status: str = Query(default="unpaid"),
     month: Optional[int] = Query(default=None),
     year: Optional[int] = Query(default=None),
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Piutang ke pemerintah. Filter opsional by status / month / year."""
+    """Pencatatan Hak Piutang MBG (History)."""
     supabase = get_supabase()
     tid = current_user.tenant_id
-    today = date.today()
 
     q = (
         supabase.table("receivables")
-        .select("id, debtor_name, amount, due_date, status, created_at")
+        .select("id, debtor_name, amount, created_at, status")
         .eq("tenant_id", tid)
     )
-    if status != "all":
-        q = q.eq("status", status)
+    
     if month and year:
         first = date(year, month, 1)
         last = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year + 1, 1, 1) - timedelta(days=1)
+        # created_at is timestamp, so query for the day
         q = q.gte("created_at", first.isoformat()).lte("created_at", (last + timedelta(days=1)).isoformat())
 
-    resp = q.order("due_date").execute()
+    resp = q.order("created_at", desc=True).execute()
     rows = getattr(resp, "data", None) or []
 
-    total_all     = sum(_d(r.get("amount")) for r in rows)
-    total_paid    = sum(_d(r.get("amount")) for r in rows if r.get("status") == "paid")
-    total_unpaid  = sum(_d(r.get("amount")) for r in rows if r.get("status") != "paid")
-    total_overdue_sum = Decimal("0")
-    for r in rows:
-        if r.get("status") != "paid" and r.get("due_date"):
-            try:
-                if (today - date.fromisoformat(r["due_date"])).days > 0:
-                    total_overdue_sum += _d(r.get("amount"))
-            except Exception:
-                pass
+    total_all = sum(_d(r.get("amount")) for r in rows)
 
     receivables = []
     for r in rows:
-        due = r.get("due_date")
-        days_overdue = 0
-        if due and r.get("status") != "paid":
-            try:
-                diff = (today - date.fromisoformat(due)).days
-                days_overdue = max(0, diff)
-            except Exception:
-                pass
         receivables.append({
             "id": r.get("id"),
             "debtor_name": r.get("debtor_name"),
             "amount": str(_d(r.get("amount"))),
-            "due_date": due,
             "created_at": r.get("created_at", "")[:10],
             "status": r.get("status"),
-            "days_overdue": days_overdue,
         })
 
     return {
         "success": True,
         "data": {
-            "total_outstanding": str(total_unpaid),
             "total_all": str(total_all),
-            "total_paid": str(total_paid),
-            "total_overdue": str(total_overdue_sum),
             "count": len(receivables),
             "receivables": receivables,
         },
