@@ -184,7 +184,7 @@ class ExportService:
         # Transactions (ALL confirmed, no type filter)
         trx_resp = (
             supabase.table("transactions")
-            .select("id, date, suppliers(name), supplier_id, total, payment_method, status, nama_toko")
+            .select("id, date, suppliers(name), supplier_id, total, payment_method, status, nama_toko, juknis_category")
             .eq("tenant_id", tenant_id)
             .eq("status", "confirmed")
             .gte("date", first.isoformat())
@@ -534,6 +534,7 @@ class ExportService:
     # ─── Sheet 1: Ringkasan ───────────────────────────────────────────────────
 
     def _fill_bku(self, ws, data: dict, year: int, month: int, kas_type: str, title: str) -> None:
+        logger.info(f"Filling {title} (Kategori: {kas_type})...")
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
         
@@ -656,6 +657,7 @@ class ExportService:
         ws.auto_filter.ref = f"A3:G{row if n > 0 else 3}"
 
     def _fill_penerima_manfaat(self, ws, data: dict) -> None:
+        logger.info("Sheet (9/10): Filling Penerima Manfaat (Redistribution logic)...")
         from openpyxl.styles import Font, Alignment, PatternFill
         ws.merge_cells("A1:I1")
         ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
@@ -820,6 +822,7 @@ class ExportService:
             return {}
 
     def _fill_rekapitulasi_juknis(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (10/10): Filling Rekapitulasi Juknis (Audit Alignment)...")
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
         
@@ -853,8 +856,10 @@ class ExportService:
         target_bahan = Decimal("0")
         for d in deliveries:
             p = d.get("portions_sent", 0)
-            sl = (d.get("schools") or {}).get("school_level", "sd_smp")
-            target_bahan += Decimal(p) * (rate_tk if sl == "paud_tk" else rate_sd)
+            # Safe access for school join (handles dict or list)
+            s_data = (d.get("schools") or [{}])[0] if isinstance(d.get("schools"), list) else (d.get("schools") or {})
+            sl = s_data.get("school_level", "sd_smp")
+            target_bahan += Decimal(p) * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
         
         total_porsi = data.get("total_portions_all", 0)
         target_ops = Decimal(total_porsi) * rate_ops_p
@@ -908,6 +913,7 @@ class ExportService:
         ws.freeze_panes = "A4"
 
     def _fill_ringkasan(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (1/10): Filling Ringkasan Dashboard...")
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         bulan_str = BULAN[month]
         tenant_name = data["tenant"].get("name", "SPPG")
@@ -1035,7 +1041,9 @@ class ExportService:
         pagu_bahan = Decimal("0")
         for d in data.get("deliveries", []):
             p = _d(d.get("portions_sent", 0))
-            sl = (d.get("schools") or {}).get("school_level", "sd_smp")
+            # Safe access for school join (handles dict or list)
+            s_data = (d.get("schools") or [{}])[0] if isinstance(d.get("schools"), list) else (d.get("schools") or {})
+            sl = s_data.get("school_level", "sd_smp")
             pagu_bahan += p * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
             
         pagu_ops_gaji = (total_portions_all * rate_ops) + total_pagu_profit
@@ -1112,6 +1120,7 @@ class ExportService:
     # ─── Sheet 2: Bulanan (gabungan semua transaksi + penyerahan) ─────────────
 
     def _fill_bulanan(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (2/10): Filling Bulanan Transactions...")
         from openpyxl.styles import Font, PatternFill, Alignment
         logger.info(
             f"Fill bulanan: {len(data.get('deliveries', []))} deliveries, "
@@ -1157,12 +1166,13 @@ class ExportService:
         dels = data.get("deliveries", [])
         for n, d in enumerate(dels, 1):
             portions = _d(d.get("portions_sent", 0))
-            school_name = (d.get("schools") or {}).get("name", "?")
+            # Safe access for school join (handles dict or list)
+            s_data = (d.get("schools") or [{}])[0] if isinstance(d.get("schools"), list) else (d.get("schools") or {})
+            school_name = s_data.get("name", "?")
             del_date = d.get("delivery_date", "")
             menu_name = menu_by_date.get(del_date, d.get("menu_name", "—"))
             
-            school_data = d.get("schools") or {}
-            school_level = school_data.get("school_level", "sd_smp")
+            school_level = s_data.get("school_level", "sd_smp")
             rate_bahan = rate_bahan_tk if school_level == "paud_tk" else rate_bahan_sd
             
             bahan = portions * rate_bahan
@@ -1326,6 +1336,7 @@ class ExportService:
     # ─── Sheet 3: Stok ────────────────────────────────────────────────────────
 
     def _fill_stok(self, ws, data: dict) -> None:
+        logger.info("Sheet (3/10): Filling Stok Bahan...")
         logger.info(f"Fill stok: {len(data.get('products', []))} products, {len(data.get('stock_history', []))} history records")
         headers = ["No", "Nama Bahan", "Kategori", "Satuan",
                    "Harga", "Stok Awal Bulan", "Masuk", "Keluar",
@@ -1386,6 +1397,7 @@ class ExportService:
     # ─── Sheet 4: Laporan Pemerintah ──────────────────────────────────────────
 
     def _fill_laporan_pemerintah(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (4/10): Filling Laporan Pemerintah (Breakdown)...")
         from openpyxl.styles import Font, PatternFill, Alignment
         logger.info(f"Fill laporan pemerintah (NEW MODEL: Bahan:Ops:Profit breakdown)")
         bulan_str = BULAN[month]
@@ -1452,7 +1464,9 @@ class ExportService:
             bahan = Decimal("0")
             for dd in day_deliveries:
                 p = dd.get("portions_sent", 0)
-                sl = (dd.get("schools") or {}).get("school_level", "sd_smp")
+                # Safe access for school join (handles dict or list)
+                s_data = (dd.get("schools") or [{}])[0] if isinstance(dd.get("schools"), list) else (dd.get("schools") or {})
+                sl = s_data.get("school_level", "sd_smp")
                 bahan += Decimal(p) * (rate_tk if sl == "paud_tk" else rate_sd)
             
             ops = Decimal(day_porsi) * r_ops
@@ -1547,6 +1561,7 @@ class ExportService:
     # ─── Sheet 5: Riwayat Nota ────────────────────────────────────────────────
 
     def _fill_riwayat_nota(self, ws, data: dict) -> None:
+        logger.info("Sheet (5/10): Filling Riwayat Nota (Detail Item)...")
         logger.info(f"Fill riwayat nota: {len(data.get('transactions', []))} transactions, {len(data.get('items_all', []))} items")
         headers = ["No", "Tanggal", "Supplier", "Item", "Qty", "Satuan",
                    "Harga", "Subtotal", "Total Nota", "Metode Bayar"]
@@ -1615,6 +1630,7 @@ class ExportService:
     # ─── Sheet 6: Operasional & Upah ──────────────────────────────────────────
 
     def _fill_ops_upah(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (6/10): Filling Operasional & Upah (Analisis Pagu vs Riil)...")
         from openpyxl.styles import Font, PatternFill, Alignment
         bulan_str = BULAN[month]
 
@@ -1911,6 +1927,7 @@ class ExportService:
     # ═══════════════════════════════════════════════════════════════════════
 
     def _fill_hygiene(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (11/15): Filling Checklist Higiene...")
         """Sheet 11: Checklist Higiene Bulanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
@@ -1971,6 +1988,7 @@ class ExportService:
         self._set_column_widths(ws)
 
     def _fill_suhu(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (12/15): Filling Monitoring Suhu...")
         """Sheet 12: Monitoring Suhu."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
@@ -2014,6 +2032,7 @@ class ExportService:
         self._set_column_widths(ws)
 
     def _fill_bank_sampel(self, ws, data: dict) -> None:
+        logger.info("Sheet (13/15): Filling Bank Sampel...")
         """Sheet 13: Bank Sampel Makanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
 
@@ -2078,6 +2097,7 @@ class ExportService:
             ws.column_dimensions[col_letter].width = 14
 
     def _fill_sisa_makanan(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (14/15): Filling Laporan Sisa Makanan...")
         """Sheet 14: Laporan Sisa Makanan."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
@@ -2134,6 +2154,7 @@ class ExportService:
             ws.column_dimensions[col_letter].width = 15
 
     def _fill_insiden(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (15/15): Filling Laporan Insiden...")
         """Sheet 15: Laporan Insiden KLB."""
         from openpyxl.styles import Font, Alignment, PatternFill
         bulan_str = BULAN[month]
