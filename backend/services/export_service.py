@@ -570,6 +570,13 @@ class ExportService:
             if dt:
                 portions_by_day[dt] = portions_by_day.get(dt, 0) + d.get("portions_sent", 0)
 
+        # Filter ledger by kas_type
+        filtered_ledger = []
+        for e in data.get("kas_ledger", []):
+            acc_info = e.get("kas_accounts")
+            if isinstance(acc_info, dict) and acc_info.get("type") == kas_type:
+                filtered_ledger.append(e)
+
         # Build list of entries to display
         entries_to_show = []
         
