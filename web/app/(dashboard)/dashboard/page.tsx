@@ -121,17 +121,17 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8 max-w-7xl mx-auto">
             {/* ─── Greeting ───────────────────────────────────── */}
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">
+            <div className="pt-2">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
                     {getGreeting()}, {tenantName} 👋
                 </h1>
-                <p className="text-gray-500 text-sm mt-1">{todayLabel()}</p>
+                <p className="text-gray-500 font-medium text-sm mt-1">{todayLabel()}</p>
             </div>
 
             {/* ─── Stat Cards (2x2 di mobile, 4 kolom di desktop) ─ */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                 <StatCard
                     title="Porsi Hari Ini"
                     value={daily?.mbg.has_delivery ? `${daily.mbg.total_portions.toLocaleString("id-ID")} porsi` : "—"}
@@ -159,10 +159,13 @@ export default function DashboardPage() {
             </div>
 
             {/* ─── Baris konten utama: Penyerahan + Stok ────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                 {/* Penyerahan Hari Ini */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                    <h2 className="font-semibold text-gray-800 mb-3">🍱 Penyerahan Hari Ini</h2>
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col">
+                    <h2 className="text-base font-bold tracking-tight text-gray-900 mb-4 flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-lg shadow-inner">🍱</span>
+                        Penyerahan Hari Ini
+                    </h2>
                     {daily?.mbg.has_delivery ? (
                         <div className="space-y-2">
                             {daily.mbg.menu_name && (
@@ -187,8 +190,11 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Stok Menipis */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                    <h2 className="font-semibold text-gray-800 mb-3">📦 Stok Menipis</h2>
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col">
+                    <h2 className="text-base font-bold tracking-tight text-gray-900 mb-4 flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-lg shadow-inner">📦</span>
+                        Stok Menipis
+                    </h2>
                     {daily?.stock_alerts && daily.stock_alerts.length > 0 ? (
                         <div className="space-y-2">
                             {daily.stock_alerts.slice(0, 5).map((a, i) => (
@@ -213,42 +219,50 @@ export default function DashboardPage() {
             </div>
 
             {/* ─── Transaksi Terbaru ────────────────────────────── */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-semibold text-gray-800">🧾 Transaksi Terbaru</h2>
-                    <a href="/pembukuan" className="text-xs text-blue-600 hover:underline">Lihat semua →</a>
+            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 overflow-hidden relative">
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-base font-bold tracking-tight text-gray-900 flex items-center gap-2">
+                        <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg shadow-inner">🧾</span>
+                        Transaksi Terbaru
+                    </h2>
+                    <a href="/pembukuan" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1">
+                        Lihat semua <span className="text-lg leading-none">→</span>
+                    </a>
                 </div>
                 {transactions.length === 0 ? (
-                    <p className="text-center text-gray-400 text-sm py-6">Belum ada transaksi bulan ini</p>
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                        <span className="text-4xl mb-3 grayscale opacity-30">📭</span>
+                        <p className="text-sm font-medium">Belum ada transaksi bulan ini</p>
+                    </div>
                 ) : (
-                    <div className="overflow-x-auto -mx-5 px-5">
+                    <div className="overflow-x-auto -mx-6 px-6 no-scrollbar">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="border-b border-gray-100">
-                                    <th className="text-left py-2 text-gray-500 font-medium">Tanggal</th>
-                                    <th className="text-left py-2 text-gray-500 font-medium">Supplier</th>
-                                    <th className="text-right py-2 text-gray-500 font-medium">Total</th>
-                                    <th className="text-left py-2 text-gray-500 font-medium">Status</th>
-                                    <th className="text-left py-2"></th>
+                                <tr className="border-b border-gray-100 text-gray-400 font-semibold tracking-wide uppercase text-[10px]">
+                                    <th className="text-left py-3 whitespace-nowrap">Tanggal</th>
+                                    <th className="text-left py-3 whitespace-nowrap">Supplier</th>
+                                    <th className="text-right py-3 whitespace-nowrap">Total</th>
+                                    <th className="text-center py-3 whitespace-nowrap">Status</th>
+                                    <th className="text-right py-3 whitespace-nowrap">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {transactions.slice(0, 10).map((trx) => (
-                                    <tr key={trx.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                        <td className="py-2 text-gray-600">
+                                {transactions.slice(0, 10).map((trx, index) => (
+                                    <tr key={trx.id} className={`group ${index !== transactions.length - 1 ? 'border-b border-gray-50' : ''} hover:bg-gray-50/50 transition-colors`}>
+                                        <td className="py-3 text-gray-600 font-medium whitespace-nowrap">
                                             {new Date(trx.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
                                         </td>
-                                        <td className="py-2 text-gray-800 font-medium">{trx.nama_toko || "—"}</td>
-                                        <td className="py-2 text-right font-semibold">{formatRp(trx.total)}</td>
-                                        <td className="py-2">
+                                        <td className="py-3 text-gray-900 font-semibold max-w-[150px] truncate" title={trx.nama_toko}>{trx.nama_toko || "—"}</td>
+                                        <td className="py-3 text-right font-bold text-gray-900 whitespace-nowrap font-mono">{formatRp(trx.total)}</td>
+                                        <td className="py-3 text-center whitespace-nowrap">
                                             <StatusBadge status={trx.status} />
                                         </td>
-                                        <td className="py-2 text-right">
+                                        <td className="py-3 text-right whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
                                             <a
                                                 href={`/pembukuan/${trx.id}`}
-                                                className="text-blue-600 hover:underline text-xs whitespace-nowrap"
+                                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-blue-600 text-xs font-semibold tracking-wide shadow-sm transition-all"
                                             >
-                                                Lihat Detail
+                                                Detail
                                             </a>
                                         </td>
                                     </tr>
@@ -275,9 +289,9 @@ export default function DashboardPage() {
                             alert(e?.response?.data?.detail || "Gagal generate Excel. Coba lagi nanti.");
                         }
                     }}
-                    className="w-full sm:w-auto bg-blue-50 border border-blue-200 text-blue-700 shadow-sm px-6 py-3 rounded-xl font-medium hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/20 px-8 py-3.5 rounded-xl font-semibold hover:shadow-blue-600/30 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
                 >
-                    📥 Download Excel Laporan
+                    <span className="text-xl">📥</span> Download Excel Laporan
                 </button>
             </div>
         </div>

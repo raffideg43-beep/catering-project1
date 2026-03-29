@@ -27,19 +27,24 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto pb-20">
-      <h1 className="text-3xl font-bold mb-8 text-gray-900">Pengaturan Sistem</h1>
+    <div className="max-w-6xl mx-auto pb-20 space-y-6">
+      <div className="pt-2">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
+          Pengaturan Sistem
+        </h1>
+        <p className="text-gray-500 font-medium text-sm mt-1">Kelola data master dan konfigurasi aplikasi MBG.</p>
+      </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-300 mb-8 sticky top-0 bg-gray-50 z-10 pt-4">
-        <div className="flex space-x-8 overflow-x-auto">
+      <div className="sticky top-0 z-10 pt-2 pb-4 bg-gray-50/80 backdrop-blur-xl">
+        <div className="flex gap-2 bg-gray-100/50 rounded-2xl p-1.5 overflow-x-auto flex-nowrap no-scrollbar border border-gray-200/50">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 whitespace-nowrap ${activeTab === tab.id
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-300 ${activeTab === tab.id
+                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-gray-200/50"
+                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
                 }`}
             >
               {tab.label}
@@ -49,7 +54,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab Content */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[500px]">
+      <div className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100 min-h-[500px]">
         {activeTab === "identitas" && <TabIdentitas />}
         {activeTab === "sekolah" && <TabSekolah />}
         {activeTab === "supplier" && <TabSupplier />}

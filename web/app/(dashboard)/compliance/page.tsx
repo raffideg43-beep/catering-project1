@@ -60,7 +60,15 @@ export default function CompliancePage() {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* ─── Header ─────────────────────────────────────────────── */}
+      <div className="pt-2">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
+          Operasional & Compliance
+        </h1>
+        <p className="text-gray-500 font-medium text-sm mt-1">Pantau standar higienitas dan mutu program MBG harian.</p>
+      </div>
+
       {/* Alert banner */}
       {(alertCounts.temp + alertCounts.sample + alertCounts.incident) > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm space-y-1">
@@ -71,17 +79,17 @@ export default function CompliancePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto flex-nowrap">
+      <div className="flex gap-2 bg-gray-100/50 rounded-2xl p-1.5 overflow-x-auto flex-nowrap no-scrollbar border border-gray-200/50">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              tab === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-300 ${
+              tab === t.key ? "bg-white text-blue-700 shadow-sm ring-1 ring-gray-200/50" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
             }`}
           >
-            <span>{t.icon}</span>
-            <span className="hidden sm:inline">{t.label}</span>
+            <span className={`text-base ${tab === t.key ? '' : 'grayscale opacity-75'}`}>{t.icon}</span>
+            <span className="hidden sm:inline tracking-tight">{t.label}</span>
           </button>
         ))}
       </div>

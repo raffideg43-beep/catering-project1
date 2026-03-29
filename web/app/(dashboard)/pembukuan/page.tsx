@@ -370,11 +370,21 @@ export default function PembukuanPage() {
 
             {/* ─── Summary Cards ──────────────────────────────── */}
             {monthly && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-4">
                     <StatCard title="Total Transaksi" value={`${monthly.expenses.count} nota`} icon="🧾" />
                     <StatCard title="Total Pengeluaran" value={formatRp(monthly.expenses.total)} icon="💸" />
                     <StatCard title="Hutang Outstanding" value={formatRp(monthly.expenses.hutang_outstanding)} icon="📋" />
-                    <StatCard title="Status Excel" value={monthly.excel_status === "ready" ? "✅ Siap" : "—"} icon="📊" />
+                    <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col items-center justify-center gap-2 hover:-translate-y-0.5 transition-all">
+                        <span className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-1">Status Laporan</span>
+                        {monthly.excel_status === "ready" ? (
+                             <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 to-green-600 flex items-center gap-2 tracking-tight">
+                                <span className="bg-emerald-100/50 w-8 h-8 rounded-full flex items-center justify-center text-emerald-600 text-lg">✅</span>
+                                Siap Diunduh
+                             </span>
+                        ) : (
+                             <span className="text-lg font-bold text-gray-400 tracking-tight">—</span>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -386,49 +396,54 @@ export default function PembukuanPage() {
             )}
 
             {/* ─── Tabel Transaksi ──────────────────────────────── */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100 overflow-hidden mt-6">
                 {loading ? (
-                    <div className="flex justify-center py-16">
-                        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    <div className="flex flex-col items-center justify-center py-24 space-y-4">
+                        <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                        <p className="text-gray-400 font-medium">Memuat data...</p>
                     </div>
                 ) : error ? (
                     <div className="text-center py-12 text-red-500">{error}</div>
                 ) : transactions.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400 space-y-2">
-                        <p className="text-3xl">📭</p>
-                        <p className="font-medium">Tidak ada transaksi</p>
-                        <p className="text-xs">Coba ubah filter atau catat belanja via Telegram Bot</p>
+                    <div className="text-center py-20 text-gray-400 flex flex-col items-center">
+                        <span className="text-5xl mb-4 grayscale opacity-30">📭</span>
+                        <p className="text-lg font-semibold text-gray-900">Tidak ada transaksi</p>
+                        <p className="text-sm mt-1">Belum ada nota yang tercatat pada periode ini</p>
                     </div>
                 ) : (
                     <>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto no-scrollbar">
                             <table className="w-full text-sm">
-                                <thead className="bg-gray-50 border-b border-gray-100">
-                                    <tr>
-                                        {["Tanggal", "Supplier", "Items", "Total", "Kategori", "Status", "Aksi"].map((h) => (
-                                            <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
-                                        ))}
+                                <thead className="bg-gray-50/50">
+                                    <tr className="border-b border-gray-100 text-[10px] uppercase font-bold tracking-wider text-gray-400">
+                                        <th className="text-left px-6 py-4 whitespace-nowrap">Tanggal</th>
+                                        <th className="text-left px-6 py-4 whitespace-nowrap">Supplier</th>
+                                        <th className="text-center px-6 py-4 whitespace-nowrap">Items</th>
+                                        <th className="text-right px-6 py-4 whitespace-nowrap">Total</th>
+                                        <th className="text-center px-6 py-4 whitespace-nowrap">Kategori</th>
+                                        <th className="text-center px-6 py-4 whitespace-nowrap">Status</th>
+                                        <th className="text-right px-6 py-4 whitespace-nowrap">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {transactions.map((trx, i) => {
                                         return (
-                                            <tr key={trx.id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
-                                                <td className="px-4 py-3 whitespace-nowrap text-gray-600">
-                                                    {new Date(trx.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "2-digit" })}
+                                            <tr key={trx.id} className={`group hover:bg-gray-50/70 transition-colors ${i !== transactions.length - 1 ? "border-b border-gray-50" : ""}`}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-gray-600 font-medium">
+                                                    {new Date(trx.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                                                 </td>
-                                                <td className="px-4 py-3 font-medium text-gray-800 max-w-[140px] truncate">{trx.nama_toko || "—"}</td>
-                                                <td className="px-4 py-3 text-center text-gray-500">{trx.items_count ?? "—"}</td>
-                                                <td className="px-4 py-3 font-semibold whitespace-nowrap">{formatRp(trx.total)}</td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-6 py-4 font-semibold text-gray-900 max-w-[180px] truncate" title={trx.nama_toko}>{trx.nama_toko || "—"}</td>
+                                                <td className="px-6 py-4 text-center text-gray-500 font-mono">{trx.items_count ?? "—"}</td>
+                                                <td className="px-6 py-4 text-right font-bold text-gray-900 whitespace-nowrap font-mono tracking-tight">{formatRp(trx.total)}</td>
+                                                <td className="px-6 py-4 text-center">
                                                     {(() => {
                                                         const cat = trx.juknis_category || "lainnya";
                                                         const colors: Record<string, string> = {
-                                                            bahan_pangan: "bg-green-100 text-green-700",
-                                                            operasional: "bg-blue-100 text-blue-700",
-                                                            insentif: "bg-purple-100 text-purple-700",
-                                                            dana_masuk: "bg-yellow-100 text-yellow-700",
-                                                            lainnya: "bg-gray-100 text-gray-600",
+                                                            bahan_pangan: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+                                                            operasional: "bg-blue-50 text-blue-700 ring-blue-600/20",
+                                                            insentif: "bg-purple-50 text-purple-700 ring-purple-600/20",
+                                                            dana_masuk: "bg-amber-50 text-amber-700 ring-amber-600/20",
+                                                            lainnya: "bg-gray-50 text-gray-600 ring-gray-600/20",
                                                         };
                                                         const labels: Record<string, string> = {
                                                             bahan_pangan: "Bahan",
@@ -438,16 +453,16 @@ export default function PembukuanPage() {
                                                             lainnya: "Lain",
                                                         };
                                                         return (
-                                                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${colors[cat] || colors.lainnya}`}>
+                                                            <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold ring-1 ring-inset whitespace-nowrap ${colors[cat] || colors.lainnya}`}>
                                                                 {labels[cat] || cat}
                                                             </span>
                                                         );
                                                     })()}
                                                 </td>
-                                                <td className="px-4 py-3"><StatusBadge status={trx.status} /></td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <a href={`/pembukuan/${trx.id}`} className="text-blue-600 hover:underline text-xs">👁 Detail</a>
+                                                <td className="px-6 py-4 text-center"><StatusBadge status={trx.status} /></td>
+                                                <td className="px-6 py-4 text-right w-32">
+                                                    <div className="flex flex-row-reverse items-center justify-start gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <a href={`/pembukuan/${trx.id}`} className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-blue-600 text-xs font-bold tracking-wide shadow-sm transition-all whitespace-nowrap">Detail</a>
                                                         {trx.status === "processing" && (
                                                             <button
                                                                 onClick={() => handleKonfirmasi(trx.id)}
