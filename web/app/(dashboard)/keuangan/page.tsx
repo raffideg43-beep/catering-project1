@@ -116,6 +116,12 @@ function PiutangTab() {
                                     );
                                 })}
                             </tbody>
+                            <tfoot className="bg-blue-50/50 border-t-2 border-blue-100 font-bold">
+                                <tr>
+                                    <td colSpan={2} className="px-4 py-4 text-blue-800 uppercase tracking-wider text-xs">Total Seluruh Piutang (Bahan)</td>
+                                    <td className="px-4 py-4 text-right text-blue-900 text-lg">{formatRp(parseFloat(data?.total_all || "0"))}</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 )}

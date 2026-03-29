@@ -978,6 +978,7 @@ class ExportService:
         ]
 
         row = 6
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         lbl_font = Font(name=GLOBAL_FONT, bold=True)
         val_font = Font(name=GLOBAL_FONT, color="000000", bold=True)
         border_all = Border(
@@ -997,6 +998,15 @@ class ExportService:
             
             for label, val in items:
                 lbl_cell = ws.cell(row, 1, label)
+                lbl_cell.font = lbl_font
+                lbl_cell.border = border_all
+                
+                val_cell = ws.cell(row, 2, val)
+                val_cell.font = val_font
+                val_cell.border = border_all
+                if isinstance(val, (float, Decimal, int)) and "porsi" not in str(val):
+                    val_cell.number_format = ACCOUNTING_FORMAT
+                
                 row += 1
             row += 1 # Spacer
 
