@@ -1946,19 +1946,23 @@ class ExportService:
                 if isinstance(val, (int, float, Decimal)):
                     c.number_format = ACCOUNTING_FORMAT
 
-    def _set_column_widths(self, ws, padding: int = 4) -> None:
+    def _set_column_widths(self, ws, padding: int = 5) -> None:
         from openpyxl.utils import get_column_letter
         for col in ws.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)
             for cell in col:
                 try:
-                    if cell.value:
-                        length = len(str(cell.value))
+                    if cell.value is not None:
+                        # Extra width for currency/accounting formats to prevent ###### "tag" overflow
+                        fmt = str(cell.number_format or "")
+                        extra = 8 if ("Rp" in fmt or "#" in fmt or "0" in fmt) and isinstance(cell.value, (int, float, Decimal)) else 0
+                        length = len(str(cell.value)) + extra
                         max_len = max(max_len, length)
                 except Exception:
                     pass
-            ws.column_dimensions[col_letter].width = min(max_len + padding, 50)
+            # Default minimum 12, max 50
+            ws.column_dimensions[col_letter].width = min(max(max_len + padding, 12), 50)
 
     # ─── Storage + DB ─────────────────────────────────────────────────────────
 

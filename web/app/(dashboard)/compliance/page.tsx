@@ -525,6 +525,7 @@ function WasteTab() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Sekolah</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Kirim</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">Konsumsi</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Sisa (Porsi)</th>
               <th className="text-right px-4 py-3 font-medium text-gray-600">% Sisa</th>
               <th className="text-center px-4 py-3 font-medium text-gray-600">Comstock</th>
             </tr></thead>
@@ -534,6 +535,9 @@ function WasteTab() {
                 <td className="px-4 py-2.5 text-gray-900">{r.schools?.name || r.school_id}</td>
                 <td className="text-right px-4 py-2.5">{r.portions_sent}</td>
                 <td className="text-right px-4 py-2.5 font-medium">{r.portions_consumed}</td>
+                <td className="text-right px-4 py-2.5 text-orange-700 font-semibold">
+                  {Math.max(0, r.portions_sent - r.portions_consumed)}
+                </td>
                 <td className="text-right px-4 py-2.5">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.waste_pct > 20 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                     {r.waste_pct}%

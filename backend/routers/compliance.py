@@ -293,11 +293,11 @@ def create_food_sample(
 
     sample_code = f"SMP-{date_str}-{increment:02d}"
 
-    # Auto-set expires_at = sample_date + taken_at + 48 hours
+    # Auto-set expires_at = sample_date + taken_at + 24 hours (1 x 24h)
     try:
         taken_time = datetime.strptime(body.taken_at, "%H:%M").time()
         taken_dt = datetime.combine(body.sample_date, taken_time)
-        expires_at = (taken_dt + timedelta(hours=48)).isoformat()
+        expires_at = (taken_dt + timedelta(hours=24)).isoformat()
     except Exception:
         expires_at = None
 
