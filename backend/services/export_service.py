@@ -997,17 +997,86 @@ class ExportService:
             
             for label, val in items:
                 lbl_cell = ws.cell(row, 1, label)
-                lbl_cell.font = lbl_font
-                lbl_cell.border = border_all
-                
-                val_cell = ws.cell(row, 2, val)
-                val_cell.font = val_font
-                val_cell.border = border_all
-                if isinstance(val, (float, Decimal, int)) and "porsi" not in str(val):
-                    val_cell.number_format = ACCOUNTING_FORMAT
-                
                 row += 1
             row += 1 # Spacer
+
+        # ─── Analisis Efisiensi & Surplus (Dashboard Dua Lini) ───
+        ws.cell(row, 1, "ANALISIS EFISIENSI & SURPLUS (DASHBOARD INTERNAL)").font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
+        row += 1
+        
+        headers_dashboard = ["Sektor Perbandingan", "Target (Pagu/Piutang)", "Realisasi (Riil)", "Selisih (Surplus)", "Status"]
+        for i, h in enumerate(headers_dashboard, 1):
+            cell = ws.cell(row, i, h)
+            cell.font = Font(name=GLOBAL_FONT, bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="366092")
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = border_all
+        row += 1
+
+        # Logic for Pagu (Target)
+        total_portions_all = data.get("total_portions_all", 0)
+        rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
+        rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
+        rate_ops = data.get("rate_ops_porsi", Decimal("3000"))
+        total_pagu_profit = data.get("total_profit_target", Decimal("0"))
+        
+        # Calculate Pagu Bahan from deliveries
+        pagu_bahan = Decimal("0")
+        for d in data.get("deliveries", []):
+            p = _d(d.get("portions_sent", 0))
+            sl = (d.get("schools") or {}).get("school_level", "sd_smp")
+            pagu_bahan += p * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
+            
+        pagu_ops_gaji = (total_portions_all * rate_ops) + total_pagu_profit
+        
+        # Logic for Riil (Realisasi)
+        # 1. Riil Bahan: Sum of all transactions categorized as 'bahan' or 'bahan_baku'
+        riil_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []) 
+                        if str(t.get("juknis_category")).lower() in ("bahan", "bahan_baku", "bahan baku"))
+        
+        # 2. Riil Ops & Gaji: payroll_items + operational_costs
+        actual_payroll = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
+        actual_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
+        riil_ops_gaji = actual_payroll + actual_ops
+        
+        # Dashboard rows
+        dashboard_rows = [
+            ("1. Produksi (Bahan Baku)", pagu_bahan, riil_bahan, "✅ Aman"),
+            ("2. Operasional (Gaji & Ops)", pagu_ops_gaji, riil_ops_gaji, "✅ Efisien"),
+        ]
+        
+        total_pagu_all = pagu_bahan + pagu_ops_gaji
+        total_riil_all = riil_bahan + riil_ops_gaji
+        
+        for name, pagu, riil, status in dashboard_rows:
+            diff = pagu - riil
+            ws.cell(row, 1, name).border = border_all
+            ws.cell(row, 2, float(pagu)).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 2).border = border_all
+            ws.cell(row, 3, float(riil)).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 3).border = border_all
+            ws.cell(row, 4, float(diff)).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 4).border = border_all
+            ws.cell(row, 5, status).border = border_all
+            ws.cell(row, 5).alignment = Alignment(horizontal="center")
+            row += 1
+            
+        # Total Row
+        ws.cell(row, 1, "TOTAL SURPLUS / PROFIT").font = Font(bold=True)
+        ws.cell(row, 1).border = border_all
+        ws.cell(row, 2, float(total_pagu_all)).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 2).font = Font(bold=True)
+        ws.cell(row, 2).border = border_all
+        ws.cell(row, 3, float(total_riil_all)).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 3).font = Font(bold=True)
+        ws.cell(row, 3).border = border_all
+        ws.cell(row, 4, float(total_pagu_all - total_riil_all)).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 4).font = Font(bold=True, color="006100")
+        ws.cell(row, 4).border = border_all
+        ws.cell(row, 5, "SURPLUS").font = Font(bold=True)
+        ws.cell(row, 5).border = border_all
+        row += 2
 
         # Piutang & Hutang
         ws.cell(row, 1, "STATUS PIUTANG & HUTANG").font = Font(name=GLOBAL_FONT, bold=True, color="0D47A1")
@@ -1539,14 +1608,14 @@ class ExportService:
         from openpyxl.styles import Font, PatternFill, Alignment
         bulan_str = BULAN[month]
 
-        # ── Section A: TARGET vs REALISASI RINGKASAN ──
+        # ── Section A: DETAIL ANALISIS TARGET (PAGU) vs REALISASI (RIIL) ──
         ws.merge_cells("A1:E1")
-        ws["A1"] = f"RINGKASAN OPERASIONAL & UPAH — {bulan_str} {year}"
+        ws["A1"] = f"DETAIL ANALISIS OPERASIONAL & UPAH — {bulan_str} {year}"
         ws["A1"].font = Font(bold=True, size=12, color="FFFFFF")
         ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
 
-        sum_headers = ["Kategori", "Target (Per Porsi)", "Realisasi", "Selisih", "Status"]
+        sum_headers = ["Kategori", "Anggaran (Pagu Juknis)", "Realisasi (Riil)", "Selisih (Surplus)", "Status"]
         self._write_headers(ws, 2, sum_headers)
 
         # Calculate targets from budget_allocations
@@ -1567,8 +1636,8 @@ class ExportService:
 
         row = 3
         summary_items = [
-            ("Insentif Tenaga Kerja SPPG (Rp 6jt/hari)", target_upah, actual_upah),
-            ("Operasional / BBM / Logistik (Rp 3.000/porsi)", target_ops, actual_ops),
+            ("1. Gaji & Insentif Tenaga Kerja (Pagu Rp 6jt/hari)", target_upah, actual_upah),
+            ("2. Operasional / BBM / Logistik (Pagu Rp 3.000/porsi)", target_ops, actual_ops),
         ]
         for label, tgt, act in summary_items:
             selisih = tgt - act
