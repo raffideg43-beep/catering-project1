@@ -914,20 +914,23 @@ class ExportService:
         cadangan_bahan = max(target_bahan - exp_bahan, Decimal("0"))
         
         target_total = target_bahan + target_ops
+        total_pagu = target_total + sewa_dapur
+        sisa_anggaran = total_disbursed - total_exp - sewa_dapur
         
         def pct(aktual, target):
             return f"{round(float(aktual/target*100), 2):.2f}%" if target > 0 else "0.00%"
             
         rows_data = [
-            ("Dana Masuk (Pencairan MBG)", total_disbursed, total_disbursed, 0, "100%"),
+            ("1. Pagu Anggaran Target", total_pagu, total_pagu, 0, "100%"),
+            ("2. Pagu Yang Sudah Cair", total_disbursed, total_disbursed, 0, "100%"),
             ("-", "-", "-", "-", "-"),
-            ("A. Bahan Baku Pangan", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
-            ("B. Operasional + Gaji (Rp 3.000/porsi)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
+            ("3. Bahan per Porsi", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
+            ("4. Operasional", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
             ("-", "-", "-", "-", "-"),
-            ("Total Pengeluaran", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total)),
+            ("5. Total Pengeluaran (Bahan per porsi + Operasional)", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total)),
+            ("6. Sewa Dapur", sewa_dapur, sewa_dapur, 0, "100%"),
             ("-", "-", "-", "-", "-"),
-            ("💰 Sewa Dapur", "", "", sewa_dapur, "Profit Pemilik"),
-            ("💰 Cadangan Biaya Operasional", "", "", cadangan_bahan, "Efisiensi Bahan"),
+            ("7. Sisa Anggaran (Pagu Cair - Total Pengeluaran - Sewa Dapur)", sisa_anggaran, sisa_anggaran, 0, ""),
         ]
         
         row = 4
