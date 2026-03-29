@@ -209,7 +209,7 @@ class BudgetService:
                 "operasional": _breakdown("operasional", target_ops, "Operasional + Gaji (Rp 3k/porsi)"),
                 "sewa_dapur": {
                     "amount": str(sewa_dapur),
-                    "label": f"Sewa Dapur (Rp 6jt × {hari_kerja} hari)",
+                    "label": "Sewa Dapur",
                     "note": "Keuntungan pemilik",
                 },
             },
