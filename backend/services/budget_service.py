@@ -141,18 +141,25 @@ class BudgetService:
         ba_rows = getattr(ba_resp, "data", None) or []
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
         
-        # Targets dari SETTINGS (bukan aggregate budget_allocations)
-        target_bahan = sum(_d(r.get("budget_bahan")) for r in ba_rows)  # Tetap pakai daily allocations
-        target_insentif = insentif_harian * hari_kerja  # Fixed: Rp 6jt × hari kerja
-        target_ops = _d(total_porsi) * rate_ops_pp       # Fixed: porsi × Rp 3.000
+        # Targets dari SETTINGS (Model Sewa Dapur)
+        target_bahan = sum(_d(r.get("budget_bahan")) for r in ba_rows)  # Daily allocations
+        sewa_dapur = insentif_harian * hari_kerja   # Profit pemilik (bukan pengeluaran)
+        target_ops = _d(total_porsi) * rate_ops_pp  # Rp 3k/porsi = ops + gaji
 
-        # Realisasi bahan: semua transaksi non-operasional
+        # Realisasi bahan: ONLY bahan_pangan
         real_bahan = Decimal("0")
         for t in trx_rows:
             cat = str(t.get("juknis_category") or "").lower()
-            if cat not in ("operasional",):
+            if cat == "bahan_pangan":
                 real_bahan += _d(t.get("total"))
         realisasi["bahan_pangan"] = real_bahan
+        
+        # Realisasi operasional: ops costs + gaji + nota non-bahan
+        real_ops_base = realisasi.get("operasional", Decimal("0"))
+        real_gaji = realisasi.get("insentif", Decimal("0"))
+        ops_from_trx = sum(_d(t.get("total")) for t in trx_rows 
+                          if str(t.get("juknis_category") or "").lower() != "bahan_pangan")
+        realisasi["operasional"] = real_ops_base + real_gaji + ops_from_trx
 
         def _breakdown(cat_key: str, target: Decimal, label: str):
             real = realisasi.get(cat_key, Decimal("0"))
@@ -196,10 +203,15 @@ class BudgetService:
                 round(total_spent / total_porsi, 2) if total_porsi > 0 else 0
             ),
             "kas_balances": kas_balances,
+            "sewa_dapur": str(sewa_dapur),
             "juknis_breakdown": {
                 "bahan_pangan": _breakdown("bahan_pangan", target_bahan, "Bahan Pangan"),
-                "insentif": _breakdown("insentif", target_insentif, f"Insentif SPPG (Fixed Rp 6jt × {hari_kerja} hari)"),
-                "operasional": _breakdown("operasional", target_ops, "Operasional (BBM, Gas, Logistik)"),
+                "operasional": _breakdown("operasional", target_ops, "Operasional + Gaji (Rp 3k/porsi)"),
+                "sewa_dapur": {
+                    "amount": str(sewa_dapur),
+                    "label": f"Sewa Dapur (Rp 6jt × {hari_kerja} hari)",
+                    "note": "Keuntungan pemilik",
+                },
             },
             "disbursements": [
                 {
