@@ -112,7 +112,7 @@ class BudgetService:
         total_spent = sum(realisasi.values())
         sisa = total_disbursed - total_spent
 
-        # ── Alokasi settings ──
+        # ── Alokasi settings (FIXED MODEL) ──
         alloc_resp = (
             supabase.table("mbg_allocation_settings")
             .select("*")
@@ -123,8 +123,13 @@ class BudgetService:
         alloc_rows = getattr(alloc_resp, "data", None) or [{}]
         alloc = alloc_rows[0] if alloc_rows else {}
         price_pp = _d(alloc.get("price_per_portion", 15000))
+        rate_bahan_sd = _d(alloc.get("bahan_sd_smp", 10000))
+        rate_bahan_tk = _d(alloc.get("bahan_paud_tk", 8000))
+        rate_ops_pp = _d(alloc.get("ops_per_porsi", 3000))
+        insentif_harian = _d(alloc.get("insentif_harian", 6000000))
+        hari_kerja = int(alloc.get("hari_kerja_bulan") or 26)
 
-        # ─── Total porsi bulan ini (dan aggregasi target per porsi) ──
+        # ─── Total porsi bulan ini ──
         ba_resp = (
             supabase.table("mbg_budget_allocations")
             .select("total_portions, budget_bahan, budget_ops, budget_insentif")
@@ -136,14 +141,18 @@ class BudgetService:
         ba_rows = getattr(ba_resp, "data", None) or []
         total_porsi = sum(r.get("total_portions", 0) for r in ba_rows)
         
-        target_bahan = Decimal("0")
-        target_insentif = Decimal("0")
-        target_ops = Decimal("0")
+        # Targets dari SETTINGS (bukan aggregate budget_allocations)
+        target_bahan = sum(_d(r.get("budget_bahan")) for r in ba_rows)  # Tetap pakai daily allocations
+        target_insentif = insentif_harian * hari_kerja  # Fixed: Rp 6jt × hari kerja
+        target_ops = _d(total_porsi) * rate_ops_pp       # Fixed: porsi × Rp 3.000
 
-        for r in ba_rows:
-            target_bahan += _d(r.get("budget_bahan"))
-            target_insentif += _d(r.get("budget_insentif"))
-            target_ops += _d(r.get("budget_ops"))
+        # Realisasi bahan: semua transaksi non-operasional
+        real_bahan = Decimal("0")
+        for t in trx_rows:
+            cat = str(t.get("juknis_category") or "").lower()
+            if cat not in ("operasional",):
+                real_bahan += _d(t.get("total"))
+        realisasi["bahan_pangan"] = real_bahan
 
         def _breakdown(cat_key: str, target: Decimal, label: str):
             real = realisasi.get(cat_key, Decimal("0"))
@@ -189,8 +198,8 @@ class BudgetService:
             "kas_balances": kas_balances,
             "juknis_breakdown": {
                 "bahan_pangan": _breakdown("bahan_pangan", target_bahan, "Bahan Pangan"),
-                "insentif": _breakdown("insentif", target_insentif, "Gaji & Upah"),
-                "operasional": _breakdown("operasional", target_ops, "Operasional"),
+                "insentif": _breakdown("insentif", target_insentif, f"Insentif SPPG (Fixed Rp 6jt × {hari_kerja} hari)"),
+                "operasional": _breakdown("operasional", target_ops, "Operasional (BBM, Gas, Logistik)"),
             },
             "disbursements": [
                 {

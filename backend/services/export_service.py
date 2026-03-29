@@ -420,12 +420,15 @@ class ExportService:
         except Exception:
             incident_reports = []
 
-        # Calculate Averaged Profit (Averaging Model for Audit)
+        # ── Fixed Fee Model: Rp 6jt/hari × hari kerja (dari settings) ──
         total_portions_all = sum(_d(d.get("portions_sent", 0)) for d in deliveries)
         total_profit_target = insentif_harian * working_days_month
-        profit_per_porsi = Decimal("0")
+        # Count unique delivery days
+        delivery_days = len(set(d.get("delivery_date", "") for d in deliveries if d.get("delivery_date")))
+        # Fee per porsi rounded to INTEGER (no decimals for audit)
+        fee_per_porsi = Decimal("0")
         if total_portions_all > 0:
-            profit_per_porsi = (total_profit_target / total_portions_all).quantize(Decimal('0E-2'), rounding=ROUND_HALF_UP)
+            fee_per_porsi = (total_profit_target / total_portions_all).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
 
         return {
             "tenant": tenant,
@@ -439,7 +442,8 @@ class ExportService:
             "working_days_month": working_days_month,
             "total_portions_all": total_portions_all,
             "total_profit_target": total_profit_target,
-            "profit_per_porsi": profit_per_porsi,
+            "fee_per_porsi": fee_per_porsi,
+            "delivery_days": delivery_days,
             "deliveries": deliveries,
             "weekly_menus": weekly_menus,
             "transactions": transactions,
@@ -851,35 +855,36 @@ class ExportService:
         transactions = data.get("transactions", [])
         budget = data.get("budget_summary", {})
         
-        # Gunakan Pencairan aktual dari budget_service alih-alih estimasi porsi
+        # Dana masuk dari pencairan
         total_disbursed = Decimal(budget.get("total_disbursed", 0))
         
-        # Calculate realisasi directly from data (avoids budget_service status filter issues)
-        exp_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []))
+        # Realisasi: Bahan = semua transaksi non-operasional
+        exp_bahan = sum(_d(t.get("total")) for t in transactions
+                        if str(t.get("juknis_category") or "").lower() not in ("operasional",))
         exp_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
         exp_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
         total_exp = exp_bahan + exp_upah + exp_ops
         
-        # Calculate targets from actual delivery data × allocation rates
-        # (consistent with Laporan Pemerintah calculations)
+        # Target dari settings (FIXED MODEL)
         rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
         rate_ops_p = data.get("rate_ops_porsi", Decimal("3000"))
+        insentif_harian = data.get("insentif_harian", Decimal("6000000"))
+        working_days = data.get("working_days_month", 26)
         
         target_bahan = Decimal("0")
         for d in deliveries:
             p = d.get("portions_sent", 0)
-            # Safe access for school join (handles dict or list)
             s_data = (d.get("schools") or [{}])[0] if isinstance(d.get("schools"), list) else (d.get("schools") or {})
             sl = s_data.get("school_level", "sd_smp")
             target_bahan += Decimal(p) * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
         
         total_porsi = data.get("total_portions_all", 0)
         target_ops = Decimal(total_porsi) * rate_ops_p
+        target_upah = insentif_harian * working_days  # Fixed: Rp 6jt × hari kerja
         
-        # New model: Insentif is distributed target-based (averaging model)
-        target_upah = data.get("total_profit_target", Decimal("0"))
-        exp_upah = target_upah  # Show "perfect" audit alignment as requested
+        # Cadangan = sisa efisiensi bahan (jika ada)
+        cadangan_bahan = max(target_bahan - exp_bahan, Decimal("0"))
         
         target_total = target_bahan + target_upah + target_ops
         
@@ -891,9 +896,11 @@ class ExportService:
             ("-", "-", "-", "-", "-"),
             ("A. Bahan Baku Pangan", target_bahan, exp_bahan, target_bahan - exp_bahan, pct(exp_bahan, target_bahan)),
             ("B. Operasional (BBM & Logistik)", target_ops, exp_ops, target_ops - exp_ops, pct(exp_ops, target_ops)),
-            ("C. Insentif Tenaga Kerja SPPG", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
+            (f"C. Insentif SPPG (Fixed Rp 6jt × {working_days} hari)", target_upah, exp_upah, target_upah - exp_upah, pct(exp_upah, target_upah)),
             ("-", "-", "-", "-", "-"),
-            ("Total Keseluruhan", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total))
+            ("Total Keseluruhan", target_total, total_exp, target_total - total_exp, pct(total_exp, target_total)),
+            ("-", "-", "-", "-", "-"),
+            ("💰 Cadangan Biaya Operasional", "", "", cadangan_bahan, "Efisiensi Bahan"),
         ]
         
         row = 4
@@ -1043,45 +1050,49 @@ class ExportService:
             cell.border = border_all
         row += 1
 
-        # Logic for Pagu (Target)
+        # ── Logic for Pagu (Target) — Model Fixed ──
         total_portions_all = data.get("total_portions_all", 0)
         rate_bahan_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_bahan_tk = data.get("rate_bahan_tk", Decimal("8000"))
         rate_ops = data.get("rate_ops_porsi", Decimal("3000"))
-        total_pagu_profit = data.get("total_profit_target", Decimal("0"))
+        insentif_harian = data.get("insentif_harian", Decimal("6000000"))
+        working_days = data.get("working_days_month", 26)
+        total_pagu_insentif = insentif_harian * working_days
         
-        # Calculate Pagu Bahan from deliveries
+        # Pagu Bahan from deliveries
         pagu_bahan = Decimal("0")
         for d in data.get("deliveries", []):
             p = _d(d.get("portions_sent", 0))
-            # Safe access for school join (handles dict or list)
             s_data = (d.get("schools") or [{}])[0] if isinstance(d.get("schools"), list) else (d.get("schools") or {})
             sl = s_data.get("school_level", "sd_smp")
             pagu_bahan += p * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
-            
-        pagu_ops_gaji = (total_portions_all * rate_ops) + total_pagu_profit
         
-        # Logic for Riil (Realisasi)
-        # 1. Riil Bahan: Sum of all transactions categorized as 'bahan' or 'bahan_baku'
+        pagu_ops = _d(total_portions_all) * rate_ops
+        
+        # ── Riil (Realisasi) ──
+        # Bahan: SEMUA transaksi KECUALI yang kategori 'operasional'
         riil_bahan = sum(_d(t.get("total")) for t in data.get("transactions", []) 
-                        if str(t.get("juknis_category")).lower() in ("bahan", "bahan_baku", "bahan baku"))
+                        if str(t.get("juknis_category") or "").lower() not in ("operasional",))
+        # Insentif/Gaji: dari payroll_items
+        riil_insentif = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
+        # Operasional: dari operational_costs
+        riil_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
         
-        # 2. Riil Ops & Gaji: payroll_items + operational_costs
-        actual_payroll = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
-        actual_ops = sum(_d(cost.get("amount")) for cost in data.get("operational_costs", []))
-        riil_ops_gaji = actual_payroll + actual_ops
+        # ── Dashboard 3 Lini ──
+        cadangan_bahan = max(pagu_bahan - riil_bahan, Decimal("0"))
         
-        # Dashboard rows
         dashboard_rows = [
-            ("1. Produksi (Bahan Baku)", pagu_bahan, riil_bahan, "✅ Aman"),
-            ("2. Operasional (Gaji & Ops)", pagu_ops_gaji, riil_ops_gaji, "✅ Efisien"),
+            ("1. Bahan Baku (Pangan)", pagu_bahan, riil_bahan),
+            (f"2. Insentif SPPG (Fixed Rp 6jt × {working_days} hari)", total_pagu_insentif, riil_insentif),
+            ("3. Operasional (BBM, Gas, Logistik)", pagu_ops, riil_ops),
         ]
         
-        total_pagu_all = pagu_bahan + pagu_ops_gaji
-        total_riil_all = riil_bahan + riil_ops_gaji
+        total_pagu_all = pagu_bahan + total_pagu_insentif + pagu_ops
+        total_riil_all = riil_bahan + riil_insentif + riil_ops
         
-        for name, pagu, riil, status in dashboard_rows:
+        for name, pagu, riil in dashboard_rows:
             diff = pagu - riil
+            status = "✅ Hemat" if diff >= 0 else "⚠️ Over"
             ws.cell(row, 1, name).border = border_all
             ws.cell(row, 2, float(pagu)).number_format = ACCOUNTING_FORMAT
             ws.cell(row, 2).border = border_all
@@ -1089,12 +1100,26 @@ class ExportService:
             ws.cell(row, 3).border = border_all
             ws.cell(row, 4, float(diff)).number_format = ACCOUNTING_FORMAT
             ws.cell(row, 4).border = border_all
+            if diff < 0:
+                ws.cell(row, 4).font = Font(bold=True, color="FF0000")
             ws.cell(row, 5, status).border = border_all
+            ws.cell(row, 5).alignment = Alignment(horizontal="center")
+            row += 1
+        
+        # Cadangan Dana (Efisiensi Bahan)
+        if cadangan_bahan > 0:
+            ws.cell(row, 1, "💰 Cadangan Biaya Operasional (Efisiensi Bahan)").border = border_all
+            ws.cell(row, 1).font = Font(italic=True, color="006100")
+            ws.cell(row, 4, float(cadangan_bahan)).number_format = ACCOUNTING_FORMAT
+            ws.cell(row, 4).font = Font(bold=True, color="006100")
+            ws.cell(row, 4).border = border_all
+            ws.cell(row, 5, "Cadangan").border = border_all
             ws.cell(row, 5).alignment = Alignment(horizontal="center")
             row += 1
             
         # Total Row
-        ws.cell(row, 1, "TOTAL SURPLUS / PROFIT").font = Font(bold=True)
+        total_surplus = total_pagu_all - total_riil_all
+        ws.cell(row, 1, "TOTAL SURPLUS").font = Font(bold=True)
         ws.cell(row, 1).border = border_all
         ws.cell(row, 2, float(total_pagu_all)).number_format = ACCOUNTING_FORMAT
         ws.cell(row, 2).font = Font(bold=True)
@@ -1102,10 +1127,10 @@ class ExportService:
         ws.cell(row, 3, float(total_riil_all)).number_format = ACCOUNTING_FORMAT
         ws.cell(row, 3).font = Font(bold=True)
         ws.cell(row, 3).border = border_all
-        ws.cell(row, 4, float(total_pagu_all - total_riil_all)).number_format = ACCOUNTING_FORMAT
-        ws.cell(row, 4).font = Font(bold=True, color="006100")
+        ws.cell(row, 4, float(total_surplus)).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 4).font = Font(bold=True, color="006100" if total_surplus >= 0 else "FF0000")
         ws.cell(row, 4).border = border_all
-        ws.cell(row, 5, "SURPLUS").font = Font(bold=True)
+        ws.cell(row, 5, "SURPLUS" if total_surplus >= 0 else "DEFISIT").font = Font(bold=True)
         ws.cell(row, 5).border = border_all
         row += 2
 
@@ -1151,7 +1176,7 @@ class ExportService:
         ws["A1"].alignment = Alignment(horizontal="center")
 
         penyerahan_headers = ["No", "Tanggal", "Sekolah", "Menu", "Porsi",
-                              "Bahan (Rp)", "Ops (Rp)", "Profit (Rp)", "Total (Rp)"]
+                              "Bahan (Rp)", "Ops (Rp)", "Insentif (Rp)", "Total (Rp)"]
         self._write_headers(ws, 2, penyerahan_headers)
 
         # Build menu lookup
@@ -1165,10 +1190,10 @@ class ExportService:
                 pass
 
         row = 3
-        total_bahan = total_ops = total_profit = total_revenue = Decimal("0")
+        total_bahan = total_ops = total_insentif = total_revenue = Decimal("0")
         
-        # New model: Averaging model distributes target profit per portion
-        profit_per_porsi = data.get("profit_per_porsi", Decimal("0"))
+        # Fixed Fee Model: fee per porsi (integer, tanpa desimal)
+        fee_per_porsi = data.get("fee_per_porsi", Decimal("0"))
         total_target_profit = data.get("total_profit_target", Decimal("0"))
         
         # Get allocation settings for rates
@@ -1191,18 +1216,17 @@ class ExportService:
             bahan = portions * rate_bahan
             ops = portions * rate_ops
             
-            # Profit uses portion-based averaging
+            # Insentif: fixed fee per porsi (integer), last row absorbs rounding
             if n == len(dels):
-                # Adjust final row to match target exactly (rounding management)
-                profit = total_target_profit - total_profit
+                insentif = total_target_profit - total_insentif
             else:
-                profit = portions * profit_per_porsi
+                insentif = portions * fee_per_porsi
             
-            total = bahan + ops + profit
+            total = bahan + ops + insentif
 
             total_bahan += bahan
             total_ops += ops
-            total_profit += profit
+            total_insentif += insentif
             total_revenue += total
 
             ws.cell(row, 1, n)
@@ -1212,7 +1236,7 @@ class ExportService:
             ws.cell(row, 5, portions)
             ws.cell(row, 6, float(bahan)).number_format = '"Rp "#,##0'
             ws.cell(row, 7, float(ops)).number_format = '"Rp "#,##0'
-            ws.cell(row, 8, float(profit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 8, float(insentif)).number_format = '"Rp "#,##0'
             ws.cell(row, 9, float(total)).number_format = '"Rp "#,##0'
             self._alt_row(ws, row, 2)
             row += 1
@@ -1227,7 +1251,7 @@ class ExportService:
             5: sum(d.get("portions_sent", 0) for d in data.get("deliveries", [])),
             6: float(total_bahan), 
             7: float(total_ops), 
-            8: float(total_profit),
+            8: float(total_insentif),
             9: float(total_revenue)
         })
         row += 2
@@ -1440,18 +1464,18 @@ class ExportService:
             if d:
                 alloc_by_date[d] = ba
 
-        ws["A7"] = "Rincian Harian - Breakdown Biaya: Bahan : Operasional : Profit"
+        ws["A7"] = "Rincian Harian - Breakdown Biaya: Bahan : Operasional : Insentif"
         ws["A7"].font = Font(bold=True, size=11)
         
         headers_daily = ["Tanggal", "Porsi", "Bahan Baku (Rp)", "Operasional (Rp)", 
-                        "Profit (Rp)", "Total (Rp)", "% Bahan", "% Ops", "% Profit"]
+                        "Insentif (Rp)", "Total (Rp)", "% Bahan", "% Ops", "% Insentif"]
         for i, h in enumerate(headers_daily, 1):
             ws.cell(8, i, h).font = Font(bold=True)
 
         row = 9
         total_bahan_all = Decimal("0")
         total_ops_all = Decimal("0")
-        total_profit_all = Decimal("0")
+        total_insentif_all = Decimal("0")
         total_revenue_all = Decimal("0")
         total_porsi_all = 0
         
@@ -1461,11 +1485,11 @@ class ExportService:
             del_date = d.get("delivery_date", "")
             deliveries_by_date.setdefault(del_date, []).append(d)
         
-        # Get rates and distributed profit parameters
+        # Get rates and fixed fee parameters
         rate_sd = data.get("rate_bahan_sd", Decimal("10000"))
         rate_tk = data.get("rate_bahan_tk", Decimal("8000"))
         r_ops = data.get("rate_ops_porsi", Decimal("3000"))
-        profit_per_porsi = data.get("profit_per_porsi", Decimal("0"))
+        fee_per_porsi = data.get("fee_per_porsi", Decimal("0"))
         total_target_profit = data.get("total_profit_target", Decimal("0"))
 
         dates_sorted = sorted(deliveries_by_date.keys())
@@ -1484,36 +1508,35 @@ class ExportService:
             
             ops = Decimal(day_porsi) * r_ops
             
-            # Distributed Profit (Averaging Model)
+            # Insentif: fixed fee per porsi (integer), last day absorbs rounding
             if idx == len(dates_sorted) - 1:
-                # Adjust final row to match target exactly (rounding management)
-                profit = total_target_profit - total_profit_all
+                insentif = total_target_profit - total_insentif_all
             else:
-                profit = Decimal(day_porsi) * profit_per_porsi
+                insentif = Decimal(day_porsi) * fee_per_porsi
             
-            total = bahan + ops + profit
+            total = bahan + ops + insentif
             
             if total > 0:
                 pct_bahan = (bahan / total) * 100
                 pct_ops = (ops / total) * 100
-                pct_profit = (profit / total) * 100
+                pct_insentif = (insentif / total) * 100
             else:
-                pct_bahan = pct_ops = pct_profit = Decimal("0")
+                pct_bahan = pct_ops = pct_insentif = Decimal("0")
             
             ws.cell(row, 1, del_date)
             ws.cell(row, 2, day_porsi)
             ws.cell(row, 3, float(bahan)).number_format = '"Rp "#,##0'
             ws.cell(row, 4, float(ops)).number_format = '"Rp "#,##0'
-            ws.cell(row, 5, float(profit)).number_format = '"Rp "#,##0'
+            ws.cell(row, 5, float(insentif)).number_format = '"Rp "#,##0'
             ws.cell(row, 6, float(total)).number_format = '"Rp "#,##0'
             ws.cell(row, 7, float(pct_bahan)).number_format = '0.00"%"'
             ws.cell(row, 8, float(pct_ops)).number_format = '0.00"%"'
-            ws.cell(row, 9, float(pct_profit)).number_format = '0.00"%"'
+            ws.cell(row, 9, float(pct_insentif)).number_format = '0.00"%"'
             self._alt_row(ws, row, 2)
             
             total_bahan_all += bahan
             total_ops_all += ops
-            total_profit_all += profit
+            total_insentif_all += insentif
             total_revenue_all += total
             total_porsi_all += day_porsi
             row += 1
@@ -1522,7 +1545,7 @@ class ExportService:
         if total_revenue_all > 0:
             pct_b = (total_bahan_all / total_revenue_all) * 100
             pct_o = (total_ops_all / total_revenue_all) * 100
-            pct_p = (total_profit_all / total_revenue_all) * 100
+            pct_p = (total_insentif_all / total_revenue_all) * 100
         else:
             pct_b = pct_o = pct_p = Decimal("0")
 
@@ -1534,7 +1557,7 @@ class ExportService:
         ws.cell(row, 3).font = Font(bold=True)
         ws.cell(row, 4, float(total_ops_all)).number_format = '"Rp "#,##0'
         ws.cell(row, 4).font = Font(bold=True)
-        ws.cell(row, 5, float(total_profit_all)).number_format = '"Rp "#,##0'
+        ws.cell(row, 5, float(total_insentif_all)).number_format = '"Rp "#,##0'
         ws.cell(row, 5).font = Font(bold=True)
         ws.cell(row, 6, float(total_revenue_all)).number_format = '"Rp "#,##0'
         ws.cell(row, 6).font = Font(bold=True)
@@ -1657,17 +1680,14 @@ class ExportService:
         sum_headers = ["Kategori", "Anggaran (Pagu Juknis)", "Realisasi (Riil)", "Selisih (Surplus)", "Status"]
         self._write_headers(ws, 2, sum_headers)
 
-        # Calculate targets from budget_allocations
-        budget_allocations = data.get("budget_allocations", [])
-        target_upah = Decimal("0")
-        target_ops = Decimal("0")
-        for ba in budget_allocations:
-            u = _d(ba.get("operational_salary"))
-            target_upah += u if u > 0 else _d(ba.get("budget_labor"))
-            f = _d(ba.get("operational_fuel"))
-            ut = _d(ba.get("operational_utilities"))
-            sub = f + ut
-            target_ops += sub if sub > 0 else _d(ba.get("budget_ops"))
+        # Calculate targets from FIXED MODEL (settings-based, not budget_allocations)
+        insentif_harian = data.get("insentif_harian", Decimal("6000000"))
+        working_days = data.get("working_days_month", 26)
+        total_portions = _d(data.get("total_portions_all", 0))
+        rate_ops = data.get("rate_ops_porsi", Decimal("3000"))
+        
+        target_upah = insentif_harian * working_days  # Fixed: Rp 6jt × hari kerja
+        target_ops = total_portions * rate_ops         # Fixed: porsi × Rp 3.000
 
         # Calculate actuals from payroll and operational costs
         actual_upah = sum(_d(item.get("net_amount")) for item in data.get("payroll_items", []))
@@ -1675,8 +1695,8 @@ class ExportService:
 
         row = 3
         summary_items = [
-            ("1. Gaji & Insentif Tenaga Kerja (Pagu Rp 6jt/hari)", target_upah, actual_upah),
-            ("2. Operasional / BBM / Logistik (Pagu Rp 3.000/porsi)", target_ops, actual_ops),
+            (f"1. Insentif SPPG (Fixed Rp 6jt × {working_days} hari)", target_upah, actual_upah),
+            (f"2. Operasional / BBM / Logistik ({int(rate_ops):,}/porsi × {int(total_portions):,} porsi)", target_ops, actual_ops),
         ]
         for label, tgt, act in summary_items:
             selisih = tgt - act
