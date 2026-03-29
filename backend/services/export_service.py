@@ -461,7 +461,6 @@ class ExportService:
             "temperature_logs": temperature_logs,
             "food_samples": food_samples,
             "food_waste_reports": food_waste_reports,
-            "food_waste_logs": food_waste_logs,
             "incident_reports": incident_reports,
         }
 
