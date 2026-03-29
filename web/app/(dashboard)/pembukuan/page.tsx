@@ -107,10 +107,14 @@ export default function PembukuanPage() {
     const handleGenerateExcel = async () => {
         setExcelLoading(true);
         try {
-            await apiPost("/legal/excel-dinas/generate", { year: tahun, month: bulan });
+            const res = await apiPost("/legal/excel-dinas/generate", { year: tahun, month: bulan });
+            if (res?.success === false) {
+                alert(res.error || "Gagal generate Excel.");
+            }
             fetchData();
-        } catch {
-            alert("Gagal generate Excel. Coba lagi.");
+        } catch (e: any) {
+            const detail = e?.response?.data?.detail || e?.message || "Gagal generate Excel. Coba lagi.";
+            alert(`Error: ${detail}`);
         } finally {
             setExcelLoading(false);
         }

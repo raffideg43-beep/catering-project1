@@ -116,6 +116,7 @@ def generate_excel_dinas(
     supabase = get_supabase()
     svc = ExportService()
     try:
+        logger.info(f"[Excel Generate] Starting for tenant={current_user.tenant_id}, period={req.year}-{req.month}")
         url = svc.regenerate_monthly_excel(current_user.tenant_id, req.year, req.month, supabase)
         if url:
             # Add cache-buster so browser always fetches fresh file
@@ -123,8 +124,16 @@ def generate_excel_dinas(
             busted_url = f"{url}?t={int(time.time())}" if "?" not in url else f"{url}&t={int(time.time())}"
             # Upsert legal doc for Excel Dinas tracking
             SPTService._upsert_legal_doc(supabase, current_user.tenant_id, "excel_dinas", req.year, req.month, busted_url)
+            logger.info(f"[Excel Generate] SUCCESS: {busted_url}")
             return {"success": True, "file_url": busted_url}
-        return {"success": False, "error": "Gagal generate Excel."}
+        
+        # If url is None, check excel_files for the error message
+        period_key = f"{req.year:04d}-{req.month:02d}"
+        err_resp = supabase.table("excel_files").select("error_message, status").eq("tenant_id", current_user.tenant_id).eq("period", period_key).limit(1).execute()
+        err_data = (getattr(err_resp, "data", None) or [{}])[0]
+        error_msg = err_data.get("error_message", "Unknown error — check Railway logs")
+        logger.error(f"[Excel Generate] FAILED with None url. Error: {error_msg}")
+        return {"success": False, "error": f"Gagal generate Excel: {error_msg}"}
     except Exception as e:
-        logger.error(f"Generate Excel Error: {str(e)}", exc_info=True)
+        logger.error(f"[Excel Generate] EXCEPTION: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

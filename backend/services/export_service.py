@@ -511,23 +511,37 @@ class ExportService:
 
         logger.info(f"Building workbook with sheets: {wb.sheetnames}")
 
-        self._fill_ringkasan(ws_ringkasan, data, year, month)
-        self._fill_bulanan(ws_bulanan, data, year, month)
-        self._fill_stok(ws_stok, data)
-        self._fill_laporan_pemerintah(ws_pemerintah, data, year, month)
-        self._fill_riwayat_nota(ws_nota, data)
-        self._fill_ops_upah(ws_ops, data, year, month)
-        self._fill_bku(ws_bku, data, year, month, "va_bank", "BUKU KAS UMUM")
-        self._fill_bku(ws_bkk, data, year, month, "kas_kecil", "BUKU KAS KECIL")
-        self._fill_penerima_manfaat(ws_pm, data)
-        self._fill_rekapitulasi_juknis(ws_rj, data, year, month)
+        # Track per-sheet errors so one bad sheet doesn't kill everything
+        sheet_errors = []
+
+        def _safe_fill(sheet_name, fill_fn, *args, **kwargs):
+            try:
+                fill_fn(*args, **kwargs)
+                logger.info(f"  ✅ {sheet_name} OK")
+            except Exception as e:
+                logger.error(f"  ❌ {sheet_name} GAGAL: {e}", exc_info=True)
+                sheet_errors.append(f"{sheet_name}: {str(e)[:200]}")
+
+        _safe_fill("Ringkasan", self._fill_ringkasan, ws_ringkasan, data, year, month)
+        _safe_fill("Bulanan", self._fill_bulanan, ws_bulanan, data, year, month)
+        _safe_fill("Stok", self._fill_stok, ws_stok, data)
+        _safe_fill("Laporan Pemerintah", self._fill_laporan_pemerintah, ws_pemerintah, data, year, month)
+        _safe_fill("Riwayat Nota", self._fill_riwayat_nota, ws_nota, data)
+        _safe_fill("Operasional & Upah", self._fill_ops_upah, ws_ops, data, year, month)
+        _safe_fill("Buku Kas Umum", self._fill_bku, ws_bku, data, year, month, "va_bank", "BUKU KAS UMUM")
+        _safe_fill("Buku Kas Kecil", self._fill_bku, ws_bkk, data, year, month, "kas_kecil", "BUKU KAS KECIL")
+        _safe_fill("Penerima Manfaat", self._fill_penerima_manfaat, ws_pm, data)
+        _safe_fill("Rekapitulasi Juknis", self._fill_rekapitulasi_juknis, ws_rj, data, year, month)
 
         # Fill compliance sheets
-        self._fill_hygiene(ws_hygiene, data, year, month)
-        self._fill_suhu(ws_suhu, data, year, month)
-        self._fill_bank_sampel(ws_sampel, data)
-        self._fill_sisa_makanan(ws_sisa, data, year, month)
-        self._fill_insiden(ws_insiden, data, year, month)
+        _safe_fill("Higiene", self._fill_hygiene, ws_hygiene, data, year, month)
+        _safe_fill("Suhu", self._fill_suhu, ws_suhu, data, year, month)
+        _safe_fill("Bank Sampel", self._fill_bank_sampel, ws_sampel, data)
+        _safe_fill("Sisa Makanan", self._fill_sisa_makanan, ws_sisa, data, year, month)
+        _safe_fill("Insiden", self._fill_insiden, ws_insiden, data, year, month)
+
+        if sheet_errors:
+            logger.warning(f"Excel generated with {len(sheet_errors)} sheet error(s): {sheet_errors}")
 
         return wb
 
