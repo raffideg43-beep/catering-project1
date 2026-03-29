@@ -158,10 +158,27 @@ def link_telegram_account(body: TelegramLinkRequest):
 
     user_row = users[0]
 
+    # Lepaskan telegram_id dari user lama (jika ada) yang mungkin terbentuk dari sesi trial/sebelumnya
+    # agar tidak melanggar 'users_telegram_id_key' unique constraint
+    try:
+        existing = supabase.table("users").select("id").eq("telegram_id", telegram_id).execute()
+        existing_users = getattr(existing, "data", None) or []
+        for eu in existing_users:
+            if eu["id"] != user_row["id"]:
+                supabase.table("users").update({"telegram_id": None}).eq("id", eu["id"]).execute()
+    except Exception as e:
+        print(f"Warning: Failed to check/clear existing telegram_id: {e}")
+
     # Update telegram_id dan clear session_token
-    supabase.table("users").update(
-        {"telegram_id": telegram_id, "session_token": None}
-    ).eq("id", user_row["id"]).execute()
+    try:
+        supabase.table("users").update(
+            {"telegram_id": telegram_id, "session_token": None}
+        ).eq("id", user_row["id"]).execute()
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"success": False, "error": f"Gagal menautkan akun Telegram: {str(e)}"}
+        )
 
     # Generate token untuk bot
     token = create_access_token(
