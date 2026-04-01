@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 INPUT_PORTIONS = 0
 CONFIRM_SERAH = 1
 
-CAN_INPUT_ROLES = {"owner", "admin", "kasir"}
+CAN_INPUT_ROLES = {"owner", "admin", "kasir", "driver"}
 HARI_INDO = {
     "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
     "Thursday": "Kamis", "Friday": "Jumat", "Saturday": "Sabtu",
@@ -96,7 +96,7 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     if not _can_input(context):
-        await msg.reply_text("❌ Hanya owner, admin, dan kasir yang bisa konfirmasi serah.")
+        await msg.reply_text("❌ Hanya owner, admin, kasir, dan driver yang bisa konfirmasi serah.")
         return ConversationHandler.END
 
     token = get_token(context)

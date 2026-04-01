@@ -21,6 +21,7 @@ from utils.session import (
     clear_session,
     get_token,
     get_user_name,
+    get_role,
     is_authenticated,
     save_session,
 )
@@ -73,7 +74,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"👋 Selamat datang kembali, {user_name}!\n\n"
                 f"Role: {user_data.get('role', 'Unknown')}\n\n"
                 "Apa yang ingin kamu lakukan?",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(user_data.get('role', '')),
             )
             return
         except Exception as e:
@@ -113,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await update.message.reply_text(
                     f"{format_success('Akun berhasil dihubungkan!')}\n\n"
                     f"Selamat datang, {user.get('name')}! 🎉",
-                    reply_markup=get_main_menu(),
+                    reply_markup=get_main_menu(user.get("role", "")),
                 )
                 return
             else:
@@ -159,7 +160,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     f"👋 Selamat datang kembali, {user.get('name', 'User')}!\n\n"
                     f"Role: {user.get('role', 'Unknown')}\n\n"
                     "Apa yang ingin kamu lakukan?",
-                    reply_markup=get_main_menu(),
+                    reply_markup=get_main_menu(user.get("role", "")),
                 )
                 return
         except Exception:
@@ -337,12 +338,13 @@ async def global_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         del context.user_data[k]
     
     user_name = get_user_name(context) or "User"
+    user_role = get_role(context) or ""
 
     await safe_edit(
         query,
         f"👋 Halo, {user_name}!\n\n"
         "Apa yang ingin kamu lakukan?",
-        reply_markup=get_main_menu(),
+        reply_markup=get_main_menu(user_role),
     )
 
 

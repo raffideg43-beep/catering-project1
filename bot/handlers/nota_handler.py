@@ -85,7 +85,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not is_authenticated(context):
         await update.message.reply_text(
             "❌ Silakan /start dulu untuk login.",
-            reply_markup=get_main_menu(),
+            reply_markup=get_main_menu(get_role(context) or ""),
         )
         return
 

@@ -680,10 +680,6 @@ async def create_bulk_delivery(
         "budget_bahan": str(budget_bahan),
         "budget_ops": str(budget_ops),
         "budget_insentif": str(budget_insentif),
-        "actual_bahan_cost": "0.00",
-        "actual_ops_cost": "0.00",
-        "actual_insentif_cost": "0.00",
-        "net_profit": "0.00",
     }
     alloc_insert_resp = supabase.table("mbg_budget_allocations").insert(alloc_row).execute()
     alloc_db = (getattr(alloc_insert_resp, "data", None) or [{}])[0]

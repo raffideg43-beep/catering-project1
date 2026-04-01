@@ -41,10 +41,6 @@ def update_allocation_settings(body: AllocationUpdate, current_user: UserInDB = 
         "total_revenue": 0.0,
         "pph22_deduction": 0.0,
         "net_revenue": 0.0,
-        "actual_food_cost": 0.0,
-        "actual_labor_cost": 0.0,
-        "actual_ops_cost": 0.0,
-        "net_profit": 0.0,
         "notes": "System Master Allocation Template",
     }
 

@@ -40,7 +40,7 @@ from keyboards.menu_keyboard import (
 )
 from utils.api_client import get_api_client
 from utils.formatter import format_error, format_success
-from utils.session import get_token, is_authenticated
+from utils.session import get_token, is_authenticated, get_role
 
 logger = logging.getLogger(__name__)
 
@@ -162,10 +162,19 @@ async def menu_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if update.message:
             await update.message.reply_text(
                 "❌ Silakan /start dulu untuk login.",
-                reply_markup=get_main_menu(),
+                reply_markup=get_main_menu(get_role(context) or ""),
             )
         elif update.callback_query:
             await update.callback_query.answer("❌ Silakan login dulu.", show_alert=True)
+        return ConversationHandler.END
+
+    user_role = get_role(context)
+    if user_role not in ["owner", "admin"]:
+        msg = "⛔ Akses Ditolak. Fitur ini hanya untuk Owner dan Admin."
+        if update.message:
+            await update.message.reply_text(msg)
+        elif update.callback_query:
+            await update.callback_query.answer(msg, show_alert=True)
         return ConversationHandler.END
 
     if update.callback_query:
@@ -680,7 +689,7 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         del context.user_data[k]
     if update.message:
         await update.message.reply_text(
-            "✅ Input menu dibatalkan.", reply_markup=get_main_menu()
+            "✅ Input menu dibatalkan.", reply_markup=get_main_menu(get_role(context) or "")
         )
     return ConversationHandler.END
 
@@ -691,7 +700,7 @@ async def on_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if not query:
         return ConversationHandler.END
     await query.answer()
-    await query.edit_message_text("📋 Kembali ke menu utama.", reply_markup=get_main_menu())
+    await query.edit_message_text("📋 Kembali ke menu utama.", reply_markup=get_main_menu(get_role(context) or ""))
     _SESSION_KEYS = {"token", "tenant_id", "user_name", "user_role"}
     keys_to_remove = [k for k in context.user_data if k not in _SESSION_KEYS]
     for k in keys_to_remove:
