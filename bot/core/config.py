@@ -15,9 +15,7 @@ class BotSettings(BaseSettings):
     telegram_bot_token: str
     backend_url: str
 
-    @property
-    def web_url(self) -> str:
-        return "https://mbg-catering-8pzx.vercel.app"
+    web_url: str = "https://mbg-catering.vercel.app"
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE) if ENV_FILE.exists() else ".env",

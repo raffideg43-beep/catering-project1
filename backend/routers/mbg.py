@@ -695,7 +695,7 @@ async def create_bulk_delivery(
         "amount": str(budget_bahan),               # HANYA komponen bahan (10k/8k) sesuai Juknis
         "component_bahan": str(budget_bahan),
         "component_ops": str(budget_ops),
-        "component_profit": str(budget_insentif),
+        "component_insentif": str(budget_insentif),
         "pph22_amount": "0.00",
         "paid_amount": "0.00",
         "due_date": due_date,
