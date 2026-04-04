@@ -197,10 +197,38 @@ async def confirm_transaction(
     )
     items: List[dict] = getattr(items_resp, "data", None) or []
 
+    # ─── Resolve / Auto-create Supplier ───────────────────────────────
+    trx_supplier_id = trx.get("supplier_id")
+    nama_toko_raw = trx.get("nama_toko")
+    
+    if not trx_supplier_id and nama_toko_raw and nama_toko_raw.strip():
+        nama_toko_clean = nama_toko_raw.strip()
+        sup_resp = (
+            supabase.table("suppliers")
+            .select("id")
+            .eq("tenant_id", current_user.tenant_id)
+            .ilike("name", nama_toko_clean)
+            .execute()
+        )
+        if getattr(sup_resp, "data", None):
+            trx_supplier_id = sup_resp.data[0]["id"]
+        else:
+            try:
+                new_sup = supabase.table("suppliers").insert({
+                    "tenant_id": current_user.tenant_id,
+                    "name": nama_toko_clean,
+                    "is_active": True
+                }).execute()
+                if getattr(new_sup, "data", None):
+                    trx_supplier_id = new_sup.data[0]["id"]
+            except Exception as e:
+                logger.error(f"Gagal auto-create supplier {nama_toko_clean}: {e}")
+
     # ─── Update status ke confirmed ───────────────────────────────────
     supabase.table("transactions").update({
         "status": "confirmed",
         "notes": body.notes or trx.get("notes"),
+        "supplier_id": trx_supplier_id,
     }).eq("id", trx_id).execute()
 
     # ─── Update stok ATOMIC via RPC ────────────────────────────────────
@@ -314,7 +342,7 @@ async def confirm_transaction(
 
             supabase.table("payables").insert({
                 "tenant_id": current_user.tenant_id,
-                "supplier_id": trx.get("supplier_id"),
+                "supplier_id": trx_supplier_id,
                 "transaction_id": trx_id,
                 "supplier_name": supplier_name,
                 "amount": trx.get("total", "0.00"),

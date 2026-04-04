@@ -328,11 +328,18 @@ async def confirm_nota(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.edit_message_text(format_error(resp.get("detail", "Konfirmasi gagal")))
         return
 
+    # Ambil info toko & total untuk ringkasan sukses
+    trx = resp.get("data") or {}
+    nama_toko = trx.get("nama_toko") or "Nota"
+    total = trx.get("total", 0)
+    def fmt(v): return f"Rp {int(float(v)):,}".replace(",", ".")
+    
     warnings = resp.get("stok_warnings", [])
     warn_text = "\n\n⚠️ " + "\n⚠️ ".join(warnings[:3]) if warnings else ""
 
     await query.edit_message_text(
-        f"✅ *Nota dikonfirmasi\\!*\n\nStok \\& arus kas sudah diupdate\\.{_esc(warn_text)}",
+        f"✅ *{_esc(nama_toko)}* | *{_esc(fmt(total))}*\n"
+        f"Stok \\& kas sudah diupdate\\.{_esc(warn_text)}",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
         ]]),
@@ -525,7 +532,11 @@ async def konfirmasi_semua(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     err_note = f"\n\n⚠️ {len(errors)} gagal: {', '.join(errors[:3])}" if errors else ""
     await query.edit_message_text(
-        f"✅ *{confirmed} nota dikonfirmasi\\!*\n\nStok \\& arus kas sudah diupdate\\.{_esc(err_note)}",
+        f"✅ *{confirmed} nota dikonfirmasi\\!*\n"
+        f"Stok \\& kas sudah diupdate\\.{_esc(err_note)}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("← Menu Utama", callback_data="main_menu_callback"),
+        ]]),
         parse_mode="MarkdownV2",
     )
 

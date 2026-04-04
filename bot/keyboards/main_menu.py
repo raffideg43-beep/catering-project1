@@ -25,8 +25,10 @@ def get_main_menu(role: str = "") -> InlineKeyboardMarkup:
     # Konfirmasi Serah: owner, admin, kasir, driver
     # Menu Minggu: owner, admin
     row_2 = []
-    if role in ["owner", "admin", "kasir", "driver"]:
+    if role in ["owner", "admin", "kasir"]:
         row_2.append(InlineKeyboardButton("🍱 Konfirmasi Serah", callback_data="serah"))
+    if role == "driver":
+        row_2.append(InlineKeyboardButton("🚚 Mulai Perjalanan", callback_data="driver_trip"))
     if role in ["owner", "admin"]:
         row_2.append(InlineKeyboardButton("📅 Menu Minggu", callback_data="menu_minggu"))
     if row_2:

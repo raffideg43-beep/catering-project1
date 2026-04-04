@@ -11,6 +11,7 @@ interface School {
     default_portions: number;
     notes: string;
     school_level?: string;
+    distance_km?: number;
 }
 
 interface BeneficiaryType {
@@ -41,6 +42,7 @@ export function TabSekolah() {
         default_portions: 0,
         notes: "",
         school_level: "sd_smp",
+        distance_km: 0,
     });
 
     // ── Beneficiary state ──
@@ -98,11 +100,12 @@ const openForm = (school?: School) => {
                 default_portions: school.default_portions,
                 notes: school.notes || "",
                 school_level: school.school_level || "sd_smp",
+                distance_km: school.distance_km || 0,
             });
             fetchSchoolBens(school.id);
         } else {
             setEditingId(null);
-            setFormData({ name: "", address: "", contact_name: "", default_portions: 0, notes: "", school_level: "sd_smp" });
+            setFormData({ name: "", address: "", contact_name: "", default_portions: 0, notes: "", school_level: "sd_smp", distance_km: 0 });
             setSchoolBens([]);
         }
         setAddTypeId("");
@@ -312,7 +315,11 @@ const openForm = (school?: School) => {
                                     <option value="paud_tk">PAUD / TK</option>
                                 </select>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Jarak Lokasi (km)</label>
+                                    <input type="number" step="0.1" min="0" value={formData.distance_km} onChange={e => setFormData({ ...formData, distance_km: parseFloat(e.target.value) || 0 })} className="w-full px-4 py-2 border rounded-lg" />
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Default Porsi</label>
                                     <input type="number" required min="0" value={formData.default_portions} onChange={e => setFormData({ ...formData, default_portions: parseInt(e.target.value) || 0 })} className="w-full px-4 py-2 border rounded-lg" />

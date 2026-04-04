@@ -161,7 +161,7 @@ class ExportService:
         # MBG deliveries + schools
         del_resp = (
             supabase.table("mbg_deliveries")
-            .select("*, schools(name, school_level)")
+            .select("*, schools(name, school_level, distance_km)")
             .eq("tenant_id", tenant_id)
             .gte("delivery_date", first.isoformat())
             .lte("delivery_date", last.isoformat())
@@ -711,11 +711,37 @@ class ExportService:
         for s in schedule.get("schools", []):
             logistics_by_school[s["school_id"]] = s
 
-        # Aggregate actual delivered portions per school this month
+        # Aggregate actual delivered portions and latest logistics times per school this month
         delivered_by_school = {}
+        latest_logistic_by_school = {}
         for d in data.get("deliveries", []):
             sid = d.get("school_id", "")
             delivered_by_school[sid] = delivered_by_school.get(sid, 0) + d.get("portions_sent", 0)
+            
+            sent = d.get("sent_time")
+            arrive = d.get("arrival_time")
+            s_data = d.get("schools") or {}
+            
+            # calculate target based on dynamic distance
+            dist = float(s_data.get("distance_km") or 0)
+            target = "-"
+            if sent and dist > 0:
+                try:
+                    from datetime import datetime, timedelta
+                    # sent_time is HH:MM:SS
+                    s_dt = datetime.strptime(sent, "%H:%M:%S")
+                    t_dt = s_dt + timedelta(minutes=dist * 3)
+                    target = t_dt.strftime("%H:%M")
+                except:
+                    pass
+            
+            # Overwrite with latest (since deliveries are ordered by date ASC previously, the last one processed is the newest)
+            if sent or arrive:
+                latest_logistic_by_school[sid] = {
+                    "depart_time": sent[:5] if sent else "-",
+                    "target_arrival": target,
+                    "done_at_school": arrive[:5] if arrive else "-"
+                }
 
         # Redistribute proportionally if deliveries are concentrated in 1 school
         # (common when all deliveries are recorded under a single school_id)
@@ -776,11 +802,23 @@ class ExportService:
                 ws.cell(row, 6, actual_delivered)
 
                 # Logistics columns — only fill once per school
-                logistic = logistics_by_school.get(sch_id)
-                if logistic and sch_id not in seen_schools:
-                    ws.cell(row, 7, logistic.get("depart_time", "-"))
-                    ws.cell(row, 8, logistic.get("target_arrival", "-"))
-                    ws.cell(row, 9, logistic.get("done_at_school", "-"))
+                # We prioritize latest actual driver telemetry, fallback to static master schedule
+                actual_logistics = latest_logistic_by_school.get(sch_id)
+                master_logistic = logistics_by_school.get(sch_id)
+                
+                if sch_id not in seen_schools:
+                    if actual_logistics:
+                        ws.cell(row, 7, actual_logistics.get("depart_time", "-"))
+                        ws.cell(row, 8, actual_logistics.get("target_arrival", "-"))
+                        ws.cell(row, 9, actual_logistics.get("done_at_school", "-"))
+                    elif master_logistic:
+                        ws.cell(row, 7, master_logistic.get("depart_time", "-"))
+                        ws.cell(row, 8, master_logistic.get("target_arrival", "-"))
+                        ws.cell(row, 9, master_logistic.get("done_at_school", "-"))
+                    else:
+                        for c in range(7, 10):
+                            ws.cell(row, c, "-")
+                    
                     seen_schools.add(sch_id)
                 else:
                     for c in range(7, 10):
@@ -804,9 +842,16 @@ class ExportService:
                     ws.cell(row, 4, "(Tanpa data penerima)")
                     ws.cell(row, 5, logistic.get("default_portions", 0))
                     ws.cell(row, 6, delivered_by_school.get(sid, 0))
-                    ws.cell(row, 7, logistic.get("depart_time", "-"))
-                    ws.cell(row, 8, logistic.get("target_arrival", "-"))
-                    ws.cell(row, 9, logistic.get("done_at_school", "-"))
+                    
+                    act_log = latest_logistic_by_school.get(sid)
+                    if act_log:
+                        ws.cell(row, 7, act_log.get("depart_time", "-"))
+                        ws.cell(row, 8, act_log.get("target_arrival", "-"))
+                        ws.cell(row, 9, act_log.get("done_at_school", "-"))
+                    else:
+                        ws.cell(row, 7, logistic.get("depart_time", "-"))
+                        ws.cell(row, 8, logistic.get("target_arrival", "-"))
+                        ws.cell(row, 9, logistic.get("done_at_school", "-"))
                     
                     self._alt_row(ws, row, 9)
                     from openpyxl.styles import Alignment

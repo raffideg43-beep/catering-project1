@@ -55,6 +55,11 @@ from handlers.nota_handler import (
     batal_semua,
     kirim_ulang,
 )
+from handlers.driver_handler import (
+    driver_trip_entry,
+    driver_depart_action,
+    driver_arrive_action,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -113,6 +118,11 @@ async def main() -> None:
     app.add_handler(CallbackQueryHandler(konfirmasi_semua, pattern=r"^konfirmasi_semua_"))
     app.add_handler(CallbackQueryHandler(batal_semua,      pattern=r"^batal_semua_"))
     app.add_handler(CallbackQueryHandler(kirim_ulang,      pattern=r"^kirim_ulang_"))
+
+    # ─── Callback handlers: driver telemetery ────────────────────────
+    app.add_handler(CallbackQueryHandler(driver_trip_entry, pattern=r"^driver_trip$"))
+    app.add_handler(CallbackQueryHandler(driver_depart_action, pattern=r"^dr_depart_"))
+    app.add_handler(CallbackQueryHandler(driver_arrive_action, pattern=r"^dr_arrive_"))
 
     # ─── Callback handlers: auth / navigation ────────────────────────
     app.add_handler(CallbackQueryHandler(hubungkan_akun, pattern="^hubungkan_akun$"))

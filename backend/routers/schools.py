@@ -76,6 +76,7 @@ def create_school(
                 "default_portions": body.default_portions,
                 "notes": body.notes,
                 "school_level": body.school_level or "sd_smp",
+                "distance_km": body.distance_km,
                 "is_active": True,
             }
         )
@@ -114,6 +115,8 @@ def update_school(
         update_data["notes"] = body.notes
     if body.school_level is not None:
         update_data["school_level"] = body.school_level
+    if body.distance_km is not None:
+        update_data["distance_km"] = body.distance_km
 
     response = (
         supabase.table("schools")

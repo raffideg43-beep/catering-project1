@@ -10,6 +10,7 @@ class SchoolCreate(BaseModel):
     default_portions: int = 0
     notes: Optional[str] = None
     school_level: Optional[str] = "sd_smp"
+    distance_km: Optional[float] = 0.0
 
 
 class SchoolUpdate(BaseModel):
@@ -19,6 +20,7 @@ class SchoolUpdate(BaseModel):
     default_portions: Optional[int] = None
     notes: Optional[str] = None
     school_level: Optional[str] = None
+    distance_km: Optional[float] = None
 
 
 class SchoolResponse(BaseModel):
@@ -31,4 +33,5 @@ class SchoolResponse(BaseModel):
     is_active: bool
     notes: Optional[str] = None
     school_level: Optional[str] = None
+    distance_km: float = 0.0
     created_at: str

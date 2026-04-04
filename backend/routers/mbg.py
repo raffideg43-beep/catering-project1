@@ -774,7 +774,7 @@ def get_delivery_summary(
     # Ambil deliveries
     del_resp = (
         supabase.table("mbg_deliveries")
-        .select("*, schools(name, default_portions)")
+        .select("*, schools(name, default_portions, distance_km)")
         .eq("tenant_id", tenant_id)
         .eq("delivery_date", target_date.isoformat())
         .execute()
@@ -872,10 +872,15 @@ def get_delivery_summary(
         # Jika ada deliveries, gunakan data actual
         deliveries_clean = [
             {
+                "id": d.get("id"),
+                "school_id": d.get("school_id"),
                 "school_name": (d.get("schools") or {}).get("name", "?"),
                 "portions_sent": d.get("portions_sent"),
                 "receiver_name": d.get("receiver_name"),
                 "status": d.get("status"),
+                "sent_time": d.get("sent_time"),
+                "arrival_time": d.get("arrival_time"),
+                "distance_km": float((d.get("schools") or {}).get("distance_km") or 0),
             }
             for d in deliveries_raw
         ]
@@ -913,3 +918,37 @@ def get_delivery_summary(
             "stok_status": stok_status,
         },
     }
+
+# ─── GET/POST Driver Telemetry API ──────────────────────────────────────
+
+@delivery_router.post("/driver/depart/{delivery_id}")
+def driver_depart(delivery_id: str, current_user: UserInDB = Depends(require_role(["driver", "owner", "admin"]))):
+    supabase = get_supabase()
+    from datetime import datetime
+    now_time = datetime.now().strftime("%H:%M:%S")
+    
+    del_resp = supabase.table("mbg_deliveries").update(
+        {"sent_time": now_time, "status": "delivering"}
+    ).eq("id", delivery_id).eq("tenant_id", current_user.tenant_id).execute()
+    
+    if not del_resp.data:
+        raise HTTPException(404, "Delivery record not found.")
+        
+    return {"success": True, "data": del_resp.data[0]}
+
+
+@delivery_router.post("/driver/arrive/{delivery_id}")
+def driver_arrive(delivery_id: str, current_user: UserInDB = Depends(require_role(["driver", "owner", "admin"]))):
+    supabase = get_supabase()
+    from datetime import datetime
+    now_time = datetime.now().strftime("%H:%M:%S")
+    
+    del_resp = supabase.table("mbg_deliveries").update(
+        {"arrival_time": now_time, "status": "delivered"}
+    ).eq("id", delivery_id).eq("tenant_id", current_user.tenant_id).execute()
+    
+    if not del_resp.data:
+        raise HTTPException(404, "Delivery record not found.")
+        
+    return {"success": True, "data": del_resp.data[0]}
+

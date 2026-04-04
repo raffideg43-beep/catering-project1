@@ -454,6 +454,7 @@ def get_food_waste_targets(
         supabase.table("schools")
         .select("id, name, default_portions")
         .eq("tenant_id", current_user.tenant_id)
+        .eq("is_active", True)
         .execute()
     )
     schools = getattr(s_resp, "data", None) or []

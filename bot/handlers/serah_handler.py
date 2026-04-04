@@ -62,7 +62,7 @@ def _esc(text: str) -> str:
 
 
 def _serah_keyboard(schools: dict) -> InlineKeyboardMarkup:
-    """Tombol tiap sekolah + Lanjut + Batal."""
+    """Tombol tiap sekolah + Kembali + Batal."""
     buttons = []
     for sid, info in schools.items():
         nama = info["name"][:28]
@@ -72,12 +72,27 @@ def _serah_keyboard(schools: dict) -> InlineKeyboardMarkup:
             callback_data=f"edit_porsi_{sid}",
         )])
     buttons.append([
-        InlineKeyboardButton("✅ Lanjut dengan Kuota Default", callback_data="serah_lanjut"),
+        InlineKeyboardButton("✅ Selesai Edit & Lanjut", callback_data="serah_lanjut"),
     ])
     buttons.append([
         InlineKeyboardButton("❌ Batal", callback_data="serah_batal"),
     ])
     return InlineKeyboardMarkup(buttons)
+
+
+def _serah_express_keyboard() -> InlineKeyboardMarkup:
+    """Tombol Konfirmasi Langsung vs Edit Manual."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Ya, Konfirmasi Sekarang", callback_data="serah_lanjut"),
+        ],
+        [
+            InlineKeyboardButton("✏️ Ada Perubahan / Edit Porsi", callback_data="serah_edit_manual"),
+        ],
+        [
+            InlineKeyboardButton("❌ Batal", callback_data="serah_batal"),
+        ]
+    ])
 
 
 # ─── Entry Point: /serah ──────────────────────────────────────────────────────
@@ -93,6 +108,14 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             await update.callback_query.answer("❌ Sesi log off. Ketik /start untuk memuat ulang.", show_alert=True)
         else:
             await msg.reply_text("❌ Silakan /start dulu untuk login.")
+        return ConversationHandler.END
+        
+    role = get_role(context)
+    if role == "driver":
+        from handlers.driver_handler import render_driver_trip
+        if update.callback_query:
+            await update.callback_query.answer()
+        await render_driver_trip(update, context)
         return ConversationHandler.END
 
     if not _can_input(context):
@@ -176,12 +199,41 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     }
     context.user_data.pop("editing_school_id", None)
 
+    # 🚀 EXPRESS FLOW: Hitung estimasi langsung untuk tampilan pertama
+    total_portions = sum(s["portions"] for s in schools.values())
+    
+    # Ambil alokasi settings (default values if fail)
+    try:
+        settings_resp = await api.get("/tenants/mbg-settings", token=token)
+        alloc_set = (settings_resp or {}).get("data") or {}
+    except Exception:
+        alloc_set = {}
+
+    rate_bahan_sd = float(alloc_set.get("bahan_sd_smp", 10000))
+    rate_bahan_tk = float(alloc_set.get("bahan_paud_tk", 8000))
+    rate_ops = float(alloc_set.get("ops_per_porsi", 3000))
+    insentif_harian = float(alloc_set.get("insentif_harian", 6000000))
+
+    budget_bahan = 0
+    budget_ops = 0
+    for info in schools.values():
+        p = info["portions"]
+        lvl = info.get("school_level", "sd_smp")
+        b_rate = rate_bahan_tk if lvl == "paud_tk" else rate_bahan_sd
+        budget_bahan += p * b_rate
+        budget_ops += p * rate_ops
+    
+    total_rev = budget_bahan + budget_ops + insentif_harian
+
     await msg.reply_text(
         f"🍱 *KONFIRMASI PENYERAHAN MBG*\n"
         f"📅 {_esc(hari)}, {_esc(tanggal)}\n"
         f"🍽️ Menu: {_esc(menu_name)}\n\n"
-        f"Tap sekolah untuk edit porsi, atau klik Lanjut:",
-        reply_markup=_serah_keyboard(schools),
+        f"📋 *Ringkasan Estimasi:*\n"
+        f"• Total: *{total_portions} porsi* ({len(schools)} sekolah)\n"
+        f"• Anggaran: *{_esc(_fmt_rp(total_rev))}*\n\n"
+        f"Konfirmasi serah dengan porsi standar hari ini?",
+        reply_markup=_serah_express_keyboard(),
         parse_mode="MarkdownV2",
     )
     return INPUT_PORTIONS
@@ -246,11 +298,36 @@ async def handle_porsi_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tanggal = date.today().strftime("%d/%m/%Y")
 
     await update.message.reply_text(
-        f"🍱 *KONFIRMASI PENYERAHAN MBG*\n"
+        f"🍱 *EDIT PORSI*\n"
         f"📅 {_esc(hari)}, {_esc(tanggal)}\n"
         f"🍽️ Menu: {_esc(menu_name)}\n\n"
         f"✅ {_esc(schools[school_id]['name'])}: *{porsi} porsi* diupdate\n\n"
-        "Tap sekolah untuk edit porsi, atau klik Lanjut:",
+        "Tap sekolah lain untuk edit, atau klik Selesai:",
+        reply_markup=_serah_keyboard(schools),
+        parse_mode="MarkdownV2",
+    )
+    return INPUT_PORTIONS
+
+
+async def serah_edit_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Pindah dari Express Summary ke daftar sekolah manual."""
+    query = update.callback_query
+    if not query:
+        return INPUT_PORTIONS
+    await query.answer()
+
+    serah_data = context.user_data.get("serah_data", {})
+    schools = serah_data.get("schools", {})
+    menu_name = serah_data.get("menu_name", "Belum diset")
+    today = date.today()
+    hari = HARI_INDO.get(today.strftime("%A"), today.strftime("%A"))
+    tanggal = today.strftime("%d/%m/%Y")
+
+    await query.edit_message_text(
+        f"🍱 *EDIT PORSI MANUAL*\n"
+        f"📅 {_esc(hari)}, {_esc(tanggal)}\n"
+        f"🍽️ Menu: {_esc(menu_name)}\n\n"
+        f"Silakan sesuaikan porsi per sekolah jika ada perubahan:",
         reply_markup=_serah_keyboard(schools),
         parse_mode="MarkdownV2",
     )
@@ -626,6 +703,7 @@ def build_serah_conversation() -> ConversationHandler:
                 CallbackQueryHandler(serah_sunday_confirm, pattern=r"^serah_sunday_confirm$"),
                 CallbackQueryHandler(edit_porsi,       pattern=r"^edit_porsi_"),
                 CallbackQueryHandler(serah_lanjut,     pattern=r"^serah_lanjut$"),
+                CallbackQueryHandler(serah_edit_manual, pattern=r"^serah_edit_manual$"),
                 CallbackQueryHandler(serah_batal,      pattern=r"^serah_batal$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_porsi_input),
             ],
