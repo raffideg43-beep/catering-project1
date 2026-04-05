@@ -244,15 +244,35 @@ def get_stock_projection(
     products = getattr(prod_resp, "data", None) or []
     prod_map = {p["id"]: p for p in products}
 
-    # ── Coba dapatkan menu minggu ini + sekolah ───────────────────────────
+    # ── Coba dapatkan menu di rentang target hari ─────────────────────────
+    target_dates = [today + timedelta(days=i) for i in range(days)]
+    query_pairs = {}
+    for d in target_dates:
+        ws = (d - timedelta(days=d.weekday())).isoformat()
+        dow = d.weekday() + 1
+        if ws not in query_pairs:
+            query_pairs[ws] = []
+        query_pairs[ws].append(dow)
+
+    unique_ws = list(query_pairs.keys())
+    
     menu_resp = (
         supabase.table("mbg_weekly_menus")
-        .select("day_of_week, menu_id")
+        .select("week_start, day_of_week, menu_id")
         .eq("tenant_id", tid)
-        .eq("week_start", monday.isoformat())
+        .in_("week_start", unique_ws)
         .execute()
     )
-    weekly = getattr(menu_resp, "data", None) or []
+    all_menus = getattr(menu_resp, "data", None) or []
+    
+    scheduled_menu_ids = []
+    valid_days_count = 0
+    for m in all_menus:
+        ws = m.get("week_start")
+        dow = m.get("day_of_week")
+        if ws in query_pairs and dow in query_pairs[ws] and m.get("menu_id"):
+            scheduled_menu_ids.append(m["menu_id"])
+            valid_days_count += 1
 
     # Total porsi / hari dari sekolah
     school_resp = (
@@ -267,46 +287,43 @@ def get_stock_projection(
         for s in (getattr(school_resp, "data", None) or [])
     )
 
-    # Kumpulkan kebutuhan bahan per hari dari BOM
-    daily_usage: Dict[str, float] = {}  # product_id → kebutuhan rata2/hari
+    # Kumpulkan kebutuhan bahan aktual
+    period_usage_base: Dict[str, float] = {}  # product_id -> total qty needed for period
+    daily_usage: Dict[str, float] = {}       # product_id -> rata-rata hari aktif
     based_on_menu = False
 
-    if weekly and total_portions > 0:
+    if scheduled_menu_ids and total_portions > 0:
         based_on_menu = True
-        menu_ids = list({m["menu_id"] for m in weekly if m.get("menu_id")})
-        active_days = min(len(weekly), days)
+        unique_mids = list(set(scheduled_menu_ids))
+        
+        # Ambil resep
+        recipe_resp = (
+            supabase.table("recipes")
+            .select("*")
+            .in_("menu_id", unique_mids)
+            .execute()
+        )
+        recipes = getattr(recipe_resp, "data", None) or []
 
-        if menu_ids:
-            # Ambil resep
-            recipe_resp = (
-                supabase.table("recipes")
-                .select("*")
-                .in_("menu_id", menu_ids)
-                .execute()
-            )
-            recipes = getattr(recipe_resp, "data", None) or []
+        # Hitung kemunculan tiap menu
+        menu_counts = {}
+        for mid in scheduled_menu_ids:
+            menu_counts[mid] = menu_counts.get(mid, 0) + 1
 
-            # Hitung kemunculan tiap menu
-            menu_counts = {}
-            for w in weekly:
-                mid = w.get("menu_id")
-                if mid:
-                    menu_counts[mid] = menu_counts.get(mid, 0) + 1
+        for mid, count in menu_counts.items():
+            m_recipes = [r for r in recipes if r["menu_id"] == mid]
+            # Hitung untuk `total_portions` porsi per hari
+            flat_for_run = recipe_service._flatten_recipes(m_recipes, total_portions, supabase)
+            
+            # Akumulasi ke total periode
+            for iid, qty_base in flat_for_run.items():
+                period_usage_base[iid] = period_usage_base.get(iid, 0) + float(qty_base) * count
 
-            total_flat = {}
-            for mid, count in menu_counts.items():
-                m_recipes = [r for r in recipes if r["menu_id"] == mid]
-                # Hitung untuk `total_portions` porsi
-                # _flatten_recipes otomatis expand komponen dan respect usage_type
-                flat_for_run = recipe_service._flatten_recipes(m_recipes, total_portions, supabase)
-                
-                # Akumulasi ke total mingguan
-                for iid, qty_base in flat_for_run.items():
-                    total_flat[iid] = total_flat.get(iid, 0) + float(qty_base) * count
-
-            # Konversi menjadi pemakaian rata-rata per hari
-            for iid, total_base in total_flat.items():
-                daily_usage[iid] = total_base / max(active_days, 1)
+        # Pemakaian per hari (dari hari-hari yang MEMANG ADA MENU)
+        # Bermanfaat agar remaining_days memprediksi HARI KERJA AKTIF
+        use_days_for_avg = max(valid_days_count, 1)
+        for iid, total_base in period_usage_base.items():
+            daily_usage[iid] = total_base / use_days_for_avg
 
     if not based_on_menu:
         # Fallback: rata-rata pemakaian 7 hari terakhir
@@ -323,6 +340,10 @@ def get_stock_projection(
                 delta = abs(float(row.get("change_qty") or 0))
                 pid = row["product_id"]
                 daily_usage[pid] = daily_usage.get(pid, 0) + delta / 7
+                
+        # Konversi daily usage menjadi periode 
+        for pid, daily in daily_usage.items():
+            period_usage_base[pid] = daily * days
 
     # ── Susun hasil proyeksi ──────────────────────────────────────────────
     items_out = []
@@ -332,14 +353,14 @@ def get_stock_projection(
         factor = float(p.get("conversion_factor") or 1)
         
         stock_base = float(p.get("stock_qty") or 0)
-        stock_min_base = float(p.get("stock_min") or 0)
-        usage_base = daily_usage.get(pid, 0)
-        
         stock_disp = stock_base / factor if factor else stock_base
         stock_min_disp = stock_min_base / factor if factor else stock_min_base
-        usage_disp = usage_base / factor if factor else usage_base
         
-        needed_period_disp = usage_disp * days
+        usage_base = daily_usage.get(pid, 0)
+        needed_period_base = period_usage_base.get(pid, 0)
+        
+        usage_disp = usage_base / factor if factor else usage_base
+        needed_period_disp = needed_period_base / factor if factor else needed_period_base
 
         if usage_disp > 0:
             days_rem = stock_disp / usage_disp

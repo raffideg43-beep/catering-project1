@@ -784,7 +784,7 @@ def get_delivery_summary(
     # Hitung total porsi
     if deliveries_raw:
         # Jika ada delivery records, gunakan portions_sent
-        total_portions = sum(d.get("portions_sent", 0) for d in deliveries_raw)
+        total_portions = sum((d.get("portions_sent") or 0) for d in deliveries_raw)
         logger.info(f"[Summary] Using actual deliveries: {total_portions} porsi")
     else:
         # Jika belum ada delivery, gunakan default_portions dari schools aktif
