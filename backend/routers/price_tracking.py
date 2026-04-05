@@ -200,8 +200,8 @@ def get_price_overview(
             "last_purchase": last_purchase,
         })
 
-    # Sort: yang naik paling tinggi dulu
-    result.sort(key=lambda x: x["change_pct"], reverse=True)
+    # Sort: urut abjad nama bahan
+    result.sort(key=lambda x: x["product_name"].lower())
 
     return {
         "success": True,
