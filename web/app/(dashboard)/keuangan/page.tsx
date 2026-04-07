@@ -63,7 +63,7 @@ function PiutangTab() {
                 </div>
             )}
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-5 flex flex-wrap gap-4 items-end">
                 <div>
                     <label className="block text-xs text-gray-500 mb-1">Bulan</label>
                     <select value={bulan} onChange={e => setBulan(Number(e.target.value))}
@@ -84,7 +84,7 @@ function PiutangTab() {
                 Nilai di bawah dihitung otomatis (Porsi × Harga Juknis Rp 10rb/8rb).
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -208,7 +208,7 @@ function HutangTab() {
                 </div>
             )}
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-5 flex flex-wrap gap-4 items-end">
                 <div>
                     <label className="block text-xs text-gray-500 mb-1">Status</label>
                     <select value={status} onChange={e => setStatus(e.target.value)}
@@ -239,7 +239,7 @@ function HutangTab() {
                 <button onClick={fetchData} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg">🔍 Cari</button>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -338,20 +338,20 @@ function KeuanganTabs() {
             <PageHeader title="💳 Piutang & Hutang" />
 
             {/* Tab Navigation */}
-            <div className="border-b border-gray-300 sticky top-0 bg-gray-50 z-10 pt-2">
-                <div className="flex space-x-8">
+            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+                <div className="flex space-x-8 px-2">
                     <button
                         onClick={() => setTab("piutang")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "piutang" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "piutang" ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}
                     >
                         💰 Piutang Pemerintah
                     </button>
                     <button
                         onClick={() => setTab("hutang")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "hutang" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "hutang" ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}
                     >
                         💸 Hutang Supplier

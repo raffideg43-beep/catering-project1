@@ -7,6 +7,8 @@ import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Rupiah } from "@/components/ui/rupiah";
 import { PageHeader } from "@/components/layout/page-header";
+import { ExpenseTrendChart } from "@/components/charts/ExpenseTrendChart";
+import { CategoryPieChart } from "@/components/charts/CategoryPieChart";
 
 // Types
 interface DailyData {
@@ -158,10 +160,28 @@ export default function DashboardPage() {
                 />
             </div>
 
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+                    <h2 className="text-base font-bold text-gray-900 mb-6">Tren Pengeluaran (7 Hari Terakhir)</h2>
+                    <ExpenseTrendChart data={
+                        // Mock data since API format might vary. Replace with actual daily.expenses trend when available
+                        [{ date: "01", total: 1200000 }, { date: "02", total: 1500000 }, { date: "03", total: 900000 }, { date: "04", total: 2200000 }, { date: "05", total: 1100000 }]
+                    } />
+                </div>
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+                    <h2 className="text-base font-bold text-gray-900 mb-6">Kategori Belanja</h2>
+                    <CategoryPieChart data={
+                        // Mock data for categories. 
+                        [{ name: "Sayur & Buah", value: 3500000 }, { name: "Bumbu", value: 1200000 }, { name: "Ayam/Daging", value: 5000000 }, { name: "Beras", value: 2000000 }]
+                    } />
+                </div>
+            </div>
+
             {/* ─── Baris konten utama: Penyerahan + Stok ────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                 {/* Penyerahan Hari Ini */}
-                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col">
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col">
                     <h2 className="text-base font-bold tracking-tight text-gray-900 mb-4 flex items-center gap-2">
                         <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-lg shadow-inner">🍱</span>
                         Penyerahan Hari Ini
@@ -169,28 +189,28 @@ export default function DashboardPage() {
                     {daily?.mbg.has_delivery ? (
                         <div className="space-y-2">
                             {daily.mbg.menu_name && (
-                                <p className="text-sm text-gray-600">Menu: <span className="font-medium">{daily.mbg.menu_name}</span></p>
+                                <p className="text-sm text-gray-600">Menu: <span className="font-medium text-gray-900 p-1 bg-yellow-50 rounded">{daily.mbg.menu_name}</span></p>
                             )}
-                            <div className="flex justify-between text-sm border-t pt-2 mt-2">
-                                <span className="text-gray-500">Total Porsi</span>
-                                <span className="font-semibold">{daily.mbg.total_portions.toLocaleString("id-ID")} porsi</span>
+                            <div className="flex justify-between text-sm border-t border-gray-100/80 pt-3 mt-3">
+                                <span className="text-gray-500 font-medium">Total Porsi</span>
+                                <span className="font-bold text-blue-600 bg-blue-50/50 px-2 rounded-md">{daily.mbg.total_portions.toLocaleString("id-ID")} porsi</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-gray-500">Gross Revenue</span>
-                                <span className="font-semibold text-green-700">{formatRp(daily.mbg.revenue_gross)}</span>
+                                <span className="text-gray-500 font-medium">Gross Revenue</span>
+                                <span className="font-bold text-green-700 bg-green-50/50 px-2 rounded-md">{formatRp(daily.mbg.revenue_gross)}</span>
                             </div>
                         </div>
                     ) : (
                         <div className="text-center py-6 text-gray-400">
-                            <p className="text-3xl mb-2">⚪</p>
-                            <p className="font-medium">Belum ada penyerahan</p>
-                            <p className="text-xs mt-1">Konfirmasi via Telegram Bot <code className="bg-gray-100 px-1 rounded">/serah</code></p>
+                            <p className="text-3xl mb-2 opacity-50">⚪</p>
+                            <p className="font-medium text-gray-500">Belum ada penyerahan</p>
+                            <p className="text-xs mt-1 text-gray-400">Konfirmasi via Telegram Bot <code className="bg-gray-100 px-1.5 py-0.5 rounded-md font-mono text-gray-600">/serah</code></p>
                         </div>
                     )}
                 </div>
 
                 {/* Stok Menipis */}
-                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col">
+                <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col">
                     <h2 className="text-base font-bold tracking-tight text-gray-900 mb-4 flex items-center gap-2">
                         <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-lg shadow-inner">📦</span>
                         Stok Menipis
@@ -198,20 +218,20 @@ export default function DashboardPage() {
                     {daily?.stock_alerts && daily.stock_alerts.length > 0 ? (
                         <div className="space-y-2">
                             {daily.stock_alerts.slice(0, 5).map((a, i) => (
-                                <div key={i} className="flex justify-between items-center text-sm py-1 border-b border-gray-50">
-                                    <span className="text-gray-700 font-medium">{a.product_name}</span>
-                                    <span className="text-red-500 text-xs font-semibold">
+                                <div key={i} className="flex justify-between items-center text-sm py-1.5 border-b border-gray-50 group">
+                                    <span className="text-gray-700 font-medium group-hover:text-blue-600 transition-colors">{a.product_name}</span>
+                                    <span className="text-red-500 text-[11px] font-bold px-2 py-0.5 bg-red-50 rounded-md">
                                         {a.stock_qty}{a.unit} / min {a.stock_min}{a.unit}
                                     </span>
                                 </div>
                             ))}
-                            <a href="/stok" className="text-xs text-blue-600 hover:underline mt-2 inline-block">
-                                Lihat semua stok →
+                            <a href="/stok" className="text-[11px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-800 transition-colors mt-3 inline-block">
+                                Lihat semua stok &rarr;
                             </a>
                         </div>
                     ) : (
                         <div className="text-center py-6 text-green-600">
-                            <p className="text-3xl mb-2">✅</p>
+                            <p className="text-3xl mb-2 opacity-80">✅</p>
                             <p className="font-medium">Semua stok aman</p>
                         </div>
                     )}

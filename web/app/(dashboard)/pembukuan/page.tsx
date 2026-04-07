@@ -179,7 +179,7 @@ export default function PembukuanPage() {
     };
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-6 sm:space-y-8 animate-in mt-2">
             <PageHeader
                 title="Pembukuan"
                 subtitle={`${MONTHS_FULL[bulan]} ${tahun}`}
@@ -187,25 +187,29 @@ export default function PembukuanPage() {
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowOpsModal(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 shadow-lg shadow-blue-600/20 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 hover:shadow-blue-600/30 hover:-translate-y-0.5 transition-all cursor-pointer ring-1 ring-blue-700"
                         >
-                            + Biaya Operasional
+                            <span className="text-lg leading-none">+</span> Biaya Operasional
                         </button>
                     </div>
                 }
             />
 
             {/* ─── DOKUMEN LEGAL & EXCEL SECTION ─────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 
                 {/* EXCEL DINAS */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex gap-3">
-                            <span className="text-3xl">📊</span>
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 sm:p-8 flex flex-col relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50/50 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+                    
+                    <div className="flex justify-between items-start mb-6 relative z-10">
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center text-2xl shadow-sm ring-1 ring-green-100">
+                                📊
+                            </div>
                             <div>
-                                <h3 className="font-bold text-gray-900">Excel Dinas {MONTHS[bulan]} {tahun}</h3>
-                                <p className="text-sm text-gray-500">10 Sheet Laporan Lengkap</p>
+                                <h3 className="text-lg font-bold text-gray-900 tracking-tight">Excel Dinas {MONTHS[bulan]} {tahun}</h3>
+                                <p className="text-sm font-medium text-gray-500 mt-0.5">10 Sheet Laporan Lengkap</p>
                             </div>
                         </div>
                     </div>
@@ -236,22 +240,26 @@ export default function PembukuanPage() {
 
 
                 {/* BAP */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex gap-3">
-                            <span className="text-3xl">📝</span>
+                <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 sm:p-8 flex flex-col relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/50 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+
+                    <div className="flex justify-between items-start mb-6 relative z-10">
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center text-2xl shadow-sm ring-1 ring-gray-200">
+                                📝
+                            </div>
                             <div>
-                                <h3 className="font-bold text-gray-900">BAP Kas</h3>
-                                <p className="text-sm text-gray-500">Berita Acara Pemeriksaan Sisa Kas</p>
+                                <h3 className="text-lg font-bold text-gray-900 tracking-tight">BAP Kas</h3>
+                                <p className="text-sm font-medium text-gray-500 mt-0.5">Berita Acara Sisa Kas</p>
                             </div>
                         </div>
                     </div>
                     
-                    <div className="mb-4">
-                        <div className="text-sm flex items-center justify-between py-1">
-                            <span className="text-gray-500">Status:</span>
-                            <span className={`font-medium ${!bapDoc ? "text-gray-400" : bapDoc.status === "draft" ? "text-orange-500" : bapDoc.status === "final" ? "text-green-600" : "text-blue-600"}`}>
-                                {!bapDoc ? "⚪ Tidak Ada / N/A" : bapDoc.status === "draft" ? "📝 Draft (Belum TTD)" : bapDoc.status === "final" ? "✅ Final (Sudah TTD)" : "📤 Submitted"}
+                    <div className="mb-6 relative z-10">
+                        <div className="text-sm flex items-center justify-between py-2 border-b border-gray-50">
+                            <span className="text-gray-500 font-medium">Status:</span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ring-1 ring-inset ${!bapDoc ? "bg-gray-50 text-gray-400 ring-gray-200" : bapDoc.status === "draft" ? "bg-orange-50 text-orange-600 ring-orange-200" : bapDoc.status === "final" ? "bg-emerald-50 text-emerald-600 ring-emerald-200" : "bg-blue-50 text-blue-600 ring-blue-200"}`}>
+                                {!bapDoc ? "⚪ Tidak Ada (N/A)" : bapDoc.status === "draft" ? "📝 Draft (Belum TTD)" : bapDoc.status === "final" ? "✅ Final (Sudah TTD)" : "📤 Submitted"}
                             </span>
                         </div>
                         {!bapDoc && <div className="text-xs text-gray-400 mt-1 italic">Hanya dibuat jika ada pengembalian sisa dana kas ke negara</div>}
@@ -286,41 +294,43 @@ export default function PembukuanPage() {
                 </div>
             </div>
 
-            <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold">Log Transaksi & Pengeluaran</h2>
-                <a href="/pembukuan/dokumen" className="text-sm text-blue-600 font-medium hover:underline">Lihat Semua Dokumen →</a>
+            <div className="flex items-center justify-between px-2">
+                <h2 className="text-xl font-bold tracking-tight text-gray-900">Log Transaksi & Pengeluaran</h2>
+                <a href="/pembukuan/dokumen" className="text-sm text-blue-600 font-bold hover:text-blue-700 transition-colors flex items-center gap-1 group">
+                    Kumpulan Dokumen <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                </a>
             </div>
 
             {/* ─── Filter Bar ─────────────────────────────────── */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                <div className="flex flex-wrap gap-3 items-end">
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1">Bulan</label>
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-5 overflow-visible z-20 relative">
+                <div className="flex flex-wrap gap-4 items-end">
+                    <div className="w-24">
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Bulan</label>
                         <select
                             value={bulan}
                             onChange={(e) => { setBulan(Number(e.target.value)); setPage(0); }}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm w-full font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                         >
                             {MONTHS_FULL.slice(1).map((m, i) => (
                                 <option key={i + 1} value={i + 1}>{m}</option>
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1">Tahun</label>
+                    <div className="w-24">
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Tahun</label>
                         <input
                             type="number"
                             value={tahun}
                             onChange={(e) => { setTahun(Number(e.target.value)); setPage(0); }}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm w-full font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
                         />
                     </div>
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1">Status</label>
+                    <div className="w-32">
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Status</label>
                         <select
                             value={status}
                             onChange={(e) => { setStatus(e.target.value); setPage(0); }}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm w-full font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                         >
                             <option value="all">Semua</option>
                             <option value="confirmed">Confirmed</option>
@@ -328,12 +338,12 @@ export default function PembukuanPage() {
                             <option value="failed">Failed</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-xs text-gray-500 mb-1">Kategori Juknis</label>
+                    <div className="w-40">
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Kategori</label>
                         <select
                             value={juknisCat}
                             onChange={(e) => { setJuknisCat(e.target.value); setPage(0); }}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm w-full font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
                         >
                             <option value="all">Semua</option>
                             <option value="bahan_pangan">🥦 Bahan Pangan</option>
@@ -343,28 +353,30 @@ export default function PembukuanPage() {
                             <option value="lainnya">📦 Lainnya</option>
                         </select>
                     </div>
-                    <div className="flex-1 min-w-[160px]">
-                        <label className="block text-xs text-gray-500 mb-1">Supplier</label>
+                    <div className="flex-1 min-w-[200px]">
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 ml-1">Supplier</label>
                         <input
                             type="text"
-                            placeholder="Cari supplier..."
+                            placeholder="Cari by nama supplier..."
                             value={supplier}
                             onChange={(e) => setSupplier(e.target.value)}
-                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm w-full font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         />
                     </div>
-                    <button
-                        onClick={() => { setPage(0); fetchData(); }}
-                        className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                    >
-                        🔍 Cari
-                    </button>
-                    <button
-                        onClick={() => { setBulan(now.getMonth() + 1); setTahun(now.getFullYear()); setStatus("all"); setSupplier(""); setPage(0); }}
-                        className="px-4 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
-                    >
-                        🔄 Reset
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => { setPage(0); fetchData(); }}
+                            className="px-5 py-2 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-800 shadow-md shadow-gray-900/10 transition-all active:scale-95"
+                        >
+                            Cari
+                        </button>
+                        <button
+                            onClick={() => { setBulan(now.getMonth() + 1); setTahun(now.getFullYear()); setStatus("all"); setSupplier(""); setPage(0); }}
+                            className="px-5 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 hover:text-gray-900 transition-all active:scale-95"
+                        >
+                            Reset
+                        </button>
+                    </div>
                 </div>
             </div>
 

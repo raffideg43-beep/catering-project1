@@ -60,7 +60,7 @@ export default function CompliancePage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto animate-in mt-2">
       {/* ─── Header ─────────────────────────────────────────────── */}
       <div className="pt-2">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
@@ -79,7 +79,7 @@ export default function CompliancePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-2 bg-gray-100/50 rounded-2xl p-1.5 overflow-x-auto flex-nowrap no-scrollbar border border-gray-200/50">
+      <div className="flex gap-2 bg-white/70 backdrop-blur-xl rounded-2xl p-2 overflow-x-auto flex-nowrap no-scrollbar border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] relative z-10">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -180,7 +180,7 @@ function HygieneTab() {
       )}
 
       {checks.map((c) => (
-        <div key={c.id} className="bg-white border rounded-xl p-4">
+        <div key={c.id} className="bg-white/80 backdrop-blur-xl border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] rounded-2xl p-5">
           <div className="flex justify-between items-start mb-3">
             <div>
               <p className="font-semibold">{fmtDate(c.check_date)}</p>
@@ -267,7 +267,7 @@ function TemperatureTab() {
         </div>
       )}
 
-      <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="bg-white/90 backdrop-blur-xl border border-white shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] rounded-2xl overflow-hidden mt-2">
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr>
             <th className="text-left px-4 py-2.5">Jam</th><th className="text-left px-4 py-2.5">Area</th>
@@ -361,7 +361,7 @@ function SamplesTab() {
 
       <div className="grid gap-3">
         {samples.map((s) => (
-          <div key={s.id} className={`bg-white border rounded-xl p-4 ${s.status === "dibuang" ? "opacity-50" : ""}`}>
+          <div key={s.id} className={`bg-white/80 backdrop-blur-xl border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] rounded-2xl p-5 ${s.status === "dibuang" ? "opacity-50" : ""}`}>
             <div className="flex justify-between items-start">
               <div>
                 <p className="font-semibold">{s.sample_code}</p>
@@ -444,7 +444,7 @@ function WasteTab() {
     <div className="space-y-6">
       
       {/* SECTION: Input Laporan Harian */}
-      <div className="bg-white border rounded-xl p-5 space-y-4 shadow-sm">
+      <div className="bg-white/80 backdrop-blur-xl border border-white shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] rounded-2xl p-6 space-y-5">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <div>
             <h2 className="text-lg font-bold">Input Laporan Sisa Makanan</h2>
@@ -525,7 +525,7 @@ function WasteTab() {
         </div>
       </div>
 
-      <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-white/90 backdrop-blur-xl border border-white shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] rounded-2xl overflow-hidden mt-2">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50"><tr>
@@ -638,7 +638,7 @@ function IncidentsTab() {
       )}
 
       {incidents.map((inc) => (
-        <div key={inc.id} className={`bg-white border rounded-xl p-4 ${inc.status === "investigasi" ? "border-red-300 bg-red-50" : ""}`}>
+        <div key={inc.id} className={`bg-white/80 backdrop-blur-xl border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] rounded-2xl p-5 ${inc.status === "investigasi" ? "border-red-200 bg-red-50/50" : ""}`}>
           <div className="flex justify-between items-start mb-2">
             <div>
               <p className="font-semibold">{inc.incident_code}</p>
@@ -718,7 +718,7 @@ function SLHSTab() {
         const daysLeft = s.days_until_expiry ?? Math.ceil((new Date(s.expires_date).getTime() - Date.now()) / 86400000);
         const isExpiring = daysLeft <= 90;
         return (
-          <div key={s.id} className={`bg-white border rounded-xl p-4 ${isExpiring ? "border-yellow-300 bg-yellow-50" : ""}`}>
+          <div key={s.id} className={`bg-white/80 backdrop-blur-xl border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] rounded-2xl p-5 ${isExpiring ? "border-yellow-300 bg-yellow-50" : ""}`}>
             <div className="flex justify-between items-start">
               <div>
                 <p className="font-semibold">{s.cert_number}</p>

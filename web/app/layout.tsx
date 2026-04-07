@@ -3,6 +3,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 import { Inter } from "next/font/google";
+import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="id" className={inter.className}>
       <head />
-      <body className="bg-gray-50 text-gray-900 antialiased selection:bg-blue-200 selection:text-blue-900">
+      <body className="bg-background text-foreground antialiased selection:bg-primary-100 selection:text-primary-900">
         <ErrorBoundary>
           <ToastProvider>
             {children}

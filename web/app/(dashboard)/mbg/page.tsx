@@ -76,11 +76,11 @@ export default function MbgPage() {
     const totalGross = totalPortions * pricePerPortion;
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-6 sm:space-y-8 animate-in mt-2">
             <PageHeader title="MBG — Penyerahan" subtitle={`${MONTHS_FULL[bulan]} ${tahun}`} />
 
             {/* Filter */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-5 flex flex-wrap gap-4 items-end overflow-visible z-20 relative">
                 <div>
                     <label className="block text-xs text-gray-500 mb-1">Bulan</label>
                     <select value={bulan} onChange={e => { setBulan(Number(e.target.value)); }}
@@ -115,7 +115,7 @@ export default function MbgPage() {
             </div>
 
             {/* Tabel Penyerahan */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2 relative z-10">
                 <div className="px-5 py-4 border-b border-gray-100">
                     <h2 className="font-semibold text-gray-800">📋 Daftar Penyerahan ({summaries.length} hari)</h2>
                 </div>

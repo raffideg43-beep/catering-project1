@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 async def render_driver_trip(update: Update, context: ContextTypes.DEFAULT_TYPE, message_id: Optional[int] = None):
     token = context.user_data.get("token")
     if not token:
+        if update.callback_query:
+            await update.callback_query.answer("Sesi habis. Silakan /start ulang.", show_alert=True)
+        else:
+            await update.message.reply_text("Sesi habis. Silakan /start ulang.")
         return
 
     api = get_api_client(settings.backend_url)
@@ -24,10 +28,13 @@ async def render_driver_trip(update: Update, context: ContextTypes.DEFAULT_TYPE,
     except Exception as e:
         logger.error(f"Driver trip fetch error: {e}")
         text = "❌ Gagal mengambil data pengiriman. Coba lagi nanti."
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text)
-        else:
-            await update.message.reply_text(text)
+        try:
+            if update.callback_query:
+                await update.callback_query.edit_message_text(text)
+            else:
+                await update.message.reply_text(text)
+        except Exception:
+            pass
         return
 
     data = resp.get("data", {})
@@ -35,14 +42,14 @@ async def render_driver_trip(update: Update, context: ContextTypes.DEFAULT_TYPE,
     deliveries = data.get("deliveries", [])
 
     text_lines = [
-        "🚚 *Daftar Pengiriman MBG Hari Ini*",
+        "🚚 <b>Daftar Pengiriman MBG Hari Ini</b>",
         f"📅 Tanggal: {data.get('date')}\n"
     ]
 
     keyboard = []
 
     if not has_delivery:
-        text_lines.append("⚠️ *Belum ada surat jalan dari Dapur.*")
+        text_lines.append("⚠️ <b>Belum ada surat jalan dari Dapur.</b>")
         text_lines.append("Silakan admin klik /serah terlebih dahulu untuk memproses stok dapur.")
     else:
         text_lines.append("Berikut adalah daftar sekolah yang siap diantar:")
@@ -79,7 +86,7 @@ async def render_driver_trip(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 status_icon = "✅"
                 status_text = f"Tiba di lokasi jam {arrive}"
 
-            text_lines.append(f"{status_icon} *{sname}* ({porsi} porsi)")
+            text_lines.append(f"{status_icon} <b>{sname}</b> ({porsi} porsi)")
             text_lines.append(f"└ Status: {status_text}")
             text_lines.append("")
 
@@ -89,10 +96,13 @@ async def render_driver_trip(update: Update, context: ContextTypes.DEFAULT_TYPE,
     final_text = "\n".join(text_lines)
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if update.callback_query:
-        await update.callback_query.edit_message_text(final_text, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(final_text, reply_markup=reply_markup, parse_mode="Markdown")
+    try:
+        if update.callback_query:
+            await update.callback_query.edit_message_text(final_text, reply_markup=reply_markup, parse_mode="HTML")
+        else:
+            await update.message.reply_text(final_text, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"Driver trip render warning (maybe not modified): {e}")
 
 
 @requires_role(["driver", "owner", "admin"])

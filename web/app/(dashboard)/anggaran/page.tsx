@@ -178,7 +178,7 @@ function OverviewTab() {
                             { label: "Sisa Anggaran", value: fmtRp(data.sisa_anggaran), icon: sisa > 0 ? "⚠️" : "✅", color: sisa > 0 ? "red" : "gray" },
                             { label: "Total Porsi", value: data.total_porsi.toLocaleString("id-ID"), icon: "🍱", color: "purple" },
                         ].map(card => (
-                            <div key={card.label} className={`bg-white rounded-xl border shadow-sm p-4 ${card.color === "red" ? "border-red-200 bg-red-50" : "border-gray-100"}`}>
+                            <div key={card.label} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border p-5 ${card.color === "red" ? "border-red-200 bg-red-50/50" : "border-white"}`}>
                                 <p className="text-xs text-gray-500 mb-1">{card.icon} {card.label}</p>
                                 <p className={`text-lg font-bold ${card.color === "red" ? "text-red-700" : "text-gray-900"}`}>{card.value}</p>
                             </div>
@@ -186,7 +186,7 @@ function OverviewTab() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden">
                             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
                                 <h2 className="font-bold text-gray-900">💰 Pagu & Pencairan Dana</h2>
                                 <div className="flex gap-2">
@@ -224,7 +224,7 @@ function OverviewTab() {
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden">
                             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
                                 <h2 className="font-bold text-gray-900">🏦 Saldo Kas</h2>
                                 <div className="flex gap-2">
@@ -255,7 +255,7 @@ function OverviewTab() {
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-6">
                         <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi vs Budget Keseluruhan (Bulan Ini)</h2>
                         <div className="space-y-4">
                             {Object.values(data.juknis_breakdown).map((bd, idx) => {
@@ -503,7 +503,7 @@ function BukuKasTab() {
 
     return (
         <div className="space-y-6">
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-5 relative z-20">
                 <div className="flex flex-col sm:flex-row gap-4 items-end">
                     <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Pilih Akun Kas</label>
@@ -532,7 +532,7 @@ function BukuKasTab() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2 relative z-10">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -586,20 +586,20 @@ function AnggaranTabs() {
     };
 
     return (
-        <div className="space-y-6 max-w-6xl mx-auto pb-20">
+        <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto pb-20 animate-in mt-2">
             <PageHeader title="📊 Keuangan & Anggaran" subtitle="Pantau realisasi anggaran dan riwayat kas" />
 
-            <div className="border-b border-gray-300 sticky top-0 bg-gray-50 z-10 pt-2">
-                <div className="flex space-x-8">
+            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+                <div className="flex space-x-8 px-2">
                     <button onClick={() => setTab("overview")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "overview" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "overview" ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}>
                         📊 Overview
                     </button>
                     <button onClick={() => setTab("buku-kas")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "buku-kas" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "buku-kas" ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}>
                         📒 Buku Kas Lengkap
                     </button>

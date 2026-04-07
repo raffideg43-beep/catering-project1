@@ -9,31 +9,33 @@ export default function KaryawanPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Karyawan");
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6 sm:space-y-8 animate-in mt-2 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
             Karyawan & HR
           </h1>
-          <p className="text-gray-500 mt-1">Kelola data pegawai, absensi, dan penggajian</p>
+          <p className="text-gray-500 font-medium text-sm mt-1">Kelola data pegawai, absensi, dan penggajian</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 mb-6 space-x-4">
+      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+        <div className="flex space-x-8 px-2 overflow-x-auto no-scrollbar">
         {["Karyawan", "Jabatan", "Absensi", "Penggajian"].map((tab) => (
           <button
             key={tab}
-            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
+            className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 whitespace-nowrap ${
               activeTab === tab
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
             }`}
             onClick={() => setActiveTab(tab as Tab)}
           >
             {tab}
           </button>
         ))}
+        </div>
       </div>
 
       {/* Content */}
@@ -108,7 +110,7 @@ function KaryawanTab() {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 relative z-0">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-gray-800">Daftar Karyawan</h2>
         <button onClick={() => {
@@ -240,7 +242,7 @@ function JabatanTab() {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 relative z-0">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-gray-800">Daftar Jabatan</h2>
         <button onClick={() => { setFormData({ id: "", name: "", salary_type: "harian", base_salary: "" }); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors cursor-pointer flex items-center gap-2">
@@ -382,7 +384,7 @@ function AbsensiTab() {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 relative z-0">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Grid Absensi Mingguan</h2>
@@ -525,7 +527,7 @@ function PenggajianTab() {
 
   if (selectedPeriod) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 relative z-0">
         <div className="flex items-center space-x-4 mb-6 pb-6 border-b">
           <button onClick={() => setSelectedPeriod(null)} className="text-gray-500 hover:text-gray-900 cursor-pointer">← Kembali</button>
           <h2 className="text-xl font-bold">{selectedPeriod.name}</h2>
@@ -589,7 +591,7 @@ function PenggajianTab() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 relative z-0">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold text-gray-800">Daftar Periode Penggajian</h2>
         <button onClick={() => {

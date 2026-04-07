@@ -88,7 +88,7 @@ function HargaTab() {
                 </div>
             )}
 
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2">
                 {loading ? (
                     <div className="flex justify-center py-16">
                         <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
@@ -383,7 +383,7 @@ function JadwalTab() {
                 <p className="text-gray-500 text-sm mt-1">Timeline harian: persiapan → masak → pengiriman</p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6">
                 {!master ? (
                     <div className="text-center py-4">
                         <p className="text-amber-600 font-semibold text-lg mb-2">⚠️ Master Schedule Belum Di-setup</p>
@@ -464,7 +464,7 @@ function JadwalTab() {
             )}
 
             {!hasSchedule && !isDraft && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
+                <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white p-6 text-center">
                     <p className="text-gray-500 mb-4">Belum ada jadwal untuk {weekOffset === 0 ? "minggu ini" : "minggu depan"}</p>
                     <div className="flex justify-center gap-3 flex-wrap">
                         <button onClick={handleLoadMaster} disabled={generating || !master}
@@ -482,7 +482,7 @@ function JadwalTab() {
             {displayData && displayData.days && displayData.days.length > 0 && (
                 <div className="space-y-4">
                     {displayData.days.map(day => (
-                        <div key={day.date} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${day.is_holiday ? "border-red-200" : "border-gray-100"}`}>
+                        <div key={day.date} className={`bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] overflow-hidden border ${day.is_holiday ? "border-red-200" : "border-white"}`}>
                             <div className={`px-5 py-3 ${day.is_holiday ? "bg-red-50" : "bg-gradient-to-r from-blue-50 to-indigo-50/30"}`}>
                                 <div className="flex items-center justify-between">
                                     <div>
@@ -624,23 +624,23 @@ function InsightsTabs() {
     };
 
     return (
-        <div className="space-y-6 max-w-6xl mx-auto pb-20">
+        <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto pb-20 animate-in mt-2">
             <PageHeader title="📈 Insights & AI Analisis" />
 
-            <div className="border-b border-gray-300 sticky top-0 bg-gray-50 z-10 pt-2">
-                <div className="flex space-x-8">
+            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+                <div className="flex space-x-8 px-2">
                     <button
                         onClick={() => setTab("harga")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "harga" ? "border-purple-600 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "harga" ? "border-purple-600 text-purple-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}
                     >
                         📈 Track Harga
                     </button>
                     <button
                         onClick={() => setTab("jadwal")}
-                        className={`px-4 py-3 font-medium border-b-2 transition-colors duration-200 ${
-                            activeTab === "jadwal" ? "border-purple-600 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-900"
+                        className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${
+                            activeTab === "jadwal" ? "border-purple-600 text-purple-700" : "border-transparent text-gray-500 hover:text-gray-900 hover:border-gray-300"
                         }`}
                     >
                         📅 AI Jadwal

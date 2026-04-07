@@ -267,18 +267,18 @@ export default function StokPage() {
     const deltaNum = koreksiModal ? newQtyNum - (koreksiModal.product.stock_qty_display ?? koreksiModal.product.stock_qty) : 0;
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-6 sm:space-y-8 animate-in mt-2">
             <PageHeader
                 title="Stok Bahan"
                 subtitle={`${items.length} item total`}
                 actions={
                     <div className="flex items-center gap-2">
                         <Link href="/stok/riwayat"
-                            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
-                            📋 Riwayat Lengkap
+                            className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 bg-white shadow-sm transition-all">
+                            📋 Riwayat
                         </Link>
                         <button onClick={exportCsv}
-                            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+                            className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 hover:-translate-y-0.5 hover:shadow-emerald-600/30 transition-all cursor-pointer ring-1 ring-emerald-700">
                             📥 Export CSV
                         </button>
                     </div>
@@ -294,7 +294,7 @@ export default function StokPage() {
             </div>
 
             {/* ═══ PROYEKSI STOK ════════════════════════════════════════ */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 sm:p-8">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div>
                         <h3 className="font-bold text-gray-900">📊 Proyeksi Stok</h3>
@@ -399,7 +399,7 @@ export default function StokPage() {
             </div>
 
             {/* Filter */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-end">
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-5 flex flex-wrap gap-4 items-end overflow-visible z-20 relative">
                 <div>
                     <label className="block text-xs text-gray-500 mb-1">Kategori</label>
                     <select value={category} onChange={e => setCategory(e.target.value)}
@@ -427,7 +427,7 @@ export default function StokPage() {
             </div>
 
             {/* Tabel */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-[0_2px_15px_-4px_rgba(0,0,0,0.05)] border border-white overflow-hidden mt-2 relative z-10">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
