@@ -68,6 +68,7 @@ export default function DashboardPage() {
     const [daily, setDaily] = useState<DailyData | null>(null);
     const [monthly, setMonthly] = useState<MonthlyData | null>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [tenantName, setTenantName] = useState("SPPG");
@@ -76,14 +77,16 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
         try {
-            const [d, m, t] = await Promise.all([
+            const [d, m, t, empList] = await Promise.all([
                 apiGet("/reports/daily"),
                 apiGet("/reports/monthly"),
                 apiGet("/transactions", { limit: 10, sort: "created_at_desc" }),
+                apiGet("/employees?is_active=true").catch(() => null),
             ]);
             setDaily(d?.data ?? null);
             setMonthly(m?.data ?? null);
             setTransactions(t?.data?.items ?? t?.data ?? []);
+            setEmployees(empList?.data ?? []);
             try {
                 const me = await apiGet("/auth/me");
                 setTenantName(me?.data?.tenant_name ?? "SPPG");
@@ -132,8 +135,8 @@ export default function DashboardPage() {
                 <p className="text-gray-500 font-medium text-sm mt-1">{todayLabel()}</p>
             </div>
 
-            {/* ─── Stat Cards (2x2 di mobile, 4 kolom di desktop) ─ */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {/* ─── Stat Cards (2x3 di desktop) ─ */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 sm:gap-6">
                 <StatCard
                     title="Porsi Hari Ini"
                     value={daily?.mbg.has_delivery ? `${daily.mbg.total_portions.toLocaleString("id-ID")} porsi` : "—"}
@@ -158,6 +161,42 @@ export default function DashboardPage() {
                     subtitle="Bulan ini"
                     icon="📊"
                 />
+                <StatCard
+                    title="Hutang Outstanding"
+                    value={monthly ? formatRp(monthly.expenses.hutang_outstanding) : "—"}
+                    subtitle="Belum lunas"
+                    icon="🧾"
+                />
+                <StatCard
+                    title="Karyawan Aktif"
+                    value={`${employees.length} Orang`}
+                    subtitle="Terdata di sistem"
+                    icon="👥"
+                />
+            </div>
+
+            {/* ─── Shortcut Khusus Operasional (Premium Glassmorphism) ─── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+                <button onClick={() => router.push('/mbg')} className="bg-gradient-to-br from-blue-500 to-indigo-600 p-5 rounded-3xl text-left border border-white/20 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:-translate-y-1 transition-all group">
+                    <span className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl text-white mb-3 shadow-inner group-hover:scale-110 transition-transform">🍱</span>
+                    <h3 className="font-bold text-white text-lg leading-tight">Input Serah</h3>
+                    <p className="text-blue-100 text-xs mt-1">Catat penyerahan MBG</p>
+                </button>
+                <button onClick={() => router.push('/dapur')} className="bg-gradient-to-br from-orange-500 to-red-500 p-5 rounded-3xl text-left border border-white/20 shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 hover:-translate-y-1 transition-all group">
+                    <span className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl text-white mb-3 shadow-inner group-hover:scale-110 transition-transform">🍽️</span>
+                    <h3 className="font-bold text-white text-lg leading-tight">Master Menu BOM</h3>
+                    <p className="text-orange-100 text-xs mt-1">Struktur resep dapur</p>
+                </button>
+                <button onClick={() => router.push('/pembukuan')} className="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-3xl text-left border border-white/20 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:-translate-y-1 transition-all group">
+                    <span className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl text-white mb-3 shadow-inner group-hover:scale-110 transition-transform">🛒</span>
+                    <h3 className="font-bold text-white text-lg leading-tight">Catat Belanja</h3>
+                    <p className="text-emerald-100 text-xs mt-1">Input nota manual</p>
+                </button>
+                <button onClick={() => router.push('/stok')} className="bg-gradient-to-br from-purple-500 to-fuchsia-600 p-5 rounded-3xl text-left border border-white/20 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:-translate-y-1 transition-all group">
+                    <span className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl text-white mb-3 shadow-inner group-hover:scale-110 transition-transform">📦</span>
+                    <h3 className="font-bold text-white text-lg leading-tight">Cek Stok Gudang</h3>
+                    <p className="text-purple-100 text-xs mt-1">Pantau & opname</p>
+                </button>
             </div>
 
             {/* Charts Section */}

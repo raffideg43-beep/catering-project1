@@ -30,8 +30,9 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", icon: <Home className="w-5 h-5" />, label: "Dashboard" },
   
   { type: "divider", label: "OPERASIONAL" },
+  { href: "/dapur", icon: <UtensilsCrossed className="w-5 h-5" />, label: "Dapur & Resep (BOM)" },
   { href: "/pembukuan", icon: <BookOpen className="w-5 h-5" />, label: "Pembukuan" },
-  { href: "/mbg", icon: <UtensilsCrossed className="w-5 h-5" />, label: "MBG Penyerahan" },
+  { href: "/mbg", icon: <Package className="w-5 h-5" />, label: "MBG Penyerahan" },
   { 
     href: "/stok", 
     icon: <Package className="w-5 h-5" />, 

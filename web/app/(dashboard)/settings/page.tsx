@@ -4,13 +4,12 @@ import { useState } from "react";
 import { TabIdentitas } from "./components/TabIdentitas";
 import { TabSekolah } from "./components/TabSekolah";
 import { TabSupplier } from "./components/TabSupplier";
-import { TabBahan } from "./components/TabBahan";
 import { TabAlokasi } from "./components/TabAlokasi";
 import { TabTelegram } from "./components/TabTelegram";
 import { TabImport } from "./components/TabImport";
 import { TabUsers } from "./components/TabUsers";
 
-type TabType = "identitas" | "sekolah" | "supplier" | "bahan" | "alokasi" | "telegram" | "import" | "users";
+type TabType = "identitas" | "sekolah" | "supplier" | "alokasi" | "telegram" | "import" | "users";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("identitas");
@@ -19,7 +18,6 @@ export default function SettingsPage() {
     { id: "identitas", label: "Identitas SPPG" },
     { id: "sekolah", label: "Sekolah" },
     { id: "supplier", label: "Supplier" },
-    { id: "bahan", label: "Bahan & BOM" },
     { id: "alokasi", label: "Alokasi MBG" },
     { id: "telegram", label: "Telegram" },
     { id: "import", label: "Import Data" },
@@ -58,7 +56,6 @@ export default function SettingsPage() {
         {activeTab === "identitas" && <TabIdentitas />}
         {activeTab === "sekolah" && <TabSekolah />}
         {activeTab === "supplier" && <TabSupplier />}
-        {activeTab === "bahan" && <TabBahan />}
         {activeTab === "alokasi" && <TabAlokasi />}
         {activeTab === "telegram" && <TabTelegram />}
         {activeTab === "import" && <TabImport />}

@@ -1,0 +1,449 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
+
+interface Product {
+  id: string; name: string; category: string; unit: string; display_unit?: string; conversion_factor?: number;
+}
+
+interface Component {
+  id: string; name: string;
+}
+
+interface Recipe {
+  id: string; menu_id: string; ingredient_id: string | null;
+  component_id: string | null; qty_needed: number; daily_qty?: number; usage_type?: string; unit: string;
+}
+
+interface SimIngredient {
+  ingredient_id: string; name: string; unit: string; display_unit?: string;
+  total_needed: number; total_needed_display?: number;
+  available: number; available_display?: number;
+  sufficient: boolean; shortage: number; shortage_display?: string;
+}
+
+interface FormRowItem {
+  ingredient_name: string;
+  ingredient_id: string | null;
+  qty_needed: number;
+  unit: string;
+  usage_type: 'per_porsi' | 'per_hari';
+}
+
+export function TabMenuBOM() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [menus, setMenus] = useState<Product[]>([]);
+  const [components, setComponents] = useState<Component[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  /* ─── Menu BOM ───────────────────────────────────────────────────── */
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
+  const [menuRecipes, setMenuRecipes] = useState<Record<string, Recipe[]>>({});
+  const [bomPreview, setBomPreview] = useState<Record<string, SimIngredient[]>>({});
+
+  /* ─── Menu form (Integrated) ─────────────────────────────────────── */
+  const [showMenuModal, setShowMenuModal] = useState(false);
+  const [menuForm, setMenuForm] = useState({ name: "", unit: "porsi" });
+  const [menuFormComps, setMenuFormComps] = useState<{ component_id: string }[]>([]);
+  const [menuFormDirects, setMenuFormDirects] = useState<FormRowItem[]>([]);
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [prodRes, compRes] = await Promise.all([
+        apiGet("/products"),
+        apiGet("/recipes/components"),
+      ]);
+      const allProducts: Product[] = prodRes?.data?.items || prodRes?.data || [];
+      setProducts(allProducts);
+      setMenus(allProducts.filter(p => p.category === "produk_jadi"));
+      setComponents(compRes?.data || []);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const fetchMenuRecipes = async (menuId: string) => {
+    try {
+      const res = await apiGet("/recipes");
+      const all: Recipe[] = res?.data || [];
+      setMenuRecipes(prev => ({ ...prev, [menuId]: all.filter(r => r.menu_id === menuId) }));
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchBomPreview = async (menuId: string) => {
+    try {
+      const res = await apiGet(`/recipes/simulate?menu_id=${menuId}&qty=1`);
+      setBomPreview(prev => ({ ...prev, [menuId]: res?.data?.ingredients || [] }));
+    } catch (e) { console.error(e); }
+  };
+
+  const getCompName = (compId: string) => components.find(c => c.id === compId)?.name || "?";
+  const getIngName = (ingId: string) => products.find(p => p.id === ingId)?.name || "?";
+  const getIngFactor = (ingId: string) => products.find(p => p.id === ingId)?.conversion_factor || 1;
+  const getIngDisplayUnit = (ingId: string) => products.find(p => p.id === ingId)?.display_unit || products.find(p => p.id === ingId)?.unit || "";
+
+  const findProductByName = (name: string): Product | undefined => {
+    return products.find(p => p.name.toLowerCase().trim() === name.toLowerCase().trim());
+  };
+
+  const getOrCreateIngredient = async (name: string, unit: string): Promise<string> => {
+    const existing = findProductByName(name);
+    if (existing) return existing.id;
+    const res = await apiPost("/products", { name: name.trim(), category: "bahan_baku", display_unit: unit || "kg", unit: unit || "kg", harga: 0, sell_price: 0, stock_min: 0, stock_qty: 0 });
+    return res?.data?.id;
+  };
+
+  const toggleMenu = async (menuId: string) => {
+    if (expandedMenu === menuId) { setExpandedMenu(null); return; }
+    setExpandedMenu(menuId);
+    await fetchMenuRecipes(menuId);
+  };
+
+  const deleteRecipe = async (recipeId: string, menuId: string) => {
+    try { await apiDelete(`/recipes/${recipeId}`); await fetchMenuRecipes(menuId); } catch { alert("Gagal menghapus"); }
+  };
+
+  const openMenuForm = () => {
+    setMenuForm({ name: "", unit: "porsi" });
+    setMenuFormComps([]);
+    setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
+    setShowMenuModal(true);
+  };
+
+  const updateMenuDirectRow = (idx: number, val: string) => {
+    setMenuFormDirects(prev => {
+      const nw = [...prev];
+      nw[idx].ingredient_name = val;
+      const exist = findProductByName(val);
+      if (exist) {
+        nw[idx].ingredient_id = exist.id;
+        nw[idx].unit = exist.unit;
+      } else {
+        nw[idx].ingredient_id = null;
+      }
+      return nw;
+    });
+  };
+
+  const menuFormValid = menuForm.name.trim().length > 0
+    && (menuFormComps.length > 0 || menuFormDirects.some(r => r.ingredient_name.trim() && r.qty_needed > 0));
+
+  const saveMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving || !menuFormValid) return;
+    setSaving(true);
+    try {
+      const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, harga: 0, sell_price: 0, stock_min: 0 });
+      const menuId = prodRes?.data?.id;
+      if (!menuId) throw new Error("Gagal membuat menu");
+
+      for (const comp of menuFormComps) {
+        if (comp.component_id) {
+          await apiPost("/recipes/attach-component", { menu_id: menuId, component_id: comp.component_id });
+        }
+      }
+
+      for (const item of menuFormDirects) {
+        if (item.ingredient_name.trim() && item.qty_needed > 0) {
+          const actualIngId = await getOrCreateIngredient(item.ingredient_name, item.unit);
+          await apiPost("/recipes", {
+            menu_id: menuId, ingredient_id: actualIngId,
+            qty_needed: item.usage_type === "per_porsi" ? item.qty_needed : 0,
+            daily_qty: item.usage_type === "per_hari" ? item.qty_needed : 0,
+            usage_type: item.usage_type,
+            unit: item.unit || "kg"
+          });
+        }
+      }
+
+      setShowMenuModal(false);
+      await fetchAll();
+    } catch (err: any) { alert(err?.response?.data?.detail || "Gagal menyimpan menu"); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-20 text-blue-600">
+      <div className="w-10 h-10 border-4 border-blue-500 border-t-white rounded-full animate-spin mb-4 shadow-md bg-blue-100" />
+      <span className="font-medium animate-pulse text-sm tracking-wide">Mendeteksi Data Menu (BOM)...</span>
+    </div>
+  );
+
+  return (
+    <div className="animate-in fade-in zoom-in-95 duration-300">
+      <datalist id="bahan-list">
+        {products.filter(p => ["bahan_baku", "kemasan"].includes(p.category)).map(b => (
+          <option key={b.id} value={b.name} />
+        ))}
+      </datalist>
+
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 border-l-4 border-orange-500 pl-3 leading-none py-0.5">🍽️ Master Produk Menu (Bill of Materials)</h2>
+          <p className="text-gray-500 text-sm mt-2 ml-4 max-w-xl">
+            Atur komposisi porsi masakan. Saat Menu / Produk ini dibuat (saat Penyerahan), semua stok bahan akan dipotong sesuai BOM.
+          </p>
+        </div>
+        <button 
+          onClick={openMenuForm} 
+          className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20 rounded-xl hover:shadow-orange-500/40 hover:-translate-y-0.5 transition-all font-bold text-sm whitespace-nowrap"
+        >
+          + Ciptakan Menu Baru
+        </button>
+      </div>
+
+      {menus.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-100 rounded-3xl shadow-sm text-gray-400">
+          <span className="text-6xl mb-4 opacity-50 grayscale">🍽️</span>
+          <p className="font-semibold text-gray-600">Belum ada daftar Menu Produksi.</p>
+          <p className="text-sm mt-1">Gunakan tombol [+ Baru] untuk membuat Bill of Material.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {menus.map(menu => {
+            const isOpen = expandedMenu === menu.id;
+            const recipes = menuRecipes[menu.id] || [];
+            const compRecipes = recipes.filter(r => r.component_id);
+            const directRecipes = recipes.filter(r => r.ingredient_id && !r.component_id);
+            const preview = bomPreview[menu.id];
+
+            return (
+              <div key={menu.id} className={`border rounded-3xl bg-white shadow-[0_2px_15px_-3px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-300 ${isOpen ? 'shadow-[0_12px_40px_rgba(0,0,0,0.06)] border-orange-200' : 'border-gray-100/80 hover:border-orange-100'}`}>
+                <button onClick={() => toggleMenu(menu.id)}
+                  className={`w-full flex justify-between items-center px-6 py-5 transition-colors relative ${isOpen ? 'bg-orange-50/50' : 'hover:bg-gray-50'}`}>
+                  {isOpen && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500" />}
+                  <div className="flex items-center gap-4">
+                    <span className={`text-xl transition-transform duration-300 ${isOpen ? 'rotate-90 text-orange-500' : 'text-gray-400'}`}>▶</span>
+                    <div className="text-left flex flex-col">
+                      <span className="font-bold text-gray-900 text-lg group-hover:text-orange-600">{menu.name}</span>
+                      <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider mt-0.5">Basis Output: <span className="text-orange-600">1 {menu.unit}</span></span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-xs font-bold px-3 py-1 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-600">
+                      <span className="text-purple-600 font-black">{compRecipes.length}</span> Modul <span className="text-gray-300 px-1">|</span> <span className="text-green-600 font-black">{directRecipes.length}</span> Direct
+                    </span>
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="px-6 pb-6 border-t border-orange-100 bg-white space-y-6 pt-5 animate-in slide-in-from-top-2 duration-300">
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Modul Komponen */}
+                      <div className="bg-purple-50/30 border border-purple-100 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-100/50 to-transparent rounded-bl-full pointer-events-none" />
+                        <h4 className="font-bold text-purple-900 mb-3 text-sm flex items-center gap-2">
+                          🧩 Modul Komponen Gabungan
+                        </h4>
+                        {compRecipes.length === 0
+                          ? <p className="text-gray-400 text-sm italic ml-1">Tidak memakai sistem komponen.</p>
+                          : <div className="space-y-2">{compRecipes.map(r => (
+                              <div key={r.id} className="flex justify-between items-center bg-white border border-purple-100 px-4 py-2.5 rounded-xl shadow-sm hover:border-purple-200 transition-colors">
+                                <span className="text-purple-800 font-semibold">{getCompName(r.component_id!)}</span>
+                                <button onClick={() => deleteRecipe(r.id, menu.id)} className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">✕</button>
+                              </div>
+                            ))}</div>}
+                      </div>
+
+                      {/* Bahan Langsung */}
+                      <div className="bg-green-50/30 border border-green-100 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-100/50 to-transparent rounded-bl-full pointer-events-none" />
+                        <h4 className="font-bold text-green-900 mb-3 text-sm flex items-center gap-2">
+                          🧪 Bahan Baku / Racik Langsung
+                        </h4>
+                        {directRecipes.length === 0
+                          ? <p className="text-gray-400 text-sm italic ml-1">Tidak menggunakan bahan mentah tunggal.</p>
+                          : <div className="space-y-2">{directRecipes.map(r => {
+                              const isDaily = r.usage_type === "per_hari";
+                              const ingId = r.ingredient_id || "";
+                              const factor = getIngFactor(ingId);
+                              const dispUnit = getIngDisplayUnit(ingId) || r.unit;
+                              const rawQty = isDaily ? (r.daily_qty || r.qty_needed) : r.qty_needed;
+                              const displayQty = isDaily ? rawQty / factor : rawQty / factor;
+                              const qtyLabel = isDaily ? `${displayQty.toLocaleString("id-ID")} ${dispUnit}/hari (Abaikan Porsi)` : `${displayQty.toLocaleString("id-ID")} ${dispUnit}/porsi`;
+                              
+                              return (
+                                <div key={r.id} className={`flex justify-between items-center px-4 py-2.5 border rounded-xl shadow-sm transition-colors ${isDaily ? 'bg-orange-50/50 border-orange-100' : 'bg-white border-green-100 hover:border-green-200'}`}>
+                                  <div className="flex-1 pr-3">
+                                    <div className={`font-semibold ${isDaily ? 'text-orange-900' : 'text-green-900'}`}>
+                                      {getIngName(r.ingredient_id!)}
+                                      {isDaily && <span className="ml-2 text-[10px] font-black uppercase tracking-wider bg-orange-200/50 text-orange-700 px-1.5 py-0.5 rounded-md">FIXED BIAYA HARIAN</span>}
+                                    </div>
+                                    <div className={`text-xs font-medium mt-0.5 ${isDaily ? 'text-orange-600' : 'text-green-600'}`}>{qtyLabel}</div>
+                                  </div>
+                                  <button onClick={() => deleteRecipe(r.id, menu.id)} className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors shrink-0">✕</button>
+                                </div>
+                              );
+                            })}</div>}
+                      </div>
+                    </div>
+
+                    {/* BOM Preview Engine */}
+                    <div className="pt-6 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-bold text-gray-900 text-sm">Validasi Kalkulasi Sistem BOM</h4>
+                        <button onClick={() => fetchBomPreview(menu.id)} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors shadow-sm whitespace-nowrap">
+                          🚀 Jalankan Simulasi 1 {menu.unit}
+                        </button>
+                      </div>
+                      
+                      {preview && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-inner">
+                          {preview.length === 0
+                            ? <p className="text-gray-500 text-sm font-medium p-6 text-center italic">Simulation Error: Tidak ditemukan akar bahan (BOM Kosong).</p>
+                            : <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-slate-800 text-white font-semibold text-xs tracking-wider uppercase">
+                                    <th className="py-3 px-4 text-left font-medium">Material Mentah (Diekstrak)</th>
+                                    <th className="py-3 px-4 text-left font-medium">Beban Per {menu.unit}</th>
+                                    <th className="py-3 px-4 text-left font-medium">Stok Aktual di Gudang</th>
+                                    <th className="py-3 px-4 text-center font-medium w-32">Status (1 Porsi)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {preview.map((ing, i) => (
+                                    <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-white transition-colors bg-white/50">
+                                      <td className="py-3 px-4 font-bold text-slate-800">{ing.name}</td>
+                                      <td className="py-3 px-4 text-slate-600 font-mono font-medium">{ing.total_needed_display ?? ing.total_needed} <span className="text-slate-400">{ing.display_unit || ing.unit}</span></td>
+                                      <td className="py-3 px-4 text-slate-600 font-mono font-medium">{ing.available_display ?? ing.available} <span className="text-slate-400">{ing.display_unit || ing.unit}</span></td>
+                                      <td className="py-3 px-4 text-center">
+                                        {ing.sufficient
+                                        ? <span className="inline-flex py-1 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-100">Aman</span>
+                                        : <span className="inline-flex py-1 px-2 bg-red-50 text-red-600 font-bold text-[11px] rounded border border-red-100 uppercase tracking-widest whitespace-nowrap">Kurang {ing.shortage_display ?? ing.shortage}</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                          }
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Modal: Menu Baru (Integrated) ─────────────────────────────── */}
+      {showMenuModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMenuModal(false)} />
+          <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="text-2xl font-bold tracking-tight text-gray-900 bg-clip-text">Ciptakan Menu BOM Baru</h3>
+            </div>
+
+            <form onSubmit={saveMenu} className="flex flex-col overflow-hidden max-h-full">
+              <div className="p-6 space-y-8 overflow-y-auto no-scrollbar pb-10">
+                {/* Product Creation Data */}
+                <div className="grid grid-cols-3 gap-6 bg-orange-50/50 border border-orange-100 rounded-2xl p-5">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2 pl-1">Judul Menu / Produk</label>
+                    <input required autoFocus type="text" placeholder="Contoh: Bistik Sapi Mentega" value={menuForm.name} onChange={e => setMenuForm({ ...menuForm, name: e.target.value })} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-orange-500 font-bold transition-all shadow-sm outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2 pl-1">Target Satuan Output</label>
+                    <input required type="text" placeholder="porsi / box" value={menuForm.unit} onChange={e => setMenuForm({ ...menuForm, unit: e.target.value })} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-orange-500 font-bold text-center transition-all shadow-sm outline-none" />
+                  </div>
+                </div>
+
+                {/* Komponen Input */}
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-purple-900 mb-3 border-b border-purple-100 pb-2">
+                    <span>🧩 Pasang Modul Komponen Tambahan (Opsional)</span>
+                  </label>
+                  <div className="space-y-4">
+                    {menuFormComps.length === 0 && <p className="text-sm text-gray-400 italic">Resep ini belum menyematkan sub-komponen (seperti Bumbu Halus)</p>}
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {menuFormComps.map((row, idx) => (
+                        <div key={idx} className="flex gap-2 items-center bg-purple-50 p-2 rounded-xl border border-purple-100 shadow-sm animate-in fade-in zoom-in-95">
+                          <select required value={row.component_id} onChange={e => setMenuFormComps(prev => prev.map((r, i) => i===idx ? {component_id: e.target.value} : r))} className="flex-1 px-3 py-2 border-none rounded-lg text-sm bg-white font-semibold text-purple-900 outline-none cursor-pointer">
+                            <option value="">Pilih komponen resep...</option>
+                            {components.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <button type="button" onClick={() => setMenuFormComps(prev => prev.filter((_, i) => i !== idx))} className="w-8 h-8 rounded-lg bg-white text-gray-400 hover:text-red-500 flex justify-center items-center font-bold shadow-sm">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setMenuFormComps(prev => [...prev, { component_id: "" }])} className="px-5 py-2.5 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-bold text-sm tracking-wide transition-colors">
+                      + Pasang Modul
+                    </button>
+                  </div>
+                </div>
+
+                {/* Direct Ingredients Input */}
+                <div className="pt-4">
+                  <label className="flex items-center gap-2 text-sm font-bold text-green-900 mb-3 border-b border-green-100 pb-2">
+                    <span>🧪 Pasang Bahan Tunggal / Mentah langsung</span>
+                  </label>
+                  <div className="space-y-4">
+                    {menuFormDirects.length === 0 && <p className="text-sm text-gray-400 italic">Peringatan: BOM sangat direkomendasikan memiliki Bahan Mentah</p>}
+                    {menuFormDirects.map((row, idx) => (
+                      <div key={idx} className="bg-white p-4 border border-gray-200 rounded-2xl relative shadow-sm hover:border-green-300 transition-colors group">
+                        <button type="button" onClick={() => setMenuFormDirects(prev => prev.filter((_, i) => i !== idx))} className="absolute right-3 top-3 w-8 h-8 rounded-lg bg-gray-50 text-gray-400 hover:text-white hover:bg-red-500 flex justify-center items-center shadow-sm opacity-0 group-hover:opacity-100 transition-all z-10">✕</button>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                          <div className="sm:col-span-5">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Ketik Master Bahan</label>
+                            <input type="text" list="bahan-list" placeholder="Pilih bahan..."
+                              value={row.ingredient_name} onChange={e => updateMenuDirectRow(idx, e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500 font-bold outline-none" />
+                          </div>
+                          <div className="sm:col-span-3">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Limitasi Konteks</label>
+                            <select 
+                              value={row.usage_type} 
+                              onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, usage_type: e.target.value as any } : r))} 
+                              className={`w-full px-3 py-2 border rounded-xl text-sm font-bold outline-none cursor-pointer ${row.usage_type === 'per_hari' ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-gray-50 border-gray-200 text-gray-700'}`}
+                            >
+                              <option value="per_porsi">Per {menuForm.unit || "Porsi"} (Berlipat / Fleksibel)</option>
+                              <option value="per_hari">Per Hari (Fixed Biaya / Rigid)</option>
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">
+                              Nominal Qty
+                            </label>
+                            <input type="number" step="0.001" min="0" placeholder="Qty" value={row.qty_needed || ""}
+                              onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, qty_needed: parseFloat(e.target.value) || 0 } : r))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500 font-mono outline-none" />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1 text-center">Satuan</label>
+                            <input type="text" placeholder="mis: kg" value={row.unit}
+                              onChange={e => setMenuFormDirects(prev => prev.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-green-500 font-medium text-center outline-none" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setMenuFormDirects(prev => [...prev, { ingredient_name: "", ingredient_id: null, qty_needed: 0, unit: "", usage_type: "per_porsi" }])} className="w-full py-3.5 border-2 border-dashed border-green-200 rounded-2xl text-green-600 hover:bg-green-50 hover:border-green-400 font-bold tracking-wide transition-colors">
+                      + Sisipkan Baris Bahan Penting
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="p-5 border-t border-gray-100 bg-gray-50/80 flex gap-3 justify-end shrink-0">
+                <button type="button" onClick={() => setShowMenuModal(false)} className="px-6 py-3 rounded-xl text-gray-700 font-bold hover:bg-gray-200 transition-colors tracking-wide">Batalkan</button>
+                <button type="submit" disabled={saving || !menuFormValid} className="px-8 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl shadow-lg shadow-orange-500/30 hover:shadow-xl hover:shadow-orange-500/40 disabled:opacity-50 disabled:grayscale font-bold tracking-wide transition-all">
+                  {saving ? "Memproses Pembuatan BOM..." : "Sahkan Struktur BOM ini"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
