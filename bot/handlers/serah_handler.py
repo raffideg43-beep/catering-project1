@@ -163,7 +163,7 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         ])
         await msg.reply_text(
             f"⚠️ *PERINGATAN*\n\n"
-            f"Hari ini *{_esc(hari)}* ({_esc(tanggal)}) — *bukan hari kerja MBG*\\.\n\n"
+            f"Hari ini *{_esc(hari)}* \\({_esc(tanggal)}\\) — *bukan hari kerja MBG*\\.\n\n"
             f"MBG beroperasi Senin\\-Sabtu saja \\(26 hari kerja/bulan\\)\\.\n\n"
             f"Yakin ingin input penyerahan hari ini\\?",
             reply_markup=sunday_keyboard,
@@ -230,9 +230,9 @@ async def serah_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         f"📅 {_esc(hari)}, {_esc(tanggal)}\n"
         f"🍽️ Menu: {_esc(menu_name)}\n\n"
         f"📋 *Ringkasan Estimasi:*\n"
-        f"• Total: *{total_portions} porsi* ({len(schools)} sekolah)\n"
+        f"• Total: *{total_portions} porsi* \\({len(schools)} sekolah\\)\n"
         f"• Anggaran: *{_esc(_fmt_rp(total_rev))}*\n\n"
-        f"Konfirmasi serah dengan porsi standar hari ini?",
+        f"Konfirmasi serah dengan porsi standar hari ini\\?",
         reply_markup=_serah_express_keyboard(),
         parse_mode="MarkdownV2",
     )

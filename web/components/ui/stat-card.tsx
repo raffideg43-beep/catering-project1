@@ -47,7 +47,7 @@ export function StatCard({
                 </div>
             </div>
 
-            <div className="text-2xl sm:text-3xl lg:text-[32px] font-bold tracking-tighter text-gray-900 leading-none mt-2 relative z-10">{value}</div>
+            <div className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tighter text-gray-900 leading-none mt-2 relative z-10">{value}</div>
 
             <div className="flex items-center justify-between mt-auto pt-2 relative z-10">
                 {subtitle && <p className="text-xs font-medium text-gray-400 max-w-[60%] truncate">{subtitle}</p>}
