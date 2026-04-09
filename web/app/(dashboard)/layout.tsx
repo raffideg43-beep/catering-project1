@@ -58,50 +58,27 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings", icon: <Settings className="w-5 h-5" />, label: "Pengaturan Sistem" },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [isReady, setIsReady] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-    }
-    setIsReady(true);
-  }, [router]);
-
-  // Close mobile sidebar on route change
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
-
-  if (!isReady) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-100">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const handleLogout = () => {
-    clearToken();
-    router.push("/login");
-  };
-
+const Sidebar = ({ 
+  mobile = false,
+  collapsed,
+  setCollapsed,
+  pathname,
+}: { 
+  mobile?: boolean;
+  collapsed: boolean;
+  setCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
+  pathname: string;
+}) => {
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
   };
 
-  const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
+  return (
     <div
       className={`
         ${mobile ? "w-72" : collapsed ? "w-[88px]" : "w-72"}
-        bg-white border-r border-gray-100 flex flex-col h-full shadow-[4px_0_24px_-12px_rgba(0,0,0,0.05)]
+        bg-white border-r border-gray-100 flex flex-col h-[100dvh] shadow-[4px_0_24px_-12px_rgba(0,0,0,0.05)]
         ${mobile ? "" : "transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"}
         relative
       `}
@@ -127,7 +104,7 @@ export default function DashboardLayout({
           </div>
         )}
         
-        {/* Collapse Button - Modern floating style */}
+        {/* Collapse Button */}
         {!mobile && (
           <button
             onClick={() => setCollapsed(c => !c)}
@@ -196,7 +173,6 @@ export default function DashboardLayout({
                         {child.icon ? (
                           <div className={childActive ? "text-blue-600" : "text-gray-400"}>{child.icon}</div>
                         ) : (
-                          // Custom bullet for child items without icons
                           <div className={`w-1.5 h-1.5 rounded-full ${childActive ? "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" : "bg-gray-300"}`} />
                         )}
                         <span className="truncate">{child.label}</span>
@@ -210,23 +186,52 @@ export default function DashboardLayout({
           return null;
         })}
       </nav>
-
-      {/* Logout / User Area */}
-      <div className="p-4 border-t border-gray-100 relative z-10 shrink-0 bg-gray-50/50">
-        <button
-          onClick={handleLogout}
-          title={collapsed && !mobile ? "Logout" : undefined}
-          className={`
-            w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl font-medium text-red-600 hover:bg-red-50 focus:ring-2 focus:ring-red-100 active:bg-red-100 outline-none transition-all group
-            ${collapsed && !mobile ? "px-0 w-12 mx-auto justify-center" : ""}
-          `}
-        >
-          <LogOut className="w-5 h-5 text-red-500 group-hover:text-red-700 transition-colors shrink-0" />
-          {(!collapsed || mobile) && <span className="text-sm">Logout / Keluar</span>}
-        </button>
-      </div>
     </div>
   );
+};
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isReady, setIsReady] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push("/login");
+    }
+    setIsReady(true);
+  }, [router]);
+
+  // Close mobile sidebar on route change
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  if (!isReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-100">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Removed Logout / User Area from sidebar to topbar or keep it separated if needed
+  // Since we extracted it, we will put the logout handler directly.
+
+  const handleLogout = () => {
+    clearToken();
+    router.push("/login");
+  };
+
+  const isActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  };
+
 
   // Current page title from nav
   const currentPageItem = NAV_ITEMS.find(n => "href" in n && isActive(n.href));
@@ -235,16 +240,36 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex flex-col h-full">
-        <Sidebar />
+      <div className="hidden md:flex flex-col h-[100dvh]">
+        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} pathname={pathname} />
+        {/* Logout / User Area */}
+        <div className="p-4 border-t border-gray-100 relative z-10 shrink-0 bg-gray-50/50 w-full">
+          <button
+            onClick={handleLogout}
+            title={collapsed ? "Logout" : undefined}
+            className={`
+              w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl font-medium text-red-600 hover:bg-red-50 focus:ring-2 focus:ring-red-100 active:bg-red-100 outline-none transition-all group
+              ${collapsed ? "px-0 w-12 mx-auto justify-center" : ""}
+            `}
+          >
+            <LogOut className="w-5 h-5 text-red-500 group-hover:text-red-700 transition-colors shrink-0" />
+            {!collapsed && <span className="text-sm">Logout / Keluar</span>}
+          </button>
+        </div>
       </div>
 
       {/* Mobile Overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-0 top-0 h-full z-50">
-            <Sidebar mobile />
+          <div className="absolute left-0 top-0 h-full z-50 flex flex-col w-72 bg-white">
+            <Sidebar mobile={true} collapsed={false} setCollapsed={setCollapsed} pathname={pathname} />
+            <div className="p-4 border-t border-gray-100 relative z-10 shrink-0 bg-gray-50/50">
+              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl font-medium text-red-600 hover:bg-red-50 focus:ring-2 focus:ring-red-100 active:bg-red-100 outline-none transition-all group">
+                <LogOut className="w-5 h-5 text-red-500 group-hover:text-red-700 transition-colors shrink-0" />
+                <span className="text-sm">Logout / Keluar</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -277,7 +302,7 @@ export default function DashboardLayout({
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1 shadow-transparent">
                 HARI INI
               </span>
-              <span className="text-sm font-semibold text-gray-800 bg-gray-100/80 px-3 py-1.5 rounded-lg border border-gray-200/50">
+              <span className="text-sm font-semibold text-gray-800 bg-gray-100/80 px-3 py-1.5 rounded-lg border border-gray-200/50" suppressHydrationWarning>
                 {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
               </span>
             </div>
