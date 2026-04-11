@@ -29,8 +29,9 @@ interface MonthlyData {
     year: number;
     month: number;
     period_label: string;
-    mbg: { total_portions: number; revenue_gross: string; avg_portions_per_day: number };
+    mbg: { total_portions: number; revenue_gross: string; revenue_calculated: string; avg_portions_per_day: number };
     expenses: { total: string; count: number; hutang_outstanding: string };
+    piutang_total: string;
     profit_estimate: { gross_profit: string };
     stock_summary: { low_stock_count: number };
     excel_status: string;
@@ -145,7 +146,7 @@ export default function DashboardPage() {
                 />
                 <StatCard
                     title="Pendapatan Bulan Ini"
-                    value={monthly ? formatRp(monthly.mbg.revenue_gross) : "—"}
+                    value={monthly ? formatRp(monthly.mbg.revenue_calculated || monthly.mbg.revenue_gross) : "—"}
                     subtitle={`${monthly?.mbg.total_portions.toLocaleString("id-ID") ?? 0} total porsi`}
                     icon="💰"
                 />
@@ -156,10 +157,10 @@ export default function DashboardPage() {
                     icon="🛒"
                 />
                 <StatCard
-                    title="Laba Estimasi"
-                    value={monthly ? formatRp(monthly.profit_estimate.gross_profit) : "—"}
-                    subtitle="Bulan ini"
-                    icon="📊"
+                    title="Total Piutang"
+                    value={monthly ? formatRp(monthly.piutang_total || "0") : "—"}
+                    subtitle="Receivables"
+                    icon="📋"
                 />
                 <StatCard
                     title="Hutang Outstanding"

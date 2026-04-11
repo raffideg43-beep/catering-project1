@@ -217,6 +217,7 @@ async def confirm_transaction(
                 new_sup = supabase.table("suppliers").insert({
                     "tenant_id": current_user.tenant_id,
                     "name": nama_toko_clean,
+                    "category": "bahan_pangan",
                     "is_active": True
                 }).execute()
                 if getattr(new_sup, "data", None):
@@ -975,6 +976,33 @@ async def create_manual_transaction(
 
     # ─── Insert transaksi (status=confirmed langsung) ─────────────────
     supplier_name = body.get("supplier_name") or None
+    supplier_id = None
+
+    # ─── Auto-create / resolve supplier ──────────────────────────────
+    if supplier_name and supplier_name.strip():
+        supplier_name_clean = supplier_name.strip()
+        sup_resp = (
+            supabase.table("suppliers")
+            .select("id")
+            .eq("tenant_id", current_user.tenant_id)
+            .ilike("name", supplier_name_clean)
+            .execute()
+        )
+        if getattr(sup_resp, "data", None):
+            supplier_id = sup_resp.data[0]["id"]
+        else:
+            try:
+                new_sup = supabase.table("suppliers").insert({
+                    "tenant_id": current_user.tenant_id,
+                    "name": supplier_name_clean,
+                    "category": "bahan_pangan",
+                    "is_active": True
+                }).execute()
+                if getattr(new_sup, "data", None):
+                    supplier_id = new_sup.data[0]["id"]
+                    logger.info(f"Auto-created supplier '{supplier_name_clean}' with id={supplier_id}")
+            except Exception as e:
+                logger.error(f"Gagal auto-create supplier '{supplier_name_clean}': {e}")
 
     # ─── Juknis auto-categorize ──────────────────────────────────────
     from services.juknis_service import auto_categorize
@@ -991,6 +1019,7 @@ async def create_manual_transaction(
         "status": "confirmed",
         "date": trx_date,
         "nama_toko": supplier_name,
+        "supplier_id": supplier_id,
         "payment_method": payment_method,
         "due_date": due_date,
         "notes": f"Toko: {supplier_name or '-'} | Bayar: {payment_method}" + (f" | {notes}" if notes else ""),

@@ -1407,7 +1407,8 @@ class ExportService:
                 ws.cell(row, 9, total_trx).number_format = '"Rp "#,##0'
                 ws.cell(row, 10, method)
                 jcat = trx.get("juknis_category", "")
-                ws.cell(row, 11, jcat or "lainnya")
+                jcat_label = {"bahan_pangan": "Bahan Pangan", "operasional": "Operasional", "kemasan": "Kemasan", "alat_tulis": "Alat Tulis"}.get(jcat, jcat or "Lainnya")
+                ws.cell(row, 11, jcat_label)
                 photo_url = trx.get("photo_url")
                 if photo_url:
                     from openpyxl.styles import Font as _F
@@ -1445,7 +1446,8 @@ class ExportService:
                 ws.cell(row, 9, float(bayar)).number_format = '"Rp "#,##0'
                 ws.cell(row, 10, method)
                 jcat = trx.get("juknis_category", "")
-                ws.cell(row, 11, jcat or "lainnya")
+                jcat_label = {"bahan_pangan": "Bahan Pangan", "operasional": "Operasional", "kemasan": "Kemasan", "alat_tulis": "Alat Tulis"}.get(jcat, jcat or "Lainnya")
+                ws.cell(row, 11, jcat_label)
                 photo_url = trx.get("photo_url")
                 if photo_url:
                     from openpyxl.styles import Font as _F

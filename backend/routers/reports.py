@@ -211,20 +211,49 @@ def get_monthly_report(
 
     period_label = f"{BULAN[m]} {y}"
 
-    # ─── MBG bulanan ─────────────────────────────────────────────────
-    alloc_resp = (
-        supabase.table("mbg_budget_allocations")
-        .select("total_portions, total_revenue, date")
+    # ─── MBG Allocation Settings (rate per porsi) ─────────────────────
+    settings_resp = (
+        supabase.table("mbg_allocation_settings")
+        .select("bahan_sd_smp, bahan_paud_tk, ops_per_porsi, insentif_harian")
         .eq("tenant_id", tid)
-        .gte("date", first.isoformat())
-        .lte("date", last.isoformat())
+        .limit(1)
         .execute()
     )
-    alloc_rows = getattr(alloc_resp, "data", None) or []
-    total_portions = sum(r.get("total_portions", 0) for r in alloc_rows)
-    total_delivery_days = len(alloc_rows)
-    revenue_gross = sum(_d(r.get("total_revenue")) for r in alloc_rows)
+    settings_rows = getattr(settings_resp, "data", None) or []
+    alloc_settings = settings_rows[0] if settings_rows else {}
+    rate_bahan_sd = _d(alloc_settings.get("bahan_sd_smp") or 10000)
+    rate_bahan_tk = _d(alloc_settings.get("bahan_paud_tk") or 8000)
+    rate_ops = _d(alloc_settings.get("ops_per_porsi") or 3000)
+    rate_insentif = _d(alloc_settings.get("insentif_harian") or 6000000)
+
+    # ─── MBG deliveries bulanan ──────────────────────────────────────
+    del_resp = (
+        supabase.table("deliveries")
+        .select("portions_sent, delivery_date, schools(school_level)")
+        .eq("tenant_id", tid)
+        .gte("delivery_date", first.isoformat())
+        .lte("delivery_date", last.isoformat())
+        .execute()
+    )
+    del_rows = getattr(del_resp, "data", None) or []
+    total_portions = sum(r.get("portions_sent", 0) for r in del_rows)
+    delivery_dates = {r.get("delivery_date") for r in del_rows if r.get("delivery_date")}
+    total_delivery_days = len(delivery_dates)
     avg_ppd = round(total_portions / total_delivery_days, 1) if total_delivery_days else 0
+
+    # ─── Revenue dihitung dari settings × porsi aktual ───────────────
+    revenue_bahan = Decimal("0")
+    for d in del_rows:
+        p = _d(d.get("portions_sent", 0))
+        s_data = d.get("schools") or {}
+        if isinstance(s_data, list):
+            s_data = s_data[0] if s_data else {}
+        sl = s_data.get("school_level", "sd_smp")
+        revenue_bahan += p * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
+    revenue_ops = _d(total_portions) * rate_ops
+    revenue_insentif = rate_insentif * total_delivery_days
+    revenue_calculated = revenue_bahan + revenue_ops + revenue_insentif
+    revenue_gross = revenue_calculated  # backward compat
 
     # ─── Expenses bulanan ─────────────────────────────────────────────
     exp_resp = (
@@ -295,16 +324,25 @@ def get_monthly_report(
     total_all_expenses = exp_total + total_ops + total_payroll
 
     # ─── Laba Estimasi: revenue - SEMUA biaya (bahan + ops + gaji) ────
-    # Insentif SPPG fixed Rp 6.000.000/hari × hari kerja (bukan Minggu)
     import calendar
     cal = calendar.Calendar()
     working_days = sum(
         1 for d in cal.itermonthdays2(y, m)
         if d[0] != 0 and d[1] != 6  # d[1]=6 is Sunday
     )
-    insentif_bulanan = Decimal("6000000") * working_days
+    insentif_bulanan = rate_insentif * working_days
 
-    gross_profit = (revenue_gross + insentif_bulanan) - total_all_expenses
+    gross_profit = revenue_calculated - total_all_expenses
+
+    # ─── Piutang (receivables) ────────────────────────────────────────
+    recv_resp = (
+        supabase.table("receivables")
+        .select("amount")
+        .eq("tenant_id", tid)
+        .execute()
+    )
+    recv_rows = getattr(recv_resp, "data", None) or []
+    piutang_total = sum(_d(r.get("amount")) for r in recv_rows)
 
     # ─── Stock summary ────────────────────────────────────────────────
     prod_resp = (
@@ -349,8 +387,10 @@ def get_monthly_report(
                 "total_portions": total_portions,
                 "total_delivery_days": total_delivery_days,
                 "revenue_gross": str(revenue_gross),
+                "revenue_calculated": str(revenue_calculated),
                 "avg_portions_per_day": avg_ppd,
             },
+            "piutang_total": str(piutang_total),
             "expenses": {
                 "total": str(exp_total),
                 "count": len(exp_rows),

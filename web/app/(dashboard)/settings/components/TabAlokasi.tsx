@@ -173,34 +173,42 @@ export function TabAlokasi() {
                 {/* PREVIEW COLUMN */}
                 <div>
                     <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-lg sticky top-6">
-                        <h3 className="text-xl font-bold font-heading mb-6 flex items-center gap-2">
-                            📊 Estimasi per Hari <span className="text-sm font-normal text-slate-400 bg-slate-800 px-2 py-1 rounded">(Asumsi 1.000 porsi SD)</span>
+                        <h3 className="text-lg font-bold font-heading mb-5 flex items-center gap-2">
+                            📊 Simulasi Harian <span className="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-1 rounded">(Asumsi 1.000 porsi SD)</span>
                         </h3>
                         
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center text-slate-300">
+                        <div className="space-y-3">
+                            {/* Biaya Operasi */}
+                            <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">Biaya Produksi (Terpakai)</p>
+                            <div className="flex justify-between items-center text-slate-400 text-sm">
                                 <span>Bahan Baku (1.000 × {formatRupiah(settings.bahan_sd_smp)})</span>
-                                <span className="font-medium text-white">{formatRupiah(estimasiBahan)}</span>
+                                <span className="font-medium text-slate-300">{formatRupiah(estimasiBahan)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-slate-300">
+                            <div className="flex justify-between items-center text-slate-400 text-sm">
                                 <span>Operasional (1.000 × {formatRupiah(settings.ops_per_porsi)})</span>
-                                <span className="font-medium text-white">{formatRupiah(estimasiOps)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-slate-300">
-                                <span>Insentif SPPG (Fixed)</span>
-                                <span className="font-medium text-white">{formatRupiah(settings.insentif_harian)}</span>
+                                <span className="font-medium text-slate-300">{formatRupiah(estimasiOps)}</span>
                             </div>
                             
-                            <hr className="border-slate-700 my-4" />
+                            <hr className="border-slate-700/50 my-3" />
                             
-                            <div className="flex justify-between items-center text-lg font-bold text-green-400">
-                                <span>Total Revenue</span>
-                                <span>{formatRupiah(grandTotal)}</span>
+                            {/* Keuntungan Dapur */}
+                            <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">Keuntungan Pengelola (Sewa Dapur)</p>
+                            <div className="flex justify-between items-center text-emerald-400 font-bold text-base">
+                                <span>💰 Insentif Harian (Fixed)</span>
+                                <span>{formatRupiah(settings.insentif_harian)}</span>
+                            </div>
+                            
+                            <hr className="border-slate-700/50 my-3" />
+                            
+                            {/* Total */}
+                            <div className="flex justify-between items-center text-sm text-slate-400">
+                                <span>Total Pagu Harian</span>
+                                <span className="font-medium text-slate-300">{formatRupiah(grandTotal)}</span>
                             </div>
                         </div>
                         
-                        <p className="text-xs text-slate-400 mt-6 leading-relaxed">
-                            Simulasi ini menunjukkan breakdown penerimaan harian yang akan masuk ke kas program Anda sebelum dikurangi realisasi pengeluaran harian.
+                        <p className="text-[11px] text-slate-500 mt-5 leading-relaxed">
+                            Bahan baku &amp; operasional langsung terpakai untuk produksi makanan. Keuntungan yang diterima pengelola dapur = <strong className="text-emerald-400">Insentif harian {formatRupiah(settings.insentif_harian)}/hari</strong>.
                         </p>
                     </div>
                 </div>
