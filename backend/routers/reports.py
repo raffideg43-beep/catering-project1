@@ -228,7 +228,7 @@ def get_monthly_report(
 
     # ─── MBG deliveries bulanan ──────────────────────────────────────
     del_resp = (
-        supabase.table("deliveries")
+        supabase.table("mbg_deliveries")
         .select("portions_sent, delivery_date, schools(school_level)")
         .eq("tenant_id", tid)
         .gte("delivery_date", first.isoformat())
