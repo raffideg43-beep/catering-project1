@@ -17,7 +17,7 @@ export default function DapurPage() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto pb-20 space-y-6 sm:space-y-8 animate-in mt-2">
+    <div className="max-w-7xl mx-auto pb-20 animate-in mt-2">
       <div className="pt-2">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
           Dapur & Resep (BOM)
@@ -28,7 +28,7 @@ export default function DapurPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="sticky top-16 z-20 pt-2 pb-6 bg-gray-50/80 backdrop-blur-md">
+      <div className="sticky top-16 z-20 mt-0 pb-4 bg-gray-50/90 backdrop-blur-md">
         <div className="flex gap-2 bg-white/70 backdrop-blur-xl rounded-2xl p-2 overflow-x-auto flex-nowrap no-scrollbar border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
           {tabs.map((tab) => (
             <button
