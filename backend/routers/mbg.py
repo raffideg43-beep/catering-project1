@@ -230,7 +230,6 @@ def validate_menu(
     """
     supabase = get_supabase()
 
-    # Cari produk (case-insensitive, partial match)
     prod_resp = (
         supabase.table("products")
         .select("id, name, unit")
@@ -238,7 +237,6 @@ def validate_menu(
         .eq("category", "produk_jadi")
         .eq("is_active", True)
         .ilike("name", f"%{body.menu_name}%")
-        .limit(1)
         .execute()
     )
     products: List[Dict] = getattr(prod_resp, "data", None) or []
@@ -254,7 +252,9 @@ def validate_menu(
             ).model_dump(),
         }
 
-    product = products[0]
+    # Prefer exact match
+    exact_matches = [p for p in products if p["name"].lower().strip() == body.menu_name.lower().strip()]
+    product = exact_matches[0] if exact_matches else products[0]
     product_id = product["id"]
 
     # Cek BOM / resep
