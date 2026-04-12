@@ -23,6 +23,17 @@ interface SimIngredient {
   sufficient: boolean; shortage: number; shortage_display?: string;
 }
 
+interface NutritionSummary {
+  menu_id: string;
+  calories: number;
+  proteins: number;
+  fat: number;
+  carbohydrates: number;
+  total_ingredient_gram: number;
+  sayur_percentage: number;
+  is_balanced: boolean;
+}
+
 interface FormRowItem {
   ingredient_name: string;
   ingredient_id: string | null;
@@ -42,6 +53,7 @@ export function TabMenuBOM() {
   const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
   const [menuRecipes, setMenuRecipes] = useState<Record<string, Recipe[]>>({});
   const [bomPreview, setBomPreview] = useState<Record<string, SimIngredient[]>>({});
+  const [nutrition, setNutrition] = useState<Record<string, NutritionSummary>>({});
 
   /* ─── Menu form (Integrated) ─────────────────────────────────────── */
   const [showMenuModal, setShowMenuModal] = useState(false);
@@ -49,6 +61,10 @@ export function TabMenuBOM() {
   const [menuForm, setMenuForm] = useState({ name: "", unit: "porsi" });
   const [menuFormComps, setMenuFormComps] = useState<{ component_id: string }[]>([]);
   const [menuFormDirects, setMenuFormDirects] = useState<FormRowItem[]>([]);
+
+  /* ─── Nutrition Edit ──────────────────────────────────────────────── */
+  const [editingNutProd, setEditingNutProd] = useState<Product | null>(null);
+  const [nutForm, setNutForm] = useState({ conversion_factor: 100, calories: 0, proteins: 0, kategori: "lainnya" });
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -72,6 +88,12 @@ export function TabMenuBOM() {
       const res = await apiGet("/recipes");
       const all: Recipe[] = res?.data || [];
       setMenuRecipes(prev => ({ ...prev, [menuId]: all.filter(r => r.menu_id === menuId) }));
+    } catch (e) { console.error(e); }
+    
+    // Fetch Nutrition
+    try {
+      const nRes = await apiGet(`/nutrition/menu/${menuId}`);
+      if (nRes) setNutrition(prev => ({ ...prev, [menuId]: nRes }));
     } catch (e) { console.error(e); }
   };
 
@@ -158,6 +180,7 @@ export function TabMenuBOM() {
     e.preventDefault();
     if (saving || !menuFormValid) return;
     setSaving(true);
+    // ... existing save logic ...
     try {
       let menuId = editingMenuId;
       if (editingMenuId) {
@@ -359,6 +382,21 @@ export function TabMenuBOM() {
                                         {ing.sufficient
                                         ? <span className="inline-flex py-1 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-100">Aman</span>
                                         : <span className="inline-flex py-1 px-2 bg-red-50 text-red-600 font-bold text-[11px] rounded border border-red-100 uppercase tracking-widest whitespace-nowrap">Kurang {ing.shortage_display ?? ing.shortage}</span>}
+                                        
+                                        <button onClick={() => {
+                                           const pd = products.find(p => p.id === ing.ingredient_id);
+                                           if (pd) {
+                                               setEditingNutProd(pd);
+                                               setNutForm({
+                                                  conversion_factor: pd.conversion_factor || 1,
+                                                  calories: 0, // Placeholder, ideally fetch from backend if needed
+                                                  proteins: 0,
+                                                  kategori: "",
+                                               });
+                                           }
+                                        }} className="ml-2 px-2 py-1 bg-yellow-50 text-yellow-700 text-xs font-bold rounded hover:bg-yellow-100 border border-yellow-200">
+                                            ✏️ Ganti Gizi
+                                        </button>
                                       </td>
                                     </tr>
                                   ))}
@@ -368,6 +406,40 @@ export function TabMenuBOM() {
                         </div>
                       )}
                     </div>
+
+                    {/* Nutrition Balance Check */}
+                    {nutrition[menu.id] && (
+                      <div className="pt-6 border-t border-gray-100">
+                        <div className="flex items-center gap-2 mb-4">
+                          <h4 className="font-bold text-gray-900 text-sm">🩺 Cek Standimetri & Gizi MBG</h4>
+                          {nutrition[menu.id].total_ingredient_gram === 0 && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded font-medium">BOM Kosong / Error Gram</span>}
+                        </div>
+                        
+                        {nutrition[menu.id].total_ingredient_gram > 0 && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-orange-50 border border-orange-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
+                                <span className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-1">Energi / Kalori</span>
+                                <span className="text-2xl font-black text-orange-900">{nutrition[menu.id].calories.toLocaleString("id-ID")} <span className="text-sm font-semibold">kkal</span></span>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
+                                <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">Protein</span>
+                                <span className="text-2xl font-black text-blue-900">{nutrition[menu.id].proteins.toLocaleString("id-ID")} <span className="text-sm font-semibold">gr</span></span>
+                            </div>
+                            <div className="bg-teal-50 border border-teal-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
+                                <span className="text-xs font-bold text-teal-600 uppercase tracking-widest mb-1">Netto (Bahan)</span>
+                                <span className="text-2xl font-black text-teal-900">{nutrition[menu.id].total_ingredient_gram.toLocaleString("id-ID")} <span className="text-sm font-semibold">gr</span></span>
+                            </div>
+                            <div className={`p-4 rounded-2xl flex flex-col items-center justify-center text-center border ${nutrition[menu.id].is_balanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200 relative overflow-hidden'}`}>
+                                {!nutrition[menu.id].is_balanced && <div className="absolute inset-0 bg-red-100/50 flex flex-col items-center justify-center animate-pulse border-2 border-red-400 z-10 p-2"><span className="text-3xl mb-1">⚠️</span><span className="text-[10px] font-bold text-red-700 leading-tight text-center">SAYUR &lt; 30%<br/>ATENSI DINAS</span></div>}
+                                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Porsi Sayur</span>
+                                <span className={`text-2xl font-black ${nutrition[menu.id].is_balanced ? 'text-green-700' : 'text-red-700'}`}>{nutrition[menu.id].sayur_percentage}%</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
 
                   </div>
                 )}
@@ -490,6 +562,67 @@ export function TabMenuBOM() {
           </div>
         </div>
       )}
+      {/* ── Modal: Edit Gizi & Convertion ─────────────────────────── */}
+      {editingNutProd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative animate-in zoom-in-95">
+              <h3 className="text-xl font-bold text-gray-900 mb-1">Ralat Rujukan Gizi AI</h3>
+              <p className="text-sm text-gray-500 mb-6">Penyesuaian manual untuk material <span className="font-bold text-indigo-600">{editingNutProd.name}</span></p>
+
+              <div className="space-y-4">
+                 <div className="bg-orange-50 border border-orange-100 p-3 rounded-xl">
+                    <label className="block text-xs font-bold text-orange-800 uppercase tracking-wide mb-1">Konversi Berat Aktual ({editingNutProd.unit})</label>
+                    <p className="text-xs text-orange-600 mb-2">Penting! Jika bahan "1 siung", tetapkan ini ke ~5 Gram. Jika "kg", tetapkan ke 1000.</p>
+                    <div className="flex items-center gap-2">
+                       <input type="number" min="0" step="0.01" value={nutForm.conversion_factor} onChange={e => setNutForm({...nutForm, conversion_factor: parseFloat(e.target.value)||0})} className="w-full px-3 py-2 border border-orange-200 rounded-lg outline-none focus:ring-2 focus:ring-orange-400 font-mono text-sm" />
+                       <span className="text-xs font-bold text-orange-700">Gram</span>
+                    </div>
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kalori (per 100gr) *</label>
+                        <input type="number" step="0.1" value={nutForm.calories || ''} onChange={e => setNutForm({...nutForm, calories: parseFloat(e.target.value)})} placeholder="Opsional" className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Protein (per 100gr) *</label>
+                        <input type="number" step="0.1" value={nutForm.proteins || ''} onChange={e => setNutForm({...nutForm, proteins: parseFloat(e.target.value)})} placeholder="Opsional" className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                    </div>
+                 </div>
+                 
+                 <div>
+                     <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kategori Gizi *</label>
+                     <select value={nutForm.kategori} onChange={e => setNutForm({...nutForm, kategori: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm">
+                         <option value="">(Abaikan / Jangan ubah)</option>
+                         <option value="sayur">Sayur</option>
+                         <option value="buah">Buah</option>
+                         <option value="lauk hewani">Lauk Hewani</option>
+                         <option value="lauk nabati">Lauk Nabati</option>
+                         <option value="karbohidrat">Karbohidrat / Makanan Pokok</option>
+                     </select>
+                 </div>
+              </div>
+
+              <div className="flex gap-3 justify-end mt-8 border-t border-gray-100 pt-4">
+                 <button onClick={() => setEditingNutProd(null)} className="px-5 py-2 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm bg-white hover:bg-gray-50">Batal</button>
+                 <button onClick={async () => {
+                     try {
+                        const payload: any = { product_id: editingNutProd.id, conversion_factor: nutForm.conversion_factor };
+                        if (nutForm.calories) payload.calories = nutForm.calories;
+                        if (nutForm.proteins) payload.proteins = nutForm.proteins;
+                        if (nutForm.kategori) payload.kategori = nutForm.kategori;
+                        await apiPut(`/nutrition/products/${editingNutProd.id}`, payload);
+                        setEditingNutProd(null);
+                        fetchAll();
+                     } catch(e) { console.error(e); }
+                 }} className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer">
+                     Sahkan Gizi
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 }

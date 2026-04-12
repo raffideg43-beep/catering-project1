@@ -41,6 +41,7 @@ from routers import (
     operational as operational_router,
     legal as legal_router,
     compliance as compliance_router,
+    nutrition as nutrition_router,
 )
 from routers.mbg import delivery_router as mbg_delivery_router
 from routers import price_tracking as price_tracking_router
@@ -162,6 +163,7 @@ app.include_router(payroll_router.router)
 app.include_router(operational_router.router)
 app.include_router(legal_router.router, prefix="/legal")
 app.include_router(compliance_router.router)
+app.include_router(nutrition_router.router)
 
 
 

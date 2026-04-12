@@ -39,6 +39,7 @@ from models.user import UserInDB
 from utils.unit_converter import get_base_unit
 from workers.ocr_worker import run_ocr_in_background
 from services.kas_service import KasService
+from services.nutrition_service import nutrition_svc
 
 router = APIRouter(tags=["transactions"])
 logger = logging.getLogger(__name__)
@@ -1074,8 +1075,18 @@ async def create_manual_transaction(
                     "stock_qty": "0" 
                 }).execute()
                 new_prod_data = getattr(new_prod_resp, "data", None) or []
-                if new_prod_data:
                     product_id = new_prod_data[0]["id"]
+                    
+                    # Auto-map and link nutrition in background
+                    background_tasks.add_task(
+                        nutrition_svc.map_and_link_product,
+                        get_supabase(),
+                        product_id,
+                        product_name,
+                        satuan,
+                        current_user.tenant_id
+                    )
+                    
             except Exception as e:
                 logger.error(f"Auto-create gagal untuk '{product_name}': {e}")
                 stok_errors.append(f"Gagal auto-create produk '{product_name}': {e}")
