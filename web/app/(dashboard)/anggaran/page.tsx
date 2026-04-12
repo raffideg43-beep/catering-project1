@@ -175,7 +175,7 @@ function OverviewTab() {
                             { label: "Pagu Anggaran", value: fmtRp(data.pagu_amount), icon: "🏛️", color: "blue" },
                             { label: "Dana Cair", value: fmtRp(data.total_disbursed), icon: "💰", color: "green" },
                             { label: "Total Terpakai", value: fmtRp(data.total_spent), icon: "💸", color: "orange" },
-                            { label: "Sisa Anggaran", value: fmtRp(data.sisa_anggaran), icon: sisa > 0 ? "⚠️" : "✅", color: sisa > 0 ? "red" : "gray" },
+                            { label: "Sisa Anggaran", value: fmtRp(data.sisa_anggaran), icon: "⏳", color: "gray" },
                             { label: "Total Porsi", value: data.total_porsi.toLocaleString("id-ID"), icon: "🍱", color: "purple" },
                         ].map(card => (
                             <div key={card.label} className={`bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border p-5 ${card.color === "red" ? "border-red-200 bg-red-50/50" : "border-white"}`}>
@@ -258,7 +258,7 @@ function OverviewTab() {
                     <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-white p-6">
                         <h2 className="font-bold text-gray-900 mb-4">📊 Realisasi vs Budget Keseluruhan (Bulan Ini)</h2>
                         <div className="space-y-4">
-                            {Object.values(data.juknis_breakdown).map((bd, idx) => {
+                            {Object.values(data.juknis_breakdown).filter((bd: any) => parseFloat(bd.target) > 0 || parseFloat(bd.realisasi) > 0).map((bd: any, idx) => {
                                 const barPct = Math.min(bd.pct, 150);
                                 return (
                                     <div key={idx}>
@@ -282,12 +282,12 @@ function OverviewTab() {
                     </div>
 
                     {hasSisa && (
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
-                            <p className="text-red-800 font-bold text-lg">⚠️ Sisa Dana: {fmtRp(data.sisa_anggaran)}</p>
-                            <p className="text-red-600 text-sm mt-1">Wajib dikembalikan ke Kas Negara sebelum akhir periode.</p>
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5">
+                            <p className="text-orange-800 font-bold text-lg">💡 Sisa Dana Berjalan: {fmtRp(data.sisa_anggaran)}</p>
+                            <p className="text-orange-600 text-sm mt-1">Sisa dana ini direkap di akhir periode (Jika ada kelebihan wajib dikembalikan ke Kas Negara).</p>
                             <button onClick={() => { setRetAmount(data.sisa_anggaran); setShowReturn(true); }}
-                                className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
-                                📤 Catat Pengembalian
+                                className="mt-3 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
+                                📤 Catat Pengembalian (Tutup Bulan)
                             </button>
                         </div>
                     )}

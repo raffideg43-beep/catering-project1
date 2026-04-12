@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiDelete, apiPut } from "@/lib/api";
 
 interface Product {
   id: string; name: string; category: string; unit: string; display_unit?: string; conversion_factor?: number;
@@ -221,7 +221,7 @@ export function TabMenuBOM() {
           </p>
         </div>
         <button 
-          onClick={openMenuForm} 
+          onClick={() => openMenuForm()} 
           className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20 rounded-xl hover:shadow-orange-500/40 hover:-translate-y-0.5 transition-all font-bold text-sm whitespace-nowrap"
         >
           + Ciptakan Menu Baru
