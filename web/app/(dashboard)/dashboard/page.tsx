@@ -37,6 +37,15 @@ interface MonthlyData {
     excel_status: string;
 }
 
+interface BudgetSummary {
+    pagu_amount: string;
+    total_disbursed: string;
+    total_spent: string;
+    sisa_anggaran: string;
+    realisasi: Record<string, string>;
+    juknis_breakdown: any;
+}
+
 interface Transaction {
     id: string;
     date: string;
@@ -68,6 +77,7 @@ export default function DashboardPage() {
     const router = useRouter();
     const [daily, setDaily] = useState<DailyData | null>(null);
     const [monthly, setMonthly] = useState<MonthlyData | null>(null);
+    const [budget, setBudget] = useState<BudgetSummary | null>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -78,14 +88,16 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
         try {
-            const [d, m, t, empList] = await Promise.all([
+            const [d, m, b, t, empList] = await Promise.all([
                 apiGet("/reports/daily"),
                 apiGet("/reports/monthly"),
+                apiGet("/budget/summary"),
                 apiGet("/transactions", { limit: 10, sort: "created_at_desc" }),
                 apiGet("/employees?is_active=true").catch(() => null),
             ]);
             setDaily(d?.data ?? null);
             setMonthly(m?.data ?? null);
+            setBudget(b?.data ?? null);
             setTransactions(t?.data?.items ?? t?.data ?? []);
             setEmployees(empList?.data ?? []);
             try {
@@ -215,12 +227,37 @@ export default function DashboardPage() {
                         [{ date: "01", total: 1200000 }, { date: "02", total: 1500000 }, { date: "03", total: 900000 }, { date: "04", total: 2200000 }, { date: "05", total: 1100000 }]
                     } />
                 </div>
-                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
-                    <h2 className="text-base font-bold text-gray-900 mb-6">Kategori Belanja</h2>
-                    <CategoryPieChart data={
-                        // Mock data for categories. 
-                        [{ name: "Sayur & Buah", value: 3500000 }, { name: "Bumbu", value: 1200000 }, { name: "Ayam/Daging", value: 5000000 }, { name: "Beras", value: 2000000 }]
-                    } />
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col">
+                    <div className="flex justify-between items-start mb-6">
+                        <h2 className="text-base font-bold text-gray-900 leading-tight">Beban Anggaran Terhadap Pagu</h2>
+                        <div className="text-right">
+                           <span className="text-xs text-gray-500 font-medium">Bulan Ini</span>
+                           <p className="text-sm font-bold text-blue-600">{formatRp(budget?.pagu_amount || 0)}</p>
+                        </div>
+                    </div>
+                    
+                    {budget ? (
+                        <CategoryPieChart data={(() => {
+                           const b = budget.juknis_breakdown || {};
+                           const bPangan = parseFloat(b.bahan_pangan?.amount || "0");
+                           const bOps = parseFloat(b.operasional?.amount || "0");
+                           // Extract from budget realisasi directly
+                           const bInsentif = parseFloat(budget.realisasi?.insentif || "0");
+                           // Ops in breakdown usually contains insentif + ops. So separate them if possible. Let's rely on realisasi exactly.
+                           const rs = budget.realisasi || {};
+                           const sumPangan = Object.keys(rs).reduce((s, k) => (k !== "operasional" && k !== "insentif" && k !== "sewa") ? s + parseFloat(rs[k]) : s, 0);
+                           const sumOps = parseFloat(rs.operasional || "0");
+                           const sumInsentif = parseFloat(rs.insentif || "0");
+
+                           return [
+                              { name: "Bahan Pangan MBG", value: sumPangan },
+                              { name: "Insentif Dapur", value: sumInsentif },
+                              { name: "Operasional", value: sumOps },
+                           ].filter(x => x.value > 0);
+                        })()} />
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Memuat data pagu...</div>
+                    )}
                 </div>
             </div>
 

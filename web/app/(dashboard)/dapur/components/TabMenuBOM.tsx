@@ -440,8 +440,6 @@ export function TabMenuBOM() {
                     )}
 
                   </div>
-
-                  </div>
                 )}
               </div>
             );

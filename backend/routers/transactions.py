@@ -1075,6 +1075,7 @@ async def create_manual_transaction(
                     "stock_qty": "0" 
                 }).execute()
                 new_prod_data = getattr(new_prod_resp, "data", None) or []
+                if new_prod_data:
                     product_id = new_prod_data[0]["id"]
                     
                     # Auto-map and link nutrition in background

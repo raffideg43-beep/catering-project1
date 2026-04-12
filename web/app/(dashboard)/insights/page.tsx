@@ -252,6 +252,11 @@ function JadwalTab() {
     const [editTimeline, setEditTimeline] = useState<TimelineEvent[]>([]);
     const [savingEdit, setSavingEdit] = useState(false);
 
+    // States for Master Schedule Setup
+    const [showMasterModal, setShowMasterModal] = useState(false);
+    const [masterForm, setMasterForm] = useState({ prep_start_time: "05:00", cook_start_time: "06:00", cook_minutes_per_100: 30 });
+    const [savingMaster, setSavingMaster] = useState(false);
+
     const getMonday = (offset: number) => {
         const d = new Date();
         d.setDate(d.getDate() - d.getDay() + 1 + offset * 7);
@@ -289,6 +294,25 @@ function JadwalTab() {
             setToast("❌ " + (e?.message || "Gagal load master"));
         }
         setGenerating(false);
+    };
+
+    const handleSaveMaster = async () => {
+        setSavingMaster(true);
+        try {
+            await apiPost("/schedules/master", {
+                name: "Jadwal Utama MBG",
+                prep_start_time: masterForm.prep_start_time,
+                cook_start_time: masterForm.cook_start_time,
+                cook_minutes_per_100: masterForm.cook_minutes_per_100,
+                schools: []
+            });
+            setShowMasterModal(false);
+            setToast("✅ Master Schedule berhasil dikonfigurasi!");
+            fetchMaster();
+        } catch (e: any) {
+            setToast("❌ Gagal menyimpan: " + (e?.message || ""));
+        }
+        setSavingMaster(false);
     };
 
     const handleAiDraft = async () => {
@@ -388,6 +412,9 @@ function JadwalTab() {
                     <div className="text-center py-4">
                         <p className="text-amber-600 font-semibold text-lg mb-2">⚠️ Master Schedule Belum Di-setup</p>
                         <p className="text-gray-500 text-sm mb-4">Setup jadwal waktu operasional sekali, dipakai otomatis tiap minggu</p>
+                        <button onClick={() => setShowMasterModal(true)} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 mx-auto transition shadow-sm">
+                            ⚙️ Setup Terlebih Dahulu
+                        </button>
                     </div>
                 ) : (
                     <div>
@@ -395,6 +422,16 @@ function JadwalTab() {
                             <h2 className="font-semibold text-gray-700 flex items-center gap-2">
                                 ✅ Jadwal Master Aktif
                             </h2>
+                            <button onClick={() => {
+                                setMasterForm({
+                                    prep_start_time: master?.prep_start_time || "05:00",
+                                    cook_start_time: master?.cook_start_time || "06:00",
+                                    cook_minutes_per_100: master?.cook_minutes_per_100 || 30,
+                                });
+                                setShowMasterModal(true);
+                            }} className="text-sm px-3 py-1.5 border border-purple-200 text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 font-medium">
+                                ✏️ Edit
+                            </button>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                             <div className="bg-green-50 rounded-xl p-3">
@@ -604,6 +641,40 @@ function JadwalTab() {
                             <button onClick={() => setEditingDay(null)} disabled={savingEdit} className="px-5 py-2.5 text-gray-500 hover:bg-gray-100 rounded-xl text-sm font-semibold transition">Batal</button>
                             <button onClick={handleSaveEdit} disabled={savingEdit || editTimeline.length === 0} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-md transition">
                                 {savingEdit ? "Menyimpan..." : "Simpan Jadwal"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showMasterModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-[24px] shadow-2xl p-6 md:p-8 w-full max-w-md">
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Konfigurasi Master Jadwal</h3>
+                        <p className="text-sm text-gray-500 mb-6">Waktu acuan ini akan dipakai AI sebagai titik tumpu (Baseline) setiap minggu beroperasi, sebelum mendistribusikan waktu porsi sekolah.</p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Mulai Persiapan Bahan (Prep)</label>
+                                <input type="time" value={masterForm.prep_start_time} onChange={e => setMasterForm({ ...masterForm, prep_start_time: e.target.value })}
+                                    className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-gray-50" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Mulai Masak Eksekusi Panci (Cook)</label>
+                                <input type="time" value={masterForm.cook_start_time} onChange={e => setMasterForm({ ...masterForm, cook_start_time: e.target.value })}
+                                    className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-gray-50" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Total Waktu masak / 100 Porsi (Menit)</label>
+                                <input type="number" min={1} value={masterForm.cook_minutes_per_100} onChange={e => setMasterForm({ ...masterForm, cook_minutes_per_100: parseInt(e.target.value) || 30 })}
+                                    className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-gray-50" />
+                            </div>
+                        </div>
+
+                        <div className="mt-8 flex justify-end gap-3 border-t border-gray-100 pt-5">
+                            <button onClick={() => setShowMasterModal(false)} disabled={savingMaster} className="px-5 py-2.5 text-gray-500 hover:bg-gray-100 rounded-xl font-semibold">Batal</button>
+                            <button onClick={handleSaveMaster} disabled={savingMaster} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700">
+                                {savingMaster ? "Menyimpan..." : "Sahkan Master"}
                             </button>
                         </div>
                     </div>
