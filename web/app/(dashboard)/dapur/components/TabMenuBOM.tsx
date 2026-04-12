@@ -320,6 +320,13 @@ export function TabMenuBOM() {
                       </div>
                     </div>
 
+                    {/* Additional action to make Edit BOM super obvious inside the open menu */}
+                    <div className="pt-4 flex justify-end px-2">
+                       <button onClick={() => openMenuForm(menu)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-xl text-sm font-bold shadow-sm transition-all border border-blue-100">
+                          ✏️ Buka Mode Edit untuk Tambah Bahan
+                       </button>
+                    </div>
+
                     {/* BOM Preview Engine */}
                     <div className="pt-6 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-4">

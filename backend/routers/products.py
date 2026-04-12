@@ -319,9 +319,9 @@ def get_stock_projection(
             for iid, qty_base in flat_for_run.items():
                 period_usage_base[iid] = period_usage_base.get(iid, 0) + float(qty_base) * count
 
-        # Pemakaian per hari (dari hari-hari yang MEMANG ADA MENU)
-        # Bermanfaat agar remaining_days memprediksi HARI KERJA AKTIF
-        use_days_for_avg = max(valid_days_count, 1)
+        # Pemakaian per hari dikalkulasikan sebagai Rata-Rata Kalender
+        # Bermanfaat agar remaining_days memprediksi HARI KALENDER BUKAN HARI KERJA
+        use_days_for_avg = days
         for iid, total_base in period_usage_base.items():
             daily_usage[iid] = total_base / use_days_for_avg
 
