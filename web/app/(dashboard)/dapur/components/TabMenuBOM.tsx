@@ -45,6 +45,7 @@ export function TabMenuBOM() {
 
   /* ─── Menu form (Integrated) ─────────────────────────────────────── */
   const [showMenuModal, setShowMenuModal] = useState(false);
+  const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [menuForm, setMenuForm] = useState({ name: "", unit: "porsi" });
   const [menuFormComps, setMenuFormComps] = useState<{ component_id: string }[]>([]);
   const [menuFormDirects, setMenuFormDirects] = useState<FormRowItem[]>([]);
@@ -107,10 +108,31 @@ export function TabMenuBOM() {
     try { await apiDelete(`/recipes/${recipeId}`); await fetchMenuRecipes(menuId); } catch { alert("Gagal menghapus"); }
   };
 
-  const openMenuForm = () => {
-    setMenuForm({ name: "", unit: "porsi" });
-    setMenuFormComps([]);
-    setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
+  const openMenuForm = (menu?: Product) => {
+    if (menu) {
+      setEditingMenuId(menu.id);
+      setMenuForm({ name: menu.name, unit: menu.display_unit || menu.unit || "porsi" });
+      const recipes = menuRecipes[menu.id] || [];
+      const compRecipes = recipes.filter(r => r.component_id);
+      const directRecipes = recipes.filter(r => r.ingredient_id && !r.component_id);
+      
+      setMenuFormComps(compRecipes.map(r => ({ component_id: r.component_id! })));
+      setMenuFormDirects(directRecipes.length > 0 ? directRecipes.map(r => {
+        const factor = getIngFactor(r.ingredient_id!);
+        return {
+          ingredient_id: r.ingredient_id,
+          ingredient_name: getIngName(r.ingredient_id!),
+          usage_type: r.usage_type as any || "per_porsi",
+          qty_needed: (r.usage_type === "per_hari" ? (r.daily_qty || r.qty_needed) : r.qty_needed) / factor,
+          unit: getIngDisplayUnit(r.ingredient_id!) || r.unit,
+        };
+      }) : [{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
+    } else {
+      setEditingMenuId(null);
+      setMenuForm({ name: "", unit: "porsi" });
+      setMenuFormComps([]);
+      setMenuFormDirects([{ ingredient_id: null, ingredient_name: "", qty_needed: 0, unit: "", usage_type: "per_porsi" }]);
+    }
     setShowMenuModal(true);
   };
 
@@ -137,9 +159,19 @@ export function TabMenuBOM() {
     if (saving || !menuFormValid) return;
     setSaving(true);
     try {
-      const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, harga: 0, sell_price: 0, stock_min: 0 });
-      const menuId = prodRes?.data?.id;
-      if (!menuId) throw new Error("Gagal membuat menu");
+      let menuId = editingMenuId;
+      if (editingMenuId) {
+        await apiPut(`/products/${editingMenuId}`, { name: menuForm.name, unit: menuForm.unit });
+        // Hapus resep lama
+        const existing = menuRecipes[editingMenuId] || [];
+        for (const r of existing) {
+          await apiDelete(`/recipes/${r.id}`);
+        }
+      } else {
+        const prodRes = await apiPost("/products", { ...menuForm, category: "produk_jadi", stock_qty: 0, harga: 0, sell_price: 0, stock_min: 0 });
+        menuId = prodRes?.data?.id;
+        if (!menuId) throw new Error("Gagal membuat menu");
+      }
 
       for (const comp of menuFormComps) {
         if (comp.component_id) {
@@ -227,6 +259,11 @@ export function TabMenuBOM() {
                     <span className="text-xs font-bold px-3 py-1 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-600">
                       <span className="text-purple-600 font-black">{compRecipes.length}</span> Modul <span className="text-gray-300 px-1">|</span> <span className="text-green-600 font-black">{directRecipes.length}</span> Direct
                     </span>
+                    {isOpen && (
+                      <button onClick={(e) => { e.stopPropagation(); openMenuForm(menu); }} className="text-blue-600 hover:text-white px-3 py-1 bg-blue-50 hover:bg-blue-600 rounded text-xs font-bold transition-colors mt-1">
+                        Edit BOM
+                      </button>
+                    )}
                   </div>
                 </button>
 
@@ -339,7 +376,9 @@ export function TabMenuBOM() {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMenuModal(false)} />
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="text-2xl font-bold tracking-tight text-gray-900 bg-clip-text">Ciptakan Menu BOM Baru</h3>
+              <h3 className="text-2xl font-bold tracking-tight text-gray-900 bg-clip-text">
+                {editingMenuId ? "Edit Konfigurasi Menu BOM" : "Ciptakan Menu BOM Baru"}
+              </h3>
             </div>
 
             <form onSubmit={saveMenu} className="flex flex-col overflow-hidden max-h-full">

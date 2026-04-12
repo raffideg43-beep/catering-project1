@@ -353,6 +353,7 @@ def get_stock_projection(
         factor = float(p.get("conversion_factor") or 1)
         
         stock_base = float(p.get("stock_qty") or 0)
+        stock_min_base = float(p.get("stock_min") or 0)
         stock_disp = stock_base / factor if factor else stock_base
         stock_min_disp = stock_min_base / factor if factor else stock_min_base
         

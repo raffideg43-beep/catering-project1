@@ -229,7 +229,7 @@ def get_monthly_report(
     # ─── MBG deliveries bulanan ──────────────────────────────────────
     del_resp = (
         supabase.table("mbg_deliveries")
-        .select("portions_sent, delivery_date, schools(school_level)")
+        .select("portions_sent, delivery_date, menu_name, schools(name, school_level)")
         .eq("tenant_id", tid)
         .gte("delivery_date", first.isoformat())
         .lte("delivery_date", last.isoformat())
@@ -243,13 +243,44 @@ def get_monthly_report(
 
     # ─── Revenue dihitung dari settings × porsi aktual ───────────────
     revenue_bahan = Decimal("0")
+    
+    # ─── Build summaries grouping by date ────────────────────────────
+    from collections import defaultdict
+    daily_groups = defaultdict(lambda: {"total_portions": 0, "menu_name": "", "deliveries": []})
+    
     for d in del_rows:
         p = _d(d.get("portions_sent", 0))
+        date_str = d.get("delivery_date", "")
+        menu_name = d.get("menu_name", "Tanpa Jadwal")
         s_data = d.get("schools") or {}
         if isinstance(s_data, list):
             s_data = s_data[0] if s_data else {}
         sl = s_data.get("school_level", "sd_smp")
+        s_name = s_data.get("name", "Unknown School")
+        
         revenue_bahan += p * (rate_bahan_tk if sl == "paud_tk" else rate_bahan_sd)
+        
+        # Add to summary
+        if date_str:
+            daily_groups[date_str]["total_portions"] += int(p)
+            daily_groups[date_str]["menu_name"] = menu_name
+            daily_groups[date_str]["deliveries"].append({
+                "school_name": s_name,
+                "portions_sent": int(p),
+                "status": d.get("status", "confirmed")
+            })
+            
+    summaries = []
+    for d_str in sorted(daily_groups.keys(), reverse=True):
+        group = daily_groups[d_str]
+        summaries.append({
+            "date": d_str,
+            "menu_name": group["menu_name"],
+            "total_portions": group["total_portions"],
+            "schools_count": len(group["deliveries"]),
+            "deliveries": group["deliveries"]
+        })
+
     revenue_ops = _d(total_portions) * rate_ops
     revenue_insentif = rate_insentif * total_delivery_days
     revenue_calculated = revenue_bahan + revenue_ops + revenue_insentif
@@ -414,6 +445,7 @@ def get_monthly_report(
                 "items": low_items,
             },
             "excel_status": excel_status,
+            "summaries": summaries,
         },
     }
 
