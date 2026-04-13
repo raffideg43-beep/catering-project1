@@ -130,6 +130,14 @@ export function TabMenuBOM() {
     try { await apiDelete(`/recipes/${recipeId}`); await fetchMenuRecipes(menuId); } catch { alert("Gagal menghapus"); }
   };
 
+  const deleteMenu = async (menuId: string) => {
+    if (!confirm("Hapus menu BOM ini? Seluruh resep juga akan terhapus.")) return;
+    try {
+      await apiDelete(`/products/${menuId}`);
+      await fetchAll();
+    } catch { alert("Gagal menghapus menu"); }
+  };
+
   const openMenuForm = (menu?: Product) => {
     if (menu) {
       setEditingMenuId(menu.id);
@@ -278,15 +286,18 @@ export function TabMenuBOM() {
                       <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider mt-0.5">Basis Output: <span className="text-orange-600">1 {menu.unit}</span></span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
+                  <div className="flex flex-col items-end gap-2 text-right">
                     <span className="text-xs font-bold px-3 py-1 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-600">
                       <span className="text-purple-600 font-black">{compRecipes.length}</span> Modul <span className="text-gray-300 px-1">|</span> <span className="text-green-600 font-black">{directRecipes.length}</span> Direct
                     </span>
-                    {isOpen && (
-                      <button onClick={(e) => { e.stopPropagation(); openMenuForm(menu); }} className="text-blue-600 hover:text-white px-3 py-1 bg-blue-50 hover:bg-blue-600 rounded text-xs font-bold transition-colors mt-1">
-                        Edit BOM
-                      </button>
-                    )}
+                    <div className="flex gap-2">
+                       <span onClick={(e) => { e.stopPropagation(); openMenuForm(menu); }} className="text-blue-600 hover:text-white px-2.5 py-1 bg-blue-50 hover:bg-blue-600 rounded text-xs font-bold transition-colors cursor-pointer shadow-sm">
+                         Edit
+                       </span>
+                       <span onClick={(e) => { e.stopPropagation(); deleteMenu(menu.id); }} className="text-red-600 hover:text-white px-2.5 py-1 bg-red-50 hover:bg-red-600 rounded text-xs font-bold transition-colors cursor-pointer shadow-sm">
+                         Del
+                       </span>
+                    </div>
                   </div>
                 </button>
 
@@ -341,13 +352,6 @@ export function TabMenuBOM() {
                               );
                             })}</div>}
                       </div>
-                    </div>
-
-                    {/* Additional action to make Edit BOM super obvious inside the open menu */}
-                    <div className="pt-4 flex justify-end px-2">
-                       <button onClick={() => openMenuForm(menu)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-xl text-sm font-bold shadow-sm transition-all border border-blue-100">
-                          ✏️ Buka Mode Edit untuk Tambah Bahan
-                       </button>
                     </div>
 
                     {/* BOM Preview Engine */}
