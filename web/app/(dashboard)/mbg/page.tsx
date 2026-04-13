@@ -42,30 +42,23 @@ export default function MbgPage() {
                 apiGet("/reports/monthly", { year: tahun, month: bulan }),
                 apiGet("/mbg/settings").catch(() => null),
             ]);
-            setMonthly(mResp?.data ?? null);
+            // Use summaries from monthly report instead of doing 30 parallel fetches that risk rate limiting
+            const monthlyData = mResp?.data;
+            setMonthly(monthlyData ?? null);
             if (settingsResp?.data?.price_per_portion) {
                 setPricePerPortion(Number(settingsResp.data.price_per_portion));
             }
 
-            // Fetch summaries per hari dalam bulan (hanya hari yang ada delivery)
-            const lastDay = new Date(tahun, bulan, 0).getDate();
-            const dates: string[] = [];
-            for (let d = 1; d <= lastDay; d++) {
-                dates.push(`${tahun}-${String(bulan).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+            if (monthlyData?.summaries) {
+                const filled = monthlyData.summaries.map((s: any) => ({
+                    ...s,
+                    has_delivery: true,
+                }));
+                // Sort by date automatically (although already sorted from backend)
+                setSummaries(filled.sort((a: any, b: any) => a.date.localeCompare(b.date)));
+            } else {
+                setSummaries([]);
             }
-
-            // Batch fetch — ambil hanya summary delivery
-            const results = await Promise.allSettled(
-                dates.map(d => apiGet("/mbg/deliveries/summary", { date: d }).catch(() => null))
-            );
-
-            const filled: DeliverySummary[] = [];
-            results.forEach((r, i) => {
-                if (r.status === "fulfilled" && r.value?.data?.has_delivery) {
-                    filled.push({ date: dates[i], ...r.value.data });
-                }
-            });
-            setSummaries(filled.sort((a, b) => a.date.localeCompare(b.date)));
         } catch { }
         setLoading(false);
     }, [bulan, tahun]);

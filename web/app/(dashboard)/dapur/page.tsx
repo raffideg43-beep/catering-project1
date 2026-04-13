@@ -28,7 +28,7 @@ export default function DapurPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="sticky top-16 z-20 mt-0 pb-4 bg-gray-50/90 backdrop-blur-md">
+      <div className="sticky top-0 z-20 mt-0 pt-2 pb-2 bg-gray-50/90 backdrop-blur-md">
         <div className="flex gap-2 bg-white/70 backdrop-blur-xl rounded-2xl p-2 overflow-x-auto flex-nowrap no-scrollbar border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
           {tabs.map((tab) => (
             <button
