@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -325,3 +326,231 @@ async def auto_link_nutrition(
         "message": "Berhasil di-link" if nut_id else "Tidak ditemukan data nutrisi",
         "nutrition_ref_id": nut_id,
     }
+
+
+# ─── Monthly Nutrition Calendar ─────────────────────────────────────────────────
+
+HARI_INDO = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
+
+@router.get("/calendar")
+async def get_nutrition_calendar(
+    year: int,
+    month: int,
+    active_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Return nutrisi harian untuk 1 bulan penuh.
+    Mengambil data dari mbg_weekly_menus → menu_id → recipes → nutrition_ref.
+    Juga include data penerima manfaat dan delivery aktual.
+    """
+    from calendar import monthrange
+    supabase = get_supabase()
+    tid = active_user.tenant_id
+    
+    _, days_in_month = monthrange(year, month)
+    first_day = date(year, month, 1)
+    last_day = date(year, month, days_in_month)
+    
+    # 1. Fetch all weekly menus for this month's weeks
+    week_starts = set()
+    d = first_day
+    while d <= last_day:
+        ws = d - timedelta(days=d.weekday())  # Monday of that week
+        week_starts.add(ws.isoformat())
+        d += timedelta(days=7)
+    
+    all_menus = []
+    for ws in week_starts:
+        resp = (
+            supabase.table("mbg_weekly_menus")
+            .select("*")
+            .eq("tenant_id", tid)
+            .eq("week_start", ws)
+            .execute()
+        )
+        all_menus.extend(getattr(resp, "data", []))
+    
+    # Build lookup: date_str → menu info
+    menu_by_date = {}
+    for wm in all_menus:
+        ws_date = date.fromisoformat(wm["week_start"])
+        dow = wm.get("day_of_week", 1)  # 1=Monday
+        actual_date = ws_date + timedelta(days=dow - 1)
+        if first_day <= actual_date <= last_day:
+            menu_by_date[actual_date.isoformat()] = {
+                "menu_id": wm.get("menu_id"),
+                "menu_name": wm.get("menu_name", ""),
+            }
+    
+    # 2. Fetch actual deliveries for the month
+    del_resp = (
+        supabase.table("mbg_deliveries")
+        .select("*, schools(name, school_level, default_portions)")
+        .eq("tenant_id", tid)
+        .gte("delivery_date", first_day.isoformat())
+        .lte("delivery_date", last_day.isoformat())
+        .execute()
+    )
+    deliveries = getattr(del_resp, "data", [])
+    
+    # Group deliveries by date
+    deliveries_by_date = {}
+    for d_item in deliveries:
+        dt = d_item.get("delivery_date", "")
+        if dt not in deliveries_by_date:
+            deliveries_by_date[dt] = []
+        school_data = d_item.get("schools") or {}
+        deliveries_by_date[dt].append({
+            "school_name": school_data.get("name", "?"),
+            "school_level": school_data.get("school_level", "sd_smp"),
+            "portions_sent": d_item.get("portions_sent", 0),
+            "status": d_item.get("status", ""),
+        })
+    
+    # 3. Fetch beneficiary data
+    ben_resp = (
+        supabase.table("school_beneficiaries")
+        .select("*, schools(name, school_level, default_portions), beneficiary_types(name)")
+        .eq("tenant_id", tid)
+        .execute()
+    )
+    beneficiaries = getattr(ben_resp, "data", [])
+    
+    beneficiary_summary = []
+    for sb in beneficiaries:
+        sch = sb.get("schools") or {}
+        bt = sb.get("beneficiary_types") or {}
+        beneficiary_summary.append({
+            "school_name": sch.get("name", ""),
+            "school_level": sch.get("school_level", "sd_smp"),
+            "beneficiary_type": bt.get("name", ""),
+            "target_portions": sb.get("target_portions", 0) or sch.get("default_portions", 0),
+        })
+    
+    # 4. For each unique menu_id, compute nutrition (cached)
+    unique_menu_ids = set()
+    for info in menu_by_date.values():
+        mid = info.get("menu_id")
+        if mid:
+            unique_menu_ids.add(mid)
+    
+    nutrition_cache = {}
+    for mid in unique_menu_ids:
+        try:
+            recipes_resp = (
+                supabase.table("recipes")
+                .select("*, products!recipes_ingredient_id_fkey(id, name, unit, conversion_factor, nutrition_ref_id)")
+                .eq("menu_id", mid)
+                .execute()
+            )
+            recipes = getattr(recipes_resp, "data", [])
+            
+            total_cal = 0.0; total_prot = 0.0; total_fat = 0.0; total_carb = 0.0; total_gram = 0.0
+            sayur_gram = 0.0
+            ingredients = []
+            
+            for r in recipes:
+                if r.get("usage_type", "per_porsi") != "per_porsi":
+                    continue
+                prod = r.get("products")
+                if not prod:
+                    continue
+                
+                weight = _recipe_to_grams(r, prod)
+                nut_id = prod.get("nutrition_ref_id")
+                cal = prot = fat = carb = 0.0
+                kategori = ""
+                
+                if nut_id and weight > 0:
+                    try:
+                        nr = supabase.table("nutrition_ref").select("*").eq("id", nut_id).single().execute()
+                        nref = getattr(nr, "data", None)
+                        if nref:
+                            m = weight / 100.0
+                            cal = round(float(nref.get("calories", 0)) * m, 1)
+                            prot = round(float(nref.get("proteins", 0)) * m, 1)
+                            fat = round(float(nref.get("fat", 0)) * m, 1)
+                            carb = round(float(nref.get("carbohydrate", 0)) * m, 1)
+                            kategori = nref.get("kategori", "")
+                    except Exception:
+                        pass
+                
+                total_cal += cal; total_prot += prot; total_fat += fat; total_carb += carb
+                total_gram += weight
+                if "sayur" in kategori.lower():
+                    sayur_gram += weight
+                
+                ingredients.append({
+                    "name": prod.get("name", ""),
+                    "weight_gram": round(weight, 1),
+                    "calories": cal, "proteins": prot, "fat": fat, "carbohydrate": carb,
+                    "kategori": kategori,
+                })
+            
+            sayur_pct = round((sayur_gram / total_gram) * 100, 1) if total_gram > 0 else 0.0
+            nutrition_cache[mid] = {
+                "ingredients": ingredients,
+                "totals": {
+                    "calories": round(total_cal, 1), "proteins": round(total_prot, 1),
+                    "fat": round(total_fat, 1), "carbohydrate": round(total_carb, 1),
+                    "total_gram": round(total_gram, 1),
+                },
+                "sayur_percentage": sayur_pct,
+                "is_balanced": sayur_pct >= 30.0,
+            }
+        except Exception:
+            nutrition_cache[mid] = None
+    
+    # 5. Build calendar days
+    days = []
+    for day_num in range(1, days_in_month + 1):
+        current_date = date(year, month, day_num)
+        date_str = current_date.isoformat()
+        weekday = current_date.weekday()  # 0=Monday
+        
+        # Skip Sunday
+        is_weekday = weekday < 6
+        
+        menu_info = menu_by_date.get(date_str, {})
+        menu_id = menu_info.get("menu_id")
+        menu_name = menu_info.get("menu_name", "")
+        
+        nutrition = nutrition_cache.get(menu_id) if menu_id else None
+        day_deliveries = deliveries_by_date.get(date_str, [])
+        total_portions = sum(d.get("portions_sent", 0) for d in day_deliveries)
+        
+        days.append({
+            "date": date_str,
+            "day": day_num,
+            "day_name": HARI_INDO.get(weekday, ""),
+            "is_weekday": is_weekday,
+            "menu_name": menu_name,
+            "menu_id": menu_id,
+            "has_menu": bool(menu_name),
+            "has_delivery": bool(day_deliveries),
+            "total_portions": total_portions,
+            "schools_delivered": len(day_deliveries),
+            "deliveries": day_deliveries,
+            "nutrition": nutrition,
+        })
+    
+    # 6. Monthly totals
+    total_portions_month = sum(d["total_portions"] for d in days)
+    days_with_delivery = sum(1 for d in days if d["has_delivery"])
+    
+    return {
+        "success": True,
+        "data": {
+            "year": year,
+            "month": month,
+            "days_in_month": days_in_month,
+            "days": days,
+            "beneficiaries": beneficiary_summary,
+            "monthly_summary": {
+                "total_portions": total_portions_month,
+                "delivery_days": days_with_delivery,
+                "avg_portions_per_day": round(total_portions_month / max(days_with_delivery, 1)),
+            },
+        }
+    }
+
