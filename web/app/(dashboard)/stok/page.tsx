@@ -37,6 +37,13 @@ interface HistoryRow {
     created_at: string;
 }
 
+interface DayBreakdown {
+    date: string;
+    needed: number;
+    stock_after: number;
+    sufficient: boolean;
+}
+
 interface ProjectionItem {
     product_id: string;
     name: string;
@@ -51,6 +58,7 @@ interface ProjectionItem {
     sufficient: boolean;
     shortage: number;
     status: "aman" | "menipis" | "kritis" | "habis";
+    day_breakdown?: DayBreakdown[];
 }
 
 interface ProjectionData {
@@ -76,8 +84,9 @@ function getStockStatus(qty: number, min: number): { label: string; className: s
     return { label: "✅ Aman", className: "text-green-700 bg-green-100" };
 }
 
-function DaysDisplay({ days, unit }: { days: number; unit: string }) {
-    if (days >= 999) return <span className="text-green-700 font-medium">30+ hari</span>;
+function DaysDisplay({ days, stock }: { days: number; stock: number }) {
+    if (stock <= 0) return <span className="font-bold text-gray-900 bg-gray-200 px-1.5 py-0.5 rounded text-xs">HABIS</span>;
+    if (days >= 999) return <span className="text-green-700 font-medium">Tidak terpakai</span>;
     if (days === 0) return <span className="font-bold text-gray-900 bg-gray-200 px-1.5 py-0.5 rounded text-xs">HABIS</span>;
     if (days < 1) return <span className="text-red-600 font-bold text-xs">Hampir Habis</span>;
     if (days <= 7) return <span className="text-orange-600 font-medium">{days.toFixed(1)} hari</span>;
@@ -102,6 +111,7 @@ export default function StokPage() {
     const [projDays, setProjDays] = useState(7);
     const [projection, setProjection] = useState<ProjectionData | null>(null);
     const [projLoading, setProjLoading] = useState(true);
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
     // Koreksi
     const [koreksiModal, setKoreksiModal] = useState<KoreksiModal | null>(null);
@@ -349,44 +359,80 @@ export default function StokPage() {
                                     <table className="w-full text-sm">
                                         <thead className="bg-gray-50">
                                             <tr>
-                                                {["Bahan", "Stok Saat Ini", "Pemakaian/Hari", `Perlu (${projDays}h)`, "Cukup Untuk", "Status"].map(h => (
+                                                {["Bahan", "Stok Saat Ini", "Pemakaian/Hari", `Perlu (${projDays}h)`, "Cukup", "Status"].map(h => (
                                                     <th key={h} className="text-left px-3 py-2 text-gray-500 font-medium text-xs whitespace-nowrap">{h}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {visibleItems.map((item, i) => (
-                                                <tr key={item.product_id} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}>
-                                                    <td className="px-3 py-2 font-medium text-gray-800">{item.name}</td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        {(item.stock_qty_display ?? item.stock_qty).toLocaleString("id-ID")} {item.display_unit || item.unit}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-gray-500">
-                                                        {item.daily_usage > 0
-                                                            ? `${item.daily_usage.toLocaleString("id-ID", { maximumFractionDigits: 2 })} ${item.unit}`
-                                                            : <span className="text-gray-300">—</span>
-                                                        }
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        {item.needed_for_period > 0
-                                                            ? <><span className={item.sufficient ? "text-green-700" : "text-red-600 font-semibold"}>
-                                                                {item.needed_for_period.toLocaleString("id-ID", { maximumFractionDigits: 1 })} {item.unit}
-                                                            </span>
-                                                                {!item.sufficient && <span className="ml-1 text-red-500 text-xs">(kurang {item.shortage.toFixed(1)})</span>}
-                                                            </>
-                                                            : <span className="text-gray-300">—</span>
-                                                        }
-                                                    </td>
-                                                    <td className="px-3 py-2">
-                                                        <DaysDisplay days={item.days_remaining} unit={item.unit} />
-                                                    </td>
-                                                    <td className="px-3 py-2">
-                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor[item.status]}`}>
-                                                            {statusLabel[item.status]}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {visibleItems.map((item, i) => {
+                                                const isExp = expanded[`proj-${item.product_id}`];
+                                                return (
+                                                    <>
+                                                        <tr key={item.product_id}
+                                                            className={`border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${i % 2 === 1 ? "bg-gray-50/40" : ""}`}
+                                                            onClick={() => item.day_breakdown && item.day_breakdown.length > 0 && setExpanded(e => ({ ...e, [`proj-${item.product_id}`]: !e[`proj-${item.product_id}`] }))}>
+                                                            <td className="px-3 py-2 font-medium text-gray-800">
+                                                                {item.day_breakdown && item.day_breakdown.length > 0 && (
+                                                                    <span className="text-gray-400 mr-1 text-xs">{isExp ? "▼" : "▶"}</span>
+                                                                )}
+                                                                {item.name}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right">
+                                                                {(item.stock_qty_display ?? item.stock_qty).toLocaleString("id-ID")} {item.display_unit || item.unit}
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right text-gray-500">
+                                                                {item.daily_usage > 0
+                                                                    ? `${item.daily_usage.toLocaleString("id-ID", { maximumFractionDigits: 2 })} ${item.display_unit || item.unit}`
+                                                                    : <span className="text-gray-300">—</span>
+                                                                }
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right">
+                                                                {item.needed_for_period > 0
+                                                                    ? <><span className={item.sufficient ? "text-green-700" : "text-red-600 font-semibold"}>
+                                                                        {item.needed_for_period.toLocaleString("id-ID", { maximumFractionDigits: 1 })} {item.display_unit || item.unit}
+                                                                    </span>
+                                                                        {!item.sufficient && <span className="ml-1 text-red-500 text-xs">(kurang {item.shortage.toFixed(1)})</span>}
+                                                                    </>
+                                                                    : <span className="text-gray-300">—</span>
+                                                                }
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                <DaysDisplay days={item.days_remaining} stock={item.stock_qty_display ?? item.stock_qty} />
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor[item.status]}`}>
+                                                                    {statusLabel[item.status]}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                        {isExp && item.day_breakdown && item.day_breakdown.map((bd, bi) => {
+                                                            const dObj = new Date(bd.date);
+                                                            return (
+                                                                <tr key={`bd-${item.product_id}-${bi}`} className="bg-blue-50/40 border-b border-blue-50">
+                                                                    <td className="px-3 py-1 pl-8 text-xs text-gray-500" colSpan={2}>
+                                                                        📅 {dObj.toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" })}
+                                                                    </td>
+                                                                    <td className="px-3 py-1 text-right text-xs font-mono text-gray-600">
+                                                                        {bd.needed.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {item.display_unit || item.unit}
+                                                                    </td>
+                                                                    <td className="px-3 py-1 text-right text-xs font-mono">
+                                                                        <span className={bd.sufficient ? "text-green-600" : "text-red-600 font-bold"}>
+                                                                            Sisa: {bd.stock_after.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {item.display_unit || item.unit}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-3 py-1 text-center text-xs">
+                                                                        {bd.sufficient
+                                                                            ? <span className="text-green-600">✅</span>
+                                                                            : <span className="text-red-600 font-bold">❌ Kurang</span>}
+                                                                    </td>
+                                                                    <td />
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

@@ -356,10 +356,36 @@ def get_stock_projection(
             period_usage_base[pid] = daily * days
 
     # ── Susun hasil proyeksi ──────────────────────────────────────────────
+    # Build per-day usage map: {product_id: {date_str: qty_base}}
+    per_day_usage: Dict[str, Dict[str, float]] = {}
+    
+    if based_on_menu and total_portions > 0:
+        for m in all_menus:
+            ws = m.get("week_start")
+            dow = m.get("day_of_week")
+            mid = m.get("menu_id")
+            if not mid or ws not in query_pairs or dow not in query_pairs[ws]:
+                continue
+            
+            # Calculate actual date for this menu entry
+            ws_date = date.fromisoformat(ws)
+            actual_date = ws_date + timedelta(days=dow - 1)
+            if actual_date < today:
+                continue  # Skip past days
+            
+            date_str = actual_date.isoformat()
+            
+            m_recipes = [r for r in recipes if r["menu_id"] == mid]
+            flat = recipe_service._flatten_recipes(m_recipes, total_portions, supabase)
+            
+            for iid, qty_base in flat.items():
+                if iid not in per_day_usage:
+                    per_day_usage[iid] = {}
+                per_day_usage[iid][date_str] = per_day_usage[iid].get(date_str, 0) + float(qty_base)
+
     items_out = []
     for p in products:
         pid = p["id"]
-        # Semua diubah ke DISPLAY UNIT dengan membaginya dengan conversion_factor
         factor = float(p.get("conversion_factor") or 1)
         
         stock_base = float(p.get("stock_qty") or 0)
@@ -373,17 +399,37 @@ def get_stock_projection(
         usage_disp = usage_base / factor if factor else usage_base
         needed_period_disp = needed_period_base / factor if factor else needed_period_base
 
-        if usage_disp > 0:
+        # Calculate days_remaining using sequential per-day deduction
+        if based_on_menu and pid in per_day_usage:
+            remaining = stock_base
+            days_rem = 0
+            sorted_dates = sorted(per_day_usage[pid].keys())
+            for d_str in sorted_dates:
+                day_need = per_day_usage[pid][d_str]
+                if remaining >= day_need:
+                    remaining -= day_need
+                    days_rem += 1
+                else:
+                    # Partially covers this day
+                    if day_need > 0:
+                        days_rem += remaining / day_need
+                    remaining = 0
+                    break
+            # If stock covers all scheduled days, estimate beyond
+            if remaining > 0 and usage_disp > 0:
+                days_rem += remaining / factor / usage_disp if factor else remaining / usage_disp
+        elif usage_disp > 0:
             days_rem = stock_disp / usage_disp
         else:
-            days_rem = 999  # tak terbatas
+            # No usage data — if stock is 0, mark as 0 days, otherwise unknown (large)
+            days_rem = 0 if stock_disp <= 0 else 999
 
         sufficient = stock_disp >= needed_period_disp
         shortage_disp = max(needed_period_disp - stock_disp, 0)
 
         if stock_disp <= 0:
             stat = "habis"
-        elif days_rem < 1:
+        elif not sufficient and needed_period_disp > 0:
             stat = "kritis"
         elif days_rem <= 7:
             stat = "menipis"
@@ -391,12 +437,28 @@ def get_stock_projection(
             stat = "aman"
 
         disp_unit = p.get("display_unit") or p.get("unit", "pcs")
+        
+        # Build per-day breakdown for this product
+        day_breakdown = []
+        if based_on_menu and pid in per_day_usage:
+            running_stock = stock_base
+            for d_str in sorted(per_day_usage[pid].keys()):
+                day_need = per_day_usage[pid][d_str]
+                day_need_disp = day_need / factor if factor else day_need
+                enough = running_stock >= day_need
+                running_stock = max(running_stock - day_need, 0)
+                day_breakdown.append({
+                    "date": d_str,
+                    "needed": round(day_need_disp, 2),
+                    "stock_after": round(running_stock / factor if factor else running_stock, 2),
+                    "sufficient": enough,
+                })
 
         items_out.append({
             "product_id": pid,
             "name": p["name"],
             "unit": disp_unit,
-            "stock_qty": stock_base, # Keep raw for sorting if needed
+            "stock_qty": stock_base,
             "stock_qty_display": round(stock_disp, 3),
             "stock_min_display": round(stock_min_disp, 3),
             "daily_usage": round(usage_disp, 4),
@@ -407,11 +469,12 @@ def get_stock_projection(
             "status": stat,
             "harga": p.get("harga"),
             "display_unit": disp_unit,
+            "day_breakdown": day_breakdown,
         })
 
     # Sort: kritis/habis dulu
     order = {"habis": 0, "kritis": 1, "menipis": 2, "aman": 3}
-    items_out.sort(key=lambda x: order.get(x["status"], 4))
+    items_out.sort(key=lambda x: (order.get(x["status"], 4), -x.get("needed_for_period", 0)))
 
     summary = {
         "total_items": len(items_out),
