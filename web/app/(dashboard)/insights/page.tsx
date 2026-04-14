@@ -254,7 +254,7 @@ function JadwalTab() {
 
     // States for Master Schedule Setup
     const [showMasterModal, setShowMasterModal] = useState(false);
-    const [masterForm, setMasterForm] = useState({ prep_start_time: "05:00", cook_start_time: "06:00", cook_minutes_per_100: 30 });
+    const [masterForm, setMasterForm] = useState<{ prep_start_time: string; cook_start_time: string; cook_minutes_per_100: number; schools: any[] }>({ prep_start_time: "05:00", cook_start_time: "06:00", cook_minutes_per_100: 30, schools: [] });
     const [savingMaster, setSavingMaster] = useState(false);
 
     const getMonday = (offset: number) => {
@@ -427,6 +427,7 @@ function JadwalTab() {
                                     prep_start_time: master?.prep_start_time || "05:00",
                                     cook_start_time: master?.cook_start_time || "06:00",
                                     cook_minutes_per_100: master?.cook_minutes_per_100 || 30,
+                                    schools: master?.schools || [],
                                 });
                                 setShowMasterModal(true);
                             }} className="text-sm px-3 py-1.5 border border-purple-200 text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 font-medium">
