@@ -622,11 +622,11 @@ export default function StokPage() {
                                             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
                                             placeholder="Masukkan stok aktual..."
                                         />
-                                        <span className="text-gray-500 text-sm whitespace-nowrap">{koreksiModal.product.unit}</span>
+                                        <span className="text-gray-500 text-sm whitespace-nowrap font-semibold">{koreksiModal.product.display_unit || koreksiModal.product.unit}</span>
                                     </div>
                                     {koreksiNewQty !== "" && (
                                         <p className={`text-xs mt-1 ${deltaNum > 0 ? "text-green-600" : deltaNum < 0 ? "text-red-500" : "text-gray-400"}`}>
-                                            Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.unit}
+                                            Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.display_unit || koreksiModal.product.unit}
                                         </p>
                                     )}
                                 </div>
@@ -663,11 +663,11 @@ export default function StokPage() {
                                     <p className="font-semibold text-yellow-900">Konfirmasi Perubahan</p>
                                     <p className="text-yellow-800">
                                         Stok <strong>{koreksiModal.product.name}</strong> akan diubah dari{" "}
-                                        <strong>{koreksiModal.product.stock_qty.toLocaleString("id-ID")}</strong> ke{" "}
-                                        <strong>{newQtyNum.toLocaleString("id-ID")}</strong> {koreksiModal.product.unit}
+                                        <strong>{(koreksiModal.product.stock_qty_display ?? koreksiModal.product.stock_qty).toLocaleString("id-ID")}</strong> ke{" "}
+                                        <strong>{newQtyNum.toLocaleString("id-ID")}</strong> {koreksiModal.product.display_unit || koreksiModal.product.unit}
                                     </p>
                                     <p className={`font-bold ${deltaNum > 0 ? "text-green-700" : deltaNum < 0 ? "text-red-600" : "text-gray-600"}`}>
-                                        Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.unit}
+                                        Delta: {deltaNum > 0 ? "+" : ""}{deltaNum.toLocaleString("id-ID", { maximumFractionDigits: 2 })} {koreksiModal.product.display_unit || koreksiModal.product.unit}
                                     </p>
                                     <p className="text-yellow-700 text-xs">Alasan: {koreksiReason}</p>
                                 </div>
