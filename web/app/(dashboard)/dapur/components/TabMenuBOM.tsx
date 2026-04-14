@@ -34,6 +34,28 @@ interface NutritionSummary {
   is_balanced: boolean;
 }
 
+interface NutritionIngredient {
+  product_id: string;
+  product_name: string;
+  weight_gram: number;
+  calories: number;
+  proteins: number;
+  fat: number;
+  carbohydrate: number;
+  kategori: string;
+  nutrition_ref_id: number | null;
+  nutrition_ref_name: string;
+  has_nutrition: boolean;
+}
+
+interface NutritionDetails {
+  menu_id: string;
+  ingredients: NutritionIngredient[];
+  totals: { calories: number; proteins: number; fat: number; carbohydrate: number; total_gram: number };
+  sayur_percentage: number;
+  is_balanced: boolean;
+}
+
 interface FormRowItem {
   ingredient_name: string;
   ingredient_id: string | null;
@@ -54,6 +76,7 @@ export function TabMenuBOM() {
   const [menuRecipes, setMenuRecipes] = useState<Record<string, Recipe[]>>({});
   const [bomPreview, setBomPreview] = useState<Record<string, SimIngredient[]>>({});
   const [nutrition, setNutrition] = useState<Record<string, NutritionSummary>>({});
+  const [nutritionDetails, setNutritionDetails] = useState<Record<string, NutritionDetails>>({});
 
   /* ─── Menu form (Integrated) ─────────────────────────────────────── */
   const [showMenuModal, setShowMenuModal] = useState(false);
@@ -64,7 +87,7 @@ export function TabMenuBOM() {
 
   /* ─── Nutrition Edit ──────────────────────────────────────────────── */
   const [editingNutProd, setEditingNutProd] = useState<Product | null>(null);
-  const [nutForm, setNutForm] = useState({ conversion_factor: 100, calories: 0, proteins: 0, kategori: "lainnya" });
+  const [nutForm, setNutForm] = useState({ conversion_factor: 100, calories: 0, proteins: 0, fat: 0, carbohydrate: 0, kategori: "lainnya" });
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -90,10 +113,14 @@ export function TabMenuBOM() {
       setMenuRecipes(prev => ({ ...prev, [menuId]: all.filter(r => r.menu_id === menuId) }));
     } catch (e) { console.error(e); }
     
-    // Fetch Nutrition
+    // Fetch Nutrition summary + details
     try {
-      const nRes = await apiGet(`/nutrition/menu/${menuId}`);
+      const [nRes, nDetail] = await Promise.all([
+        apiGet(`/nutrition/menu/${menuId}`).catch(() => null),
+        apiGet(`/nutrition/menu/${menuId}/details`).catch(() => null),
+      ]);
       if (nRes) setNutrition(prev => ({ ...prev, [menuId]: nRes }));
+      if (nDetail?.data) setNutritionDetails(prev => ({ ...prev, [menuId]: nDetail.data }));
     } catch (e) { console.error(e); }
   };
 
@@ -398,8 +425,10 @@ export function TabMenuBOM() {
                                                setEditingNutProd(pd);
                                                setNutForm({
                                                   conversion_factor: pd.conversion_factor || 1,
-                                                  calories: 0, // Placeholder, ideally fetch from backend if needed
+                                                  calories: 0,
                                                   proteins: 0,
+                                                  fat: 0,
+                                                  carbohydrate: 0,
                                                   kategori: "",
                                                });
                                            }
@@ -416,33 +445,116 @@ export function TabMenuBOM() {
                       )}
                     </div>
 
-                    {/* Nutrition Balance Check */}
-                    {nutrition[menu.id] && (
+                    {/* Nutrition Detail Table */}
+                    {nutritionDetails[menu.id] && (
                       <div className="pt-6 border-t border-gray-100">
-                        <div className="flex items-center gap-2 mb-4">
-                          <h4 className="font-bold text-gray-900 text-sm">🩺 Cek Standimetri & Gizi MBG</h4>
-                          {nutrition[menu.id].total_ingredient_gram === 0 && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded font-medium">BOM Kosong / Error Gram</span>}
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-bold text-gray-900 text-sm">🩺 Tabel Nutrisi Per Bahan (1 Porsi)</h4>
+                          {nutritionDetails[menu.id].totals.total_gram === 0 && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded font-medium">BOM Kosong / Belum ada link nutrisi</span>}
                         </div>
-                        
-                        {nutrition[menu.id].total_ingredient_gram > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-orange-50 border border-orange-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
-                                <span className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-1">Energi / Kalori</span>
-                                <span className="text-2xl font-black text-orange-900">{nutrition[menu.id].calories.toLocaleString("id-ID")} <span className="text-sm font-semibold">kkal</span></span>
+
+                        {/* Summary Cards */}
+                        {nutritionDetails[menu.id].totals.total_gram > 0 && (
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                            <div className="bg-orange-50 border border-orange-100 p-3 rounded-2xl flex flex-col items-center text-center">
+                              <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest mb-0.5">Kalori</span>
+                              <span className="text-xl font-black text-orange-900">{nutritionDetails[menu.id].totals.calories.toLocaleString("id-ID")} <span className="text-xs font-semibold">kkal</span></span>
                             </div>
-                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
-                                <span className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-1">Protein</span>
-                                <span className="text-2xl font-black text-blue-900">{nutrition[menu.id].proteins.toLocaleString("id-ID")} <span className="text-sm font-semibold">gr</span></span>
+                            <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center text-center">
+                              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-0.5">Protein</span>
+                              <span className="text-xl font-black text-blue-900">{nutritionDetails[menu.id].totals.proteins.toLocaleString("id-ID")} <span className="text-xs font-semibold">g</span></span>
                             </div>
-                            <div className="bg-teal-50 border border-teal-100 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
-                                <span className="text-xs font-bold text-teal-600 uppercase tracking-widest mb-1">Netto (Bahan)</span>
-                                <span className="text-2xl font-black text-teal-900">{nutrition[menu.id].total_ingredient_gram.toLocaleString("id-ID")} <span className="text-sm font-semibold">gr</span></span>
+                            <div className="bg-yellow-50 border border-yellow-100 p-3 rounded-2xl flex flex-col items-center text-center">
+                              <span className="text-[10px] font-bold text-yellow-600 uppercase tracking-widest mb-0.5">Lemak</span>
+                              <span className="text-xl font-black text-yellow-900">{nutritionDetails[menu.id].totals.fat.toLocaleString("id-ID")} <span className="text-xs font-semibold">g</span></span>
                             </div>
-                            <div className={`p-4 rounded-2xl flex flex-col items-center justify-center text-center border ${nutrition[menu.id].is_balanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200 relative overflow-hidden'}`}>
-                                {!nutrition[menu.id].is_balanced && <div className="absolute inset-0 bg-red-100/50 flex flex-col items-center justify-center animate-pulse border-2 border-red-400 z-10 p-2"><span className="text-3xl mb-1">⚠️</span><span className="text-[10px] font-bold text-red-700 leading-tight text-center">SAYUR &lt; 30%<br/>ATENSI DINAS</span></div>}
-                                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Porsi Sayur</span>
-                                <span className={`text-2xl font-black ${nutrition[menu.id].is_balanced ? 'text-green-700' : 'text-red-700'}`}>{nutrition[menu.id].sayur_percentage}%</span>
+                            <div className="bg-teal-50 border border-teal-100 p-3 rounded-2xl flex flex-col items-center text-center">
+                              <span className="text-[10px] font-bold text-teal-600 uppercase tracking-widest mb-0.5">Karbohidrat</span>
+                              <span className="text-xl font-black text-teal-900">{nutritionDetails[menu.id].totals.carbohydrate.toLocaleString("id-ID")} <span className="text-xs font-semibold">g</span></span>
                             </div>
+                            <div className={`p-3 rounded-2xl flex flex-col items-center text-center border ${nutritionDetails[menu.id].is_balanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200 relative overflow-hidden'}`}>
+                              {!nutritionDetails[menu.id].is_balanced && <div className="absolute inset-0 bg-red-100/50 flex flex-col items-center justify-center animate-pulse border-2 border-red-400 z-10 p-1"><span className="text-2xl">⚠️</span><span className="text-[9px] font-bold text-red-700 leading-tight text-center">SAYUR &lt;30%</span></div>}
+                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Sayur</span>
+                              <span className={`text-xl font-black ${nutritionDetails[menu.id].is_balanced ? 'text-green-700' : 'text-red-700'}`}>{nutritionDetails[menu.id].sayur_percentage}%</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Per-ingredient Table */}
+                        {nutritionDetails[menu.id].ingredients.length > 0 && (
+                          <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-inner">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-slate-800 text-white text-xs font-semibold uppercase tracking-wider">
+                                  <th className="py-2.5 px-3 text-left">Bahan</th>
+                                  <th className="py-2.5 px-3 text-right">Berat (g)</th>
+                                  <th className="py-2.5 px-3 text-right">Kalori</th>
+                                  <th className="py-2.5 px-3 text-right">Protein</th>
+                                  <th className="py-2.5 px-3 text-right">Lemak</th>
+                                  <th className="py-2.5 px-3 text-right">Karbo</th>
+                                  <th className="py-2.5 px-3 text-center">Kategori</th>
+                                  <th className="py-2.5 px-3 text-center w-20">Aksi</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {nutritionDetails[menu.id].ingredients.map((ing, i) => (
+                                  <tr key={ing.product_id + i} className={`border-t border-slate-100 ${!ing.has_nutrition ? 'bg-amber-50/50' : i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/30 transition-colors`}>
+                                    <td className="py-2 px-3 font-semibold text-gray-800">
+                                      {ing.product_name}
+                                      {!ing.has_nutrition && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded font-bold">NO DATA</span>}
+                                    </td>
+                                    <td className="py-2 px-3 text-right font-mono text-gray-700">{ing.weight_gram.toLocaleString("id-ID")}</td>
+                                    <td className="py-2 px-3 text-right font-mono text-orange-700">{ing.calories.toLocaleString("id-ID")}</td>
+                                    <td className="py-2 px-3 text-right font-mono text-blue-700">{ing.proteins.toLocaleString("id-ID")}</td>
+                                    <td className="py-2 px-3 text-right font-mono text-yellow-700">{ing.fat.toLocaleString("id-ID")}</td>
+                                    <td className="py-2 px-3 text-right font-mono text-teal-700">{ing.carbohydrate.toLocaleString("id-ID")}</td>
+                                    <td className="py-2 px-3 text-center">
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${ing.kategori?.includes('sayur') ? 'bg-green-100 text-green-700' : ing.kategori?.includes('lauk') ? 'bg-purple-100 text-purple-700' : ing.kategori?.includes('buah') ? 'bg-pink-100 text-pink-700' : 'bg-gray-100 text-gray-600'}`}>
+                                        {ing.kategori || '-'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-3 text-center">
+                                      <button onClick={() => {
+                                        const pd = products.find(p => p.id === ing.product_id);
+                                        if (pd) {
+                                          setEditingNutProd(pd);
+                                          setNutForm({
+                                            conversion_factor: pd.conversion_factor || 1,
+                                            calories: ing.has_nutrition ? Math.round(ing.calories / (ing.weight_gram / 100 || 1)) : 0,
+                                            proteins: ing.has_nutrition ? Math.round(ing.proteins / (ing.weight_gram / 100 || 1)) : 0,
+                                            fat: ing.has_nutrition ? Math.round(ing.fat / (ing.weight_gram / 100 || 1)) : 0,
+                                            carbohydrate: ing.has_nutrition ? Math.round(ing.carbohydrate / (ing.weight_gram / 100 || 1)) : 0,
+                                            kategori: ing.kategori || "",
+                                          });
+                                        }
+                                      }} className="px-2 py-1 bg-yellow-50 text-yellow-700 text-xs font-bold rounded hover:bg-yellow-100 border border-yellow-200 transition-colors">
+                                        ✏️
+                                      </button>
+                                      {!ing.has_nutrition && (
+                                        <button onClick={async () => {
+                                          try {
+                                            await apiPost(`/nutrition/auto-link/${ing.product_id}`);
+                                            await fetchMenuRecipes(menu.id);
+                                          } catch { }
+                                        }} className="ml-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded hover:bg-blue-100 border border-blue-200 transition-colors" title="Auto-link via AI">
+                                          🤖
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {/* Total Row */}
+                                <tr className="bg-slate-800 text-white font-bold text-xs">
+                                  <td className="py-2.5 px-3 uppercase tracking-wider">Total Per Porsi</td>
+                                  <td className="py-2.5 px-3 text-right font-mono">{nutritionDetails[menu.id].totals.total_gram.toLocaleString("id-ID")}g</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-orange-300">{nutritionDetails[menu.id].totals.calories.toLocaleString("id-ID")}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-blue-300">{nutritionDetails[menu.id].totals.proteins.toLocaleString("id-ID")}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-yellow-300">{nutritionDetails[menu.id].totals.fat.toLocaleString("id-ID")}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono text-teal-300">{nutritionDetails[menu.id].totals.carbohydrate.toLocaleString("id-ID")}</td>
+                                  <td className="py-2.5 px-3" colSpan={2}></td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </div>
                         )}
                       </div>
@@ -588,24 +700,38 @@ export function TabMenuBOM() {
 
                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kalori (per 100gr) *</label>
-                        <input type="number" step="0.1" value={nutForm.calories || ''} onChange={e => setNutForm({...nutForm, calories: parseFloat(e.target.value)})} placeholder="Opsional" className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kalori (per 100g)</label>
+                        <input type="number" step="0.1" value={nutForm.calories || ''} onChange={e => setNutForm({...nutForm, calories: parseFloat(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Protein (per 100gr) *</label>
-                        <input type="number" step="0.1" value={nutForm.proteins || ''} onChange={e => setNutForm({...nutForm, proteins: parseFloat(e.target.value)})} placeholder="Opsional" className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Protein (per 100g)</label>
+                        <input type="number" step="0.1" value={nutForm.proteins || ''} onChange={e => setNutForm({...nutForm, proteins: parseFloat(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                    </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Lemak (per 100g)</label>
+                        <input type="number" step="0.1" value={nutForm.fat || ''} onChange={e => setNutForm({...nutForm, fat: parseFloat(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Karbohidrat (per 100g)</label>
+                        <input type="number" step="0.1" value={nutForm.carbohydrate || ''} onChange={e => setNutForm({...nutForm, carbohydrate: parseFloat(e.target.value) || 0})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm" />
                     </div>
                  </div>
                  
                  <div>
-                     <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kategori Gizi *</label>
+                     <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">Kategori Gizi</label>
                      <select value={nutForm.kategori} onChange={e => setNutForm({...nutForm, kategori: e.target.value})} className="w-full px-3 py-2 border border-gray-200 rounded-lg outline-none text-sm">
                          <option value="">(Abaikan / Jangan ubah)</option>
                          <option value="sayur">Sayur</option>
                          <option value="buah">Buah</option>
+                         <option value="lauk">Lauk</option>
                          <option value="lauk hewani">Lauk Hewani</option>
                          <option value="lauk nabati">Lauk Nabati</option>
                          <option value="karbohidrat">Karbohidrat / Makanan Pokok</option>
+                         <option value="bahan pangan">Bahan Pangan</option>
+                         <option value="bahan pokok">Bahan Pokok</option>
+                         <option value="bumbu">Bumbu</option>
                      </select>
                  </div>
               </div>
@@ -617,9 +743,13 @@ export function TabMenuBOM() {
                         const payload: any = { product_id: editingNutProd.id, conversion_factor: nutForm.conversion_factor };
                         if (nutForm.calories) payload.calories = nutForm.calories;
                         if (nutForm.proteins) payload.proteins = nutForm.proteins;
+                        if (nutForm.fat) payload.fat = nutForm.fat;
+                        if (nutForm.carbohydrate) payload.carbohydrate = nutForm.carbohydrate;
                         if (nutForm.kategori) payload.kategori = nutForm.kategori;
                         await apiPut(`/nutrition/products/${editingNutProd.id}`, payload);
                         setEditingNutProd(null);
+                        // Refresh nutrition details for the expanded menu
+                        if (expandedMenu) await fetchMenuRecipes(expandedMenu);
                         fetchAll();
                      } catch(e) { console.error(e); }
                  }} className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer">

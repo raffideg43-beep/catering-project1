@@ -137,6 +137,16 @@ def create_product(
             }
         ).execute()
 
+    # Auto-link ke nutrition_ref jika bahan_baku
+    if body.category == "bahan_baku":
+        try:
+            from services.nutrition_service import nutrition_svc
+            nutrition_svc.map_and_link_product(
+                supabase, product_id, body.name, disp_unit, current_user.tenant_id
+            )
+        except Exception:
+            pass  # Non-blocking, nutrition link is best-effort
+
     return {"success": True, "data": ProductResponse(**data[0])}
 
 
