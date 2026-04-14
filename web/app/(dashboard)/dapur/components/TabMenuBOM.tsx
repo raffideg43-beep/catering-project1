@@ -418,23 +418,6 @@ export function TabMenuBOM() {
                                         {ing.sufficient
                                         ? <span className="inline-flex py-1 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-full border border-emerald-100">Aman</span>
                                         : <span className="inline-flex py-1 px-2 bg-red-50 text-red-600 font-bold text-[11px] rounded border border-red-100 uppercase tracking-widest whitespace-nowrap">Kurang {ing.shortage_display ?? ing.shortage}</span>}
-                                        
-                                        <button onClick={() => {
-                                           const pd = products.find(p => p.id === ing.ingredient_id);
-                                           if (pd) {
-                                               setEditingNutProd(pd);
-                                               setNutForm({
-                                                  conversion_factor: pd.conversion_factor || 1,
-                                                  calories: 0,
-                                                  proteins: 0,
-                                                  fat: 0,
-                                                  carbohydrate: 0,
-                                                  kategori: "",
-                                               });
-                                           }
-                                        }} className="ml-2 px-2 py-1 bg-yellow-50 text-yellow-700 text-xs font-bold rounded hover:bg-yellow-100 border border-yellow-200">
-                                            ✏️ Ganti Gizi
-                                        </button>
                                       </td>
                                     </tr>
                                   ))}

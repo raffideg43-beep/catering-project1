@@ -9,6 +9,58 @@ from models.user import UserInDB
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
 
+
+def _recipe_to_grams(r: dict, prod: dict) -> float:
+    """
+    Convert recipe qty_needed to grams properly.
+    
+    Recipe stores qty_needed in the unit specified in recipe.unit (e.g. 'gram', 'kg', 'pcs').
+    Product has conversion_factor which converts product.unit to grams.
+    
+    Rules:
+    - If recipe.unit is 'gram' or 'g' → qty_needed IS grams already
+    - If recipe.unit is 'kg' → qty_needed * 1000
+    - If recipe.unit is 'liter' or 'ml' → qty_needed * 1000 or 1
+    - If recipe.unit matches product.unit → qty_needed * product.conversion_factor
+    - Otherwise use qty_needed as-is (best effort)
+    """
+    qty = float(r.get("qty_needed", 0))
+    recipe_unit = (r.get("unit") or "").lower().strip()
+    
+    # Direct gram/g
+    if recipe_unit in ("gram", "g", "gr"):
+        return qty
+    
+    # kg
+    if recipe_unit == "kg":
+        return qty * 1000
+    
+    # liter
+    if recipe_unit == "liter" or recipe_unit == "l":
+        return qty * 1000  # approximation: 1L ≈ 1000g for water/oil
+    
+    # ml
+    if recipe_unit in ("ml", "mililiter"):
+        return qty
+    
+    # pcs/buah/butir/siung etc — use product's conversion_factor 
+    # (which represents grams per 1 unit of the product's display unit)
+    prod_conv = float(prod.get("conversion_factor") or 1.0)
+    prod_unit = (prod.get("unit") or "").lower().strip()
+    
+    # If product unit matches recipe unit, use conversion_factor
+    if recipe_unit == prod_unit.lower():
+        return qty * prod_conv
+    
+    # Fallback for pcs/buah/butir etc
+    if recipe_unit in ("pcs", "buah", "butir", "siung", "lembar", "ikat", "biji", "ekor", "batang"):
+        # conversion_factor for pcs-based products typically = grams per 1 piece
+        return qty * prod_conv
+    
+    # Ultimate fallback: assume it's already grams
+    return qty
+
+
 class NutritionSummary(BaseModel):
     menu_id: str
     calories: float = 0.0
@@ -18,6 +70,7 @@ class NutritionSummary(BaseModel):
     total_ingredient_gram: float = 0.0
     sayur_percentage: float = 0.0
     is_balanced: bool = True
+
 
 @router.get("/menu/{menu_id}", response_model=NutritionSummary)
 async def get_menu_nutrition_summary(
@@ -29,7 +82,6 @@ async def get_menu_nutrition_summary(
     """
     supabase = get_supabase()
     
-    # 1. Ambil resep/BOM dari menu ini
     recipes_resp = supabase.table("recipes").select("*, products!recipes_ingredient_id_fkey(*)").eq("menu_id", menu_id).execute()
     recipes = getattr(recipes_resp, "data", [])
     
@@ -40,36 +92,37 @@ async def get_menu_nutrition_summary(
     total_protein = 0.0
     total_fat = 0.0
     total_carbs = 0.0
-    
     total_gram = 0.0
     sayur_gram = 0.0
     
     for r in recipes:
-        Usage_Type = r.get("usage_type", "per_porsi")
-        if Usage_Type != "per_porsi":
+        if r.get("usage_type", "per_porsi") != "per_porsi":
             continue
             
-        qty = float(r.get("qty_needed", 0))
         prod = r.get("products")
         if not prod:
             continue
-            
-        conv_factor = float(prod.get("conversion_factor") or 1.0)
-        weight_in_gram = qty * conv_factor
         
-        # Now fetch the nutrition ref
+        weight_in_gram = _recipe_to_grams(r, prod)
+        if weight_in_gram <= 0:
+            continue
+        
         nut_id = prod.get("nutrition_ref_id")
         if not nut_id:
+            total_gram += weight_in_gram
             continue
             
-        nut_resp = supabase.table("nutrition_ref").select("*").eq("id", nut_id).single().execute()
-        nref = getattr(nut_resp, "data", None)
+        try:
+            nut_resp = supabase.table("nutrition_ref").select("*").eq("id", nut_id).single().execute()
+            nref = getattr(nut_resp, "data", None)
+        except Exception:
+            nref = None
+            
         if not nref:
+            total_gram += weight_in_gram
             continue
             
         kategori = nref.get("kategori", "").lower()
-        
-        # nutrition_ref stores values per 100g.
         multiplier = weight_in_gram / 100.0
         
         total_cal += float(nref.get("calories", 0)) * multiplier
@@ -81,9 +134,7 @@ async def get_menu_nutrition_summary(
         if "sayur" in kategori:
             sayur_gram += weight_in_gram
 
-    perc = 0.0
-    if total_gram > 0:
-        perc = (sayur_gram / total_gram) * 100.0
+    perc = round((sayur_gram / total_gram) * 100.0, 1) if total_gram > 0 else 0.0
         
     return NutritionSummary(
         menu_id=menu_id,
@@ -92,12 +143,12 @@ async def get_menu_nutrition_summary(
         fat=round(total_fat, 1),
         carbohydrates=round(total_carbs, 1),
         total_ingredient_gram=round(total_gram, 1),
-        sayur_percentage=round(perc, 1),
+        sayur_percentage=perc,
         is_balanced=perc >= 30.0
     )
 
 
-# ─── NEW: Detail per-bahan endpoint ────────────────────────────────────────────
+# ─── Detail per-bahan endpoint ─────────────────────────────────────────────────
 
 @router.get("/menu/{menu_id}/details")
 async def get_menu_nutrition_details(
@@ -106,7 +157,6 @@ async def get_menu_nutrition_details(
 ):
     """
     Return nutrisi per-bahan (per ingredient) untuk 1 porsi menu.
-    Digunakan oleh tabel nutrisi detail di frontend BOM.
     """
     supabase = get_supabase()
     
@@ -136,9 +186,7 @@ async def get_menu_nutrition_details(
         
         product_id = prod.get("id", "")
         product_name = prod.get("name", "?")
-        conv_factor = float(prod.get("conversion_factor") or 1.0)
-        qty = float(r.get("qty_needed", 0))
-        weight_gram = qty * conv_factor
+        weight_gram = _recipe_to_grams(r, prod)
         
         nut_id = prod.get("nutrition_ref_id")
         cal = 0.0
@@ -148,7 +196,7 @@ async def get_menu_nutrition_details(
         kategori = ""
         nut_name = ""
         
-        if nut_id:
+        if nut_id and weight_gram > 0:
             try:
                 nut_resp = supabase.table("nutrition_ref").select("*").eq("id", nut_id).single().execute()
                 nref = getattr(nut_resp, "data", None)
@@ -227,11 +275,9 @@ async def update_nutrition_estimation(
     """
     supabase = get_supabase()
     
-    # 1. Update di tabel products (e.g. conversion_factor 1 siung = 5 gr)
     if req.conversion_factor is not None:
         supabase.table("products").update({"conversion_factor": req.conversion_factor}).eq("id", product_id).eq("tenant_id", active_user.tenant_id).execute()
         
-    # 2. Ambil nutrition_ref_id
     p_resp = supabase.table("products").select("nutrition_ref_id").eq("id", product_id).single().execute()
     prod = getattr(p_resp, "data", {})
     nut_id = prod.get("nutrition_ref_id")
@@ -249,7 +295,7 @@ async def update_nutrition_estimation(
     return {"success": True, "message": "Berhasil memperbarui rujukan gizi produk."}
 
 
-# ─── Auto-link endpoint (trigger dari frontend) ────────────────────────────────
+# ─── Auto-link endpoint ────────────────────────────────────────────────────────
 
 @router.post("/auto-link/{product_id}")
 async def auto_link_nutrition(
