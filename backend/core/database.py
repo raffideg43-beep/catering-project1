@@ -2,20 +2,15 @@ from supabase import Client, create_client
 
 from core.config import settings
 
-_supabase_client: Client | None = None
-
-
 def get_supabase() -> Client:
     """
-    Return a singleton Supabase client using the service role key.
+    Return a new Supabase client instance using the service role key.
+    Avoids using a singleton to prevent HTTP/2 RemoteProtocolError (stale connection).
     """
-    global _supabase_client
-    if _supabase_client is None:
-        _supabase_client = create_client(
-            settings.supabase_url,
-            settings.supabase_service_key,
-        )
-    return _supabase_client
+    return create_client(
+        settings.supabase_url,
+        settings.supabase_service_key,
+    )
 
 
 

@@ -358,9 +358,14 @@ export function TabMenuBOM() {
                     <div className="pt-6 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-4">
                         <h4 className="font-bold text-gray-900 text-sm">Validasi Kalkulasi Sistem BOM</h4>
-                        <button onClick={() => fetchBomPreview(menu.id)} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors shadow-sm whitespace-nowrap">
-                          🚀 Jalankan Simulasi 1 {menu.unit}
-                        </button>
+                        <div className="flex gap-2">
+                          <button onClick={() => openMenuForm(menu)} className="px-5 py-2 bg-blue-100 text-blue-700 rounded-xl text-sm font-semibold hover:bg-blue-200 transition-colors shadow-sm whitespace-nowrap">
+                            ✏️ Edit BOM
+                          </button>
+                          <button onClick={() => fetchBomPreview(menu.id)} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-colors shadow-sm whitespace-nowrap">
+                            🚀 Jalankan Simulasi 1 {menu.unit}
+                          </button>
+                        </div>
                       </div>
                       
                       {preview && (

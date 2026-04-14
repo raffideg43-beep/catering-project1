@@ -304,7 +304,7 @@ function JadwalTab() {
                 prep_start_time: masterForm.prep_start_time,
                 cook_start_time: masterForm.cook_start_time,
                 cook_minutes_per_100: masterForm.cook_minutes_per_100,
-                schools: []
+                schools: masterForm.schools || []
             });
             setShowMasterModal(false);
             setToast("✅ Master Schedule berhasil dikonfigurasi!");
@@ -668,6 +668,44 @@ function JadwalTab() {
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Total Waktu masak / 100 Porsi (Menit)</label>
                                 <input type="number" min={1} value={masterForm.cook_minutes_per_100} onChange={e => setMasterForm({ ...masterForm, cook_minutes_per_100: parseInt(e.target.value) || 30 })}
                                     className="w-full border border-gray-200 rounded-xl px-4 py-3 bg-gray-50" />
+                            </div>
+                            <div className="pt-2">
+                                <h4 className="text-sm font-bold text-gray-800 mb-2 border-b pb-2">Pengaturan Waktu Tiap Sekolah</h4>
+                                {masterForm.schools?.length === 0 ? (
+                                    <p className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg border border-blue-100 italic">
+                                        Data sekolah belum terkonfigurasi. Simpan "Sahkan Master" pertama kali, sistem akan mengisi sekolah secara otomatis. Anda bisa ✏️ Edit lagi untuk mengatur waktu per-sekolah.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                        {masterForm.schools?.map((s, idx) => (
+                                            <div key={s.school_id} className="bg-gray-50 border border-gray-100 p-3 rounded-xl">
+                                                <div className="font-semibold text-sm text-gray-800 mb-2 truncate" title={s.school_name}>{s.school_name}</div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Target Tiba</label>
+                                                        <input type="time" value={s.target_arrival}
+                                                            onChange={e => {
+                                                                const nw = [...(masterForm.schools || [])];
+                                                                nw[idx].target_arrival = e.target.value;
+                                                                setMasterForm({ ...masterForm, schools: nw });
+                                                            }}
+                                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Perjalanan (Min)</label>
+                                                        <input type="number" min={5} value={s.travel_minutes}
+                                                            onChange={e => {
+                                                                const nw = [...(masterForm.schools || [])];
+                                                                nw[idx].travel_minutes = parseInt(e.target.value) || 30;
+                                                                setMasterForm({ ...masterForm, schools: nw });
+                                                            }}
+                                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
