@@ -260,7 +260,7 @@ def validate_menu(
     # Cek BOM / resep
     bom_resp = (
         supabase.table("recipes")
-        .select("qty_needed, unit, products!ingredient_id(name)")
+        .select("qty_needed, unit, products!recipes_ingredient_id_fkey(name)")
         .eq("tenant_id", current_user.tenant_id)
         .eq("menu_id", product_id)
         .execute()

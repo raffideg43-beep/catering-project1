@@ -43,16 +43,24 @@ def get_main_menu(role: str = "") -> InlineKeyboardMarkup:
     if row_3:
         keyboard.append(row_3)
 
-    # 4. Baris Utility (Cek Stok - Pengaturan)
+    # 4. Baris Utility (Cek Stok - Pengaturan - Cek Gizi)
     # Cek Stok: owner, admin, kasir, viewer
+    # Cek Gizi: owner, admin, viewer
     # Pengaturan: owner, admin
     row_4 = []
     if role in ["owner", "admin", "kasir", "viewer"]:
         row_4.append(InlineKeyboardButton("📦 Cek Stok", callback_data="cek_stok"))
+    if role in ["owner", "admin", "viewer"]:
+        row_4.append(InlineKeyboardButton("🩺 Cek Gizi", callback_data="cek_gizi"))
+        
+    row_5 = []
     if role in ["owner", "admin"]:
-        row_4.append(InlineKeyboardButton("⚙️ Pengaturan", callback_data="pengaturan"))
+        row_5.append(InlineKeyboardButton("⚙️ Pengaturan", callback_data="pengaturan"))
+    
     if row_4:
         keyboard.append(row_4)
+    if row_5:
+        keyboard.append(row_5)
 
     return InlineKeyboardMarkup(keyboard)
 

@@ -192,6 +192,7 @@ def main():
         konfirmasi_semua, batal_semua, kirim_ulang,
     )
     from handlers.kas_handler import get_kas_conversation_handler
+    from handlers.nutrisi_handler import nutrisi_command, cek_gizi_cb
 
     from telegram import BotCommand
     from telegram.ext import (
@@ -210,8 +211,9 @@ def main():
             BotCommand("stok",     "📦 Status stok bahan"),
             BotCommand("piutang",  "💰 Tagihan MBG belum lunas"),
             BotCommand("hutang",   "💸 Hutang ke supplier"),
-            BotCommand("settings", "Lihat pengaturan akun"),
+            BotCommand(" settings", "Lihat pengaturan akun"),
             BotCommand("kas",      "🏦 Cek saldo kas & anggaran"),
+            BotCommand("nutrisi",  "🩺 Cek status gizi harian"),
             BotCommand("logout",   "Logout akun"),
             BotCommand("cancel",   "Batalkan proses yang sedang berjalan"),
         ]
@@ -252,12 +254,14 @@ def main():
     app.add_handler(CommandHandler("hariini",  hariini_command))
     app.add_handler(CommandHandler("laporan",  laporan_command))
     app.add_handler(CommandHandler("stok",     stok_command))
+    app.add_handler(CommandHandler("nutrisi",  nutrisi_command))
     app.add_handler(CommandHandler("piutang",  piutang_command))
     app.add_handler(CommandHandler("hutang",   hutang_command))
     app.add_handler(get_kas_conversation_handler())
     app.add_handler(CallbackQueryHandler(laporan_hariini_cb, pattern=r"^laporan_hariini$"))
     app.add_handler(CallbackQueryHandler(laporan_bulanan_cb, pattern=r"^laporan_bulanan$"))
     app.add_handler(CallbackQueryHandler(cek_stok_cb,        pattern=r"^cek_stok$"))
+    app.add_handler(CallbackQueryHandler(cek_gizi_cb,        pattern=r"^cek_gizi$"))
     app.add_handler(CallbackQueryHandler(settings_cb,        pattern=r"^pengaturan$"))
     app.add_handler(CallbackQueryHandler(global_main_menu,   pattern=r"^(main_menu_callback|main_menu|back_main)$"))
     app.add_handler(CallbackQueryHandler(lunas_hutang,       pattern=r"^lunas_hutang_"))
