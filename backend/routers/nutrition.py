@@ -554,3 +554,117 @@ async def get_nutrition_calendar(
         }
     }
 
+
+# ─── AI Gram Converter ("Timbangan Digital Virtual") ─────────────────────────
+
+class GramConvertRequest(BaseModel):
+    input: str = Field(..., description="Deskripsi porsi, e.g. '3 iris timun', '1 centong nasi'")
+
+class NutritionCalcRequest(BaseModel):
+    food_name: str = Field(..., description="Nama bahan makanan, e.g. 'timun', 'ayam', 'beras'")
+    portion: str = Field(..., description="Deskripsi porsi, e.g. '3 iris', '1 potong sedang'")
+
+
+@router.post("/convert-gram")
+async def convert_portion_to_gram(
+    body: GramConvertRequest,
+    active_user: UserInDB = Depends(get_current_user),
+):
+    """
+    AI Timbangan Digital Virtual — konversi deskripsi porsi ke gram.
+    
+    Contoh input: "3 iris timun", "1 centong nasi", "2 potong ayam sedang"
+    Output: estimasi berat dalam gram
+    """
+    from services.gram_converter import gram_converter
+    
+    try:
+        grams = await gram_converter.convert_to_grams(body.input)
+        return {
+            "success": True,
+            "data": {
+                "input": body.input,
+                "estimated_grams": grams,
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI conversion gagal: {str(e)}")
+
+
+@router.post("/calculate")
+async def calculate_nutrition_ai(
+    body: NutritionCalcRequest,
+    active_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Hybrid AI + TKPI Nutrition Calculator.
+    
+    1. AI mengkonversi porsi → gram (e.g. "3 iris" → 15g)
+    2. Lookup data nutrisi per 100g dari database TKPI (nutrition_ref)
+    3. Kalkulasi: (gram / 100) × nutrisi_per_100g
+    
+    Contoh: food_name="timun", portion="3 iris"
+    → AI: 15g → DB: timun = 12 kcal/100g → Result: 1.8 kcal
+    """
+    from services.gram_converter import gram_converter
+    
+    supabase = get_supabase()
+    
+    try:
+        result = await gram_converter.calculate_nutrition(
+            food_name=body.food_name,
+            portion_desc=body.portion,
+            tenant_id=active_user.tenant_id,
+            supabase=supabase,
+        )
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Kalkulasi nutrisi gagal: {str(e)}")
+
+
+@router.get("/search-ref")
+async def search_nutrition_ref(
+    q: str = "",
+    active_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Cari bahan makanan di database TKPI (nutrition_ref).
+    Untuk dropdown/autocomplete di frontend.
+    """
+    if not q or len(q) < 2:
+        return {"success": True, "data": []}
+    
+    supabase = get_supabase()
+    
+    resp = (
+        supabase.table("nutrition_ref")
+        .select("id, name, calories, proteins, fat, carbohydrates")
+        .ilike("name", f"%{q.strip()}%")
+        .limit(20)
+        .order("name")
+        .execute()
+    )
+    
+    results = getattr(resp, "data", None) or []
+    
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "per_100g": {
+                    "calories": r.get("calories", 0),
+                    "proteins": r.get("proteins", 0),
+                    "fat": r.get("fat", 0),
+                    "carbohydrates": r.get("carbohydrates", 0),
+                }
+            }
+            for r in results
+        ]
+    }
+
