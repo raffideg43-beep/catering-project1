@@ -20,7 +20,7 @@ export default function KaryawanPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-4 mt-6">
+      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-2 mt-4">
         <div className="flex space-x-8 px-2 overflow-x-auto no-scrollbar">
         {["Karyawan", "Jabatan", "Absensi", "Penggajian"].map((tab) => (
           <button

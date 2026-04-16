@@ -19,7 +19,7 @@ export function PageHeader({
     breadcrumbs,
 }: PageHeaderProps) {
     return (
-        <div className="mb-6 sm:mb-8 animate-in">
+        <div className="mb-2 animate-in">
             {/* Optional Breadcrumbs or Back button */}
             {(backHref || breadcrumbs) && (
                  <nav className="flex items-center text-sm text-gray-500 mb-3 sm:mb-4 gap-1">

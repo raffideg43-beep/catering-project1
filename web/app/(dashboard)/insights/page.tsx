@@ -68,10 +68,6 @@ function HargaTab() {
 
     return (
         <div className="space-y-5">
-            <PageHeader
-                title="📈 Track Kenaikan Harga"
-                subtitle="Pantau pergerakan harga bahan baku dari transaksi terkonfirmasi"
-            />
 
             {!aiLoading && (
                 <div className={`rounded-xl p-4 border ${highAlert ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-100"}`}>
@@ -734,10 +730,10 @@ function InsightsTabs() {
     };
 
     return (
-        <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto pb-20 animate-in mt-2">
+        <div className="max-w-6xl mx-auto pb-20 animate-in mt-2">
             <PageHeader title="📈 Insights & AI Analisis" />
 
-            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-2 mt-4">
                 <div className="flex space-x-8 px-2">
                     <button
                         onClick={() => setTab("harga")}
