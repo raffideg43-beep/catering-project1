@@ -170,16 +170,40 @@ class ExportService:
         )
         deliveries = getattr(del_resp, "data", None) or []
 
-        # Weekly menus (for menu names)
+        # Weekly menus (for menu names AND nutrition)
         wm_resp = (
             supabase.table("mbg_weekly_menus")
-            .select("week_start, day_of_week, menu_name")
+            .select("menu_id, week_start, day_of_week, menu_name")
             .eq("tenant_id", tenant_id)
             .gte("week_start", (first - timedelta(days=7)).isoformat())
             .lte("week_start", last.isoformat())
             .execute()
         )
         weekly_menus = getattr(wm_resp, "data", None) or []
+        
+        # Recipes for nutrition calculation
+        menu_ids = list(set([wm.get("menu_id") for wm in weekly_menus if wm.get("menu_id")]))
+        recipes_all = []
+        if menu_ids:
+            try:
+                r_resp = (
+                    supabase.table("recipes")
+                    .select("*, products!recipes_ingredient_id_fkey(id, name, unit, conversion_factor, nutrition_ref_id)")
+                    .in_("menu_id", menu_ids)
+                    .execute()
+                )
+                recipes_all = getattr(r_resp, "data", None) or []
+            except Exception as e:
+                logger.error(f"Failed to fetch recipes: {e}")
+                
+        # Nutrition Ref
+        nutrition_ref_all = []
+        try:
+            n_resp = supabase.table("nutrition_ref").select("*").execute()
+            nutrition_ref_all = getattr(n_resp, "data", None) or []
+        except Exception as e:
+            logger.error(f"Failed to fetch nutrition_ref: {e}")
+
 
         # Transactions (ALL confirmed, no type filter)
         trx_resp = (
@@ -446,6 +470,8 @@ class ExportService:
             "delivery_days": delivery_days,
             "deliveries": deliveries,
             "weekly_menus": weekly_menus,
+            "recipes_all": recipes_all,
+            "nutrition_ref_all": nutrition_ref_all,
             "transactions": transactions,
             "items_all": items_all,
             "supplier_pkp": supplier_pkp,
@@ -499,8 +525,8 @@ class ExportService:
         # Sheet 8: Buku Kas Kecil
         ws_bkk = wb.create_sheet("Buku Kas Kecil")
 
-        # Sheet 9: Penerima Manfaat
-        ws_pm = wb.create_sheet("Penerima Manfaat")
+        # Sheet 9: Nutrisi & Penerima Manfaat
+        ws_pm = wb.create_sheet("Nutrisi & Penerima Manfaat")
 
         # Sheet 10: Rekapitulasi Juknis
         ws_rj = wb.create_sheet("Rekapitulasi Juknis")
@@ -533,7 +559,7 @@ class ExportService:
         _safe_fill("Operasional & Upah", self._fill_ops_upah, ws_ops, data, year, month)
         _safe_fill("Buku Kas Umum", self._fill_bku, ws_bku, data, year, month, "va_bank", "BUKU KAS UMUM")
         _safe_fill("Buku Kas Kecil", self._fill_bku, ws_bkk, data, year, month, "kas_kecil", "BUKU KAS KECIL")
-        _safe_fill("Penerima Manfaat", self._fill_penerima_manfaat, ws_pm, data)
+        _safe_fill("Nutrisi & PM", self._fill_penerima_manfaat, ws_pm, data, year, month)
         _safe_fill("Rekapitulasi Juknis", self._fill_rekapitulasi_juknis, ws_rj, data, year, month)
 
         # Fill compliance sheets
@@ -691,205 +717,231 @@ class ExportService:
         ws.freeze_panes = "A4"
         ws.auto_filter.ref = f"A3:G{row if n > 0 else 3}"
 
-    def _fill_penerima_manfaat(self, ws, data: dict) -> None:
-        logger.info("Sheet (9/10): Filling Penerima Manfaat (Redistribution logic)...")
+    def _fill_penerima_manfaat(self, ws, data: dict, year: int, month: int) -> None:
+        logger.info("Sheet (9/10): Filling Nutrisi & Penerima Manfaat...")
         from openpyxl.styles import Font, Alignment, PatternFill
-        ws.merge_cells("A1:I1")
-        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14)
+        from calendar import monthrange
+        from routers.nutrition import _recipe_to_grams
+        
+        bulan_str = BULAN[month]
+        
+        # --- TABEL 1: Rekap Nutrisi Bulanan ---
+        ws.merge_cells("A1:K1")
+        ws["A1"] = f"REKAP NUTRISI BULANAN — LAPORAN PEMERINTAH ({bulan_str} {year})"
+        ws["A1"].font = Font(name=GLOBAL_FONT, bold=True, size=14, color="FFFFFF")
+        ws["A1"].fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
         ws["A1"].alignment = Alignment(horizontal="center")
-
-        headers = [
-            "No", "Sekolah", "Tipe Alokasi", "Jenis Penerima",
-            "Porsi Target/Hari", "Porsi Terkirim (Bulan Ini)",
-            "Berangkat", "Target Tiba", "Selesai",
+        
+        headers_nutrisi = [
+            "Tgl", "Hari", "Menu", "Porsi", "Kalori (kkal)", "Protein (g)", 
+            "Lemak (g)", "Karbo (g)", "Berat (g)", "Sayur %", "Status"
         ]
-        self._write_headers(ws, 3, headers)
-
-        # Build logistics lookup by school_id from master schedule
-        schedule = data.get("master_schedule") or {}
-        logistics_by_school = {}
-        for s in schedule.get("schools", []):
-            logistics_by_school[s["school_id"]] = s
-
-        # Aggregate actual delivered portions and latest logistics times per school this month
-        delivered_by_school = {}
-        latest_logistic_by_school = {}
-        for d in data.get("deliveries", []):
-            sid = d.get("school_id", "")
-            delivered_by_school[sid] = delivered_by_school.get(sid, 0) + d.get("portions_sent", 0)
-            
-            sent = d.get("sent_time")
-            arrive = d.get("arrival_time")
-            s_data = d.get("schools") or {}
-            
-            # calculate target based on dynamic distance
-            dist = float(s_data.get("distance_km") or 0)
-            target = "-"
-            if sent and dist > 0:
-                try:
-                    from datetime import datetime, timedelta
-                    # sent_time is HH:MM:SS
-                    s_dt = datetime.strptime(sent, "%H:%M:%S")
-                    t_dt = s_dt + timedelta(minutes=dist * 3)
-                    target = t_dt.strftime("%H:%M")
-                except:
-                    pass
-            
-            # Overwrite with latest (since deliveries are ordered by date ASC previously, the last one processed is the newest)
-            if sent or arrive:
-                latest_logistic_by_school[sid] = {
-                    "depart_time": sent[:5] if sent else "-",
-                    "target_arrival": target,
-                    "done_at_school": arrive[:5] if arrive else "-"
-                }
-
-        # Redistribute proportionally if deliveries are concentrated in 1 school
-        # (common when all deliveries are recorded under a single school_id)
-        total_delivered_all = sum(delivered_by_school.values())
-        sb_data = data.get("school_beneficiaries", [])
-        if total_delivered_all > 0 and sb_data:
-            all_defaults = {}
-            for sb in sb_data:
-                sch = sb.get("schools", {}) if isinstance(sb.get("schools"), dict) else {}
-                sid = sb.get("school_id", "")
-                dp = sb.get("target_portions", 0) or sch.get("default_portions", 0)
-                if sid and dp > 0:
-                    all_defaults[sid] = dp
-            total_default = sum(all_defaults.values())
-            # Redistribution logic: ensure all schools get reported porsi if data is concentrated
-            if total_default > 0:
-                max_school_pct = max(delivered_by_school.values()) / total_delivered_all if delivered_by_school else 0
-                # If >80% was in one school, or any school is 0 despite being a target, redistribute fairly
-                any_school_zero = any(sid not in delivered_by_school or delivered_by_school[sid] == 0 for sid in all_defaults)
+        self._write_headers(ws, 3, headers_nutrisi)
+        
+        _, days_in_month = monthrange(year, month)
+        first_day = date(year, month, 1)
+        last_day = date(year, month, days_in_month)
+        
+        # Map menus by date
+        menu_by_date = {}
+        for wm in data.get("weekly_menus", []):
+            try:
+                ws_date = date.fromisoformat(wm["week_start"])
+                dow = wm.get("day_of_week", 1)
+                actual_date = ws_date + timedelta(days=dow - 1)
+                if first_day <= actual_date <= last_day:
+                    menu_by_date[actual_date.isoformat()] = {
+                        "menu_id": wm.get("menu_id"),
+                        "menu_name": wm.get("menu_name", "")
+                    }
+            except Exception:
+                pass
                 
-                if max_school_pct > 0.8 or any_school_zero:
-                    new_counts = {}
-                    running_total = 0
-                    sids_list = list(all_defaults.keys())
-                    for idx, sid in enumerate(sids_list):
-                        dp = all_defaults[sid]
-                        if idx == len(sids_list) - 1:
-                            # Last school gets remaining to avoid rounding error
-                            new_counts[sid] = total_delivered_all - running_total
-                        else:
-                            share = round(total_delivered_all * dp / total_default)
-                            new_counts[sid] = share
-                            running_total += share
-                    delivered_by_school = new_counts
+        # Group deliveries
+        deliveries_by_date = {}
+        for d in data.get("deliveries", []):
+            dt = d.get("delivery_date")
+            if dt:
+                deliveries_by_date[dt] = deliveries_by_date.get(dt, 0) + d.get("portions_sent", 0)
+                
+        # Nut cache
+        recipes_all = data.get("recipes_all", [])
+        nut_refs = {n["id"]: n for n in data.get("nutrition_ref_all", [])}
+        
+        nut_cache = {}
+        for r in recipes_all:
+            mid = r.get("menu_id")
+            if mid not in nut_cache:
+                nut_cache[mid] = []
+            nut_cache[mid].append(r)
+            
+        def get_nut_totals(mid):
+            if not mid or mid not in nut_cache:
+                return None
+            recs = nut_cache[mid]
+            t_cal=0.0; t_pro=0.0; t_fat=0.0; t_carb=0.0; t_gram=0.0; s_gram=0.0
+            for r in recs:
+                if r.get("usage_type", "per_porsi") != "per_porsi": continue
+                prod = r.get("products")
+                if not prod: continue
+                weight = _recipe_to_grams(r, prod)
+                nut_id = prod.get("nutrition_ref_id")
+                nref = nut_refs.get(nut_id) if nut_id else None
+                kat = ""
+                if nref and weight > 0:
+                    m = weight / 100.0
+                    t_cal += float(nref.get("calories", 0)) * m
+                    t_pro += float(nref.get("proteins", 0)) * m
+                    t_fat += float(nref.get("fat", 0)) * m
+                    t_carb += float(nref.get("carbohydrate", 0)) * m
+                    kat = nref.get("kategori", "")
+                t_gram += weight
+                if "sayur" in kat.lower():
+                    s_gram += weight
+            spct = round((s_gram / t_gram)*100, 1) if t_gram > 0 else 0.0
+            return {
+                "cal": round(t_cal), "pro": round(t_pro, 1), "fat": round(t_fat, 1), 
+                "carb": round(t_carb, 1), "gram": round(t_gram), "spct": spct,
+                "balanced": spct >= 30.0
+            }
+        
+        HARI_INDO = {0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis", 4: "Jumat", 5: "Sabtu", 6: "Minggu"}
+        
         row = 4
+        tot_porsi = 0
+        from collections import defaultdict
+        sums = defaultdict(float)
+        days_with_nut = 0
+        
+        for day_num in range(1, days_in_month + 1):
+            curr = date(year, month, day_num)
+            d_str = curr.isoformat()
+            wd = curr.weekday()
+            
+            if wd == 6: continue # Skip sunday
+            
+            minfo = menu_by_date.get(d_str, {})
+            mname = minfo.get("menu_name", "")
+            mid = minfo.get("menu_id")
+            
+            nt = get_nut_totals(mid)
+            porsi = deliveries_by_date.get(d_str, 0)
+            tot_porsi += porsi
+            
+            ws.cell(row, 1, day_num)
+            ws.cell(row, 2, HARI_INDO.get(wd, ""))
+            ws.cell(row, 3, mname or "—")
+            ws.cell(row, 4, porsi or "—")
+            
+            if nt:
+                ws.cell(row, 5, nt["cal"])
+                ws.cell(row, 6, nt["pro"])
+                ws.cell(row, 7, nt["fat"])
+                ws.cell(row, 8, nt["carb"])
+                ws.cell(row, 9, nt["gram"])
+                ws.cell(row, 10, f'{nt["spct"]}%')
+                ws.cell(row, 11, "✅" if nt["balanced"] else "⚠️")
+                
+                sums["cal"] += nt["cal"]
+                sums["pro"] += nt["pro"]
+                sums["fat"] += nt["fat"]
+                sums["carb"] += nt["carb"]
+                sums["gram"] += nt["gram"]
+                sums["spct"] += nt["spct"]
+                if nt["balanced"]: sums["bal"] += 1
+                days_with_nut += 1
+            else:
+                for c in range(5, 12):
+                    ws.cell(row, c, "—")
+            
+            self._alt_row(ws, row, 11)
+            row += 1
+            
+        # Rata-rata / Total row
+        row += 1
+        ws.merge_cells(f"A{row}:C{row}")
+        ws.cell(row, 1, "RATA-RATA / TOTAL").font = Font(bold=True)
+        ws.cell(row, 1).alignment = Alignment(horizontal="right")
+        ws.cell(row, 4, tot_porsi).font = Font(bold=True)
+        
+        if days_with_nut > 0:
+            ws.cell(row, 5, round(sums["cal"] / days_with_nut)).font = Font(bold=True)
+            ws.cell(row, 6, round(sums["pro"] / days_with_nut, 1)).font = Font(bold=True)
+            ws.cell(row, 7, round(sums["fat"] / days_with_nut, 1)).font = Font(bold=True)
+            ws.cell(row, 8, round(sums["carb"] / days_with_nut, 1)).font = Font(bold=True)
+            ws.cell(row, 9, round(sums["gram"] / days_with_nut)).font = Font(bold=True)
+            ws.cell(row, 10, f'{round(sums["spct"] / days_with_nut, 1)}%').font = Font(bold=True)
+            ws.cell(row, 11, f'{int(sums["bal"])}/{days_with_nut}').font = Font(bold=True)
+        
+        ws.cell(row, 1).fill = PatternFill("solid", fgColor=TOTAL_FILL_COLOR)
+        for c in range(4, 12):
+            ws.cell(row, c).fill = PatternFill("solid", fgColor=TOTAL_FILL_COLOR)
+        
+        row += 3
+        
+        # --- TABEL 2: Data Penerima Manfaat ---
+        ws.merge_cells(f"A{row}:F{row}")
+        ws.cell(row, 1, f"DATA PENERIMA MANFAAT — {bulan_str} {year}")
+        ws.cell(row, 1).font = Font(name=GLOBAL_FONT, bold=True, size=14, color="FFFFFF")
+        ws.cell(row, 1).fill = PatternFill("solid", fgColor=HDR_FILL_COLOR)
+        ws.cell(row, 1).alignment = Alignment(horizontal="center")
+        
+        row += 2
+        headers_pm = ["No", "Sekolah", "Tipe Alokasi", "Jenis Penerima", "Porsi Target/Hari", "Total Terkirim"]
+        self._write_headers(ws, row, headers_pm)
+        row += 1
+        
+        sb_data = data.get("school_beneficiaries", [])
+        
+        # Calculate delivered per school manually since deliveries data is flat
+        delivered_by_school = {}
+        for d in data.get("deliveries", []):
+            sid = d.get("school_id")
+            if sid:
+                delivered_by_school.setdefault(sid, 0)
+                delivered_by_school[sid] += d.get("portions_sent", 0)
+                
+        tot_target = 0
+        tot_sent = 0
+        
         if not sb_data:
             ws.cell(row, 1, "—")
-            ws.cell(row, 2, "Data Kosong")
-        else:
-            seen_schools = set()
-            for i, sb in enumerate(sb_data, 1):
-                sch = sb.get("schools", {}) if isinstance(sb.get("schools"), dict) else {}
-                sch_name = sch.get("name", "")
-                sch_id = sb.get("school_id", "")
-                bt_name = sb.get("beneficiary_types", {}).get("name", "") if isinstance(sb.get("beneficiary_types"), dict) else ""
-                school_level = sch.get("school_level", "sd_smp")
-                alloc_label = "Rp 8.000 (PAUD/TK)" if school_level == "paud_tk" else "Rp 10.000 (SD/SMP/SMA)"
-
-                # Use default_portions from schools table as daily target
-                target_portions = sb.get("target_portions", 0) or sch.get("default_portions", 0)
-                actual_delivered = delivered_by_school.get(sch_id, 0)
-
-                ws.cell(row, 1, i)
-                ws.cell(row, 2, sch_name)
-                ws.cell(row, 3, alloc_label)
-                ws.cell(row, 4, bt_name)
-                ws.cell(row, 5, target_portions)
-                ws.cell(row, 6, actual_delivered)
-
-                # Logistics columns — only fill once per school
-                # We prioritize latest actual driver telemetry, fallback to static master schedule
-                actual_logistics = latest_logistic_by_school.get(sch_id)
-                master_logistic = logistics_by_school.get(sch_id)
-                
-                if sch_id not in seen_schools:
-                    if actual_logistics:
-                        ws.cell(row, 7, actual_logistics.get("depart_time", "-"))
-                        ws.cell(row, 8, actual_logistics.get("target_arrival", "-"))
-                        ws.cell(row, 9, actual_logistics.get("done_at_school", "-"))
-                    elif master_logistic:
-                        ws.cell(row, 7, master_logistic.get("depart_time", "-"))
-                        ws.cell(row, 8, master_logistic.get("target_arrival", "-"))
-                        ws.cell(row, 9, master_logistic.get("done_at_school", "-"))
-                    else:
-                        for c in range(7, 10):
-                            ws.cell(row, c, "-")
-                    
-                    seen_schools.add(sch_id)
-                else:
-                    for c in range(7, 10):
-                        ws.cell(row, c, "-")
-
-                self._alt_row(ws, row, 9)
-                # Center align time columns
-                from openpyxl.styles import Alignment
-                ws.cell(row, 7).alignment = Alignment(horizontal="center")
-                ws.cell(row, 8).alignment = Alignment(horizontal="center")
-                ws.cell(row, 9).alignment = Alignment(horizontal="center")
-                row += 1
-
-            # Add schools that have logistics but no beneficiary entry
-            for sid, logistic in logistics_by_school.items():
-                if sid not in seen_schools:
-                    row += 1
-                    ws.cell(row, 1, "—")
-                    ws.cell(row, 2, logistic.get("school_name", "?"))
-                    ws.cell(row, 3, "-")
-                    ws.cell(row, 4, "(Tanpa data penerima)")
-                    ws.cell(row, 5, logistic.get("default_portions", 0))
-                    ws.cell(row, 6, delivered_by_school.get(sid, 0))
-                    
-                    act_log = latest_logistic_by_school.get(sid)
-                    if act_log:
-                        ws.cell(row, 7, act_log.get("depart_time", "-"))
-                        ws.cell(row, 8, act_log.get("target_arrival", "-"))
-                        ws.cell(row, 9, act_log.get("done_at_school", "-"))
-                    else:
-                        ws.cell(row, 7, logistic.get("depart_time", "-"))
-                        ws.cell(row, 8, logistic.get("target_arrival", "-"))
-                        ws.cell(row, 9, logistic.get("done_at_school", "-"))
-                    
-                    self._alt_row(ws, row, 9)
-                    from openpyxl.styles import Alignment
-                    ws.cell(row, 7).alignment = Alignment(horizontal="center")
-                    ws.cell(row, 8).alignment = Alignment(horizontal="center")
-                    ws.cell(row, 9).alignment = Alignment(horizontal="center")
-                    
-                    seen_schools.add(sid)
-
-        # Totals row
-        total_target = sum(
-            (sb.get("target_portions", 0) or (sb.get("schools", {}) or {}).get("default_portions", 0))
-            for sb in sb_data
-        ) if sb_data else 0
-        total_delivered = sum(delivered_by_school.values())
-        row += 1
-        self._write_total_row(ws, row, {5: total_target, 6: total_delivered}, max_col=9)
-
-        # Add master summary below table
-        row += 2
-        if schedule:
-            ws.cell(row, 1, "Jadwal Dapur Master").font = Font(bold=True, size=11)
-            fill = PatternFill("solid", fgColor="E8F5E9")
+            ws.cell(row, 2, "Data Penerima Kosong")
             row += 1
-            info = [
-                ("Persiapan Bahan", schedule.get("prep_start_time", "-")),
-                ("Mulai Masak", schedule.get("cook_start_time", "-")),
-                ("Selesai Masak", schedule.get("cook_end_time", "-")),
-                ("Total Porsi", schedule.get("total_portions", 0)),
-            ]
-            for label, val in info:
-                ws.cell(row, 1, label).fill = fill
-                ws.cell(row, 2, val).fill = fill
-                row += 1
         else:
-            ws.cell(row, 1, "⚠️ Master schedule belum di-setup. Data logistik tidak tersedia.")
-            ws.cell(row, 1).font = Font(italic=True, color="FF0000")
-
+            for i, sb in enumerate(sb_data, 1):
+                sch = sb.get("schools") or {}
+                sname = sch.get("name", "")
+                sid = sb.get("school_id", "")
+                bt_name = (sb.get("beneficiary_types") or {}).get("name", "")
+                slevel = sch.get("school_level", "sd_smp")
+                
+                # Check column mbg_allocation_type if exists, else fallback to level
+                alloc_type = sch.get("mbg_allocation_type", "")
+                if not alloc_type:
+                    alloc_type = "paud_tk" if slevel == "paud_tk" else "sd_smp"
+                al_label = "Rp 8.000 (PAUD/TK)" if alloc_type == "paud_tk" else "Rp 10.000 (SD/SMP/SMA)"
+                if alloc_type == "guru": al_label = "Rp 15.000 (Guru)"
+                
+                target_porsi = sb.get("target_portions", 0) or sch.get("default_portions", 0)
+                sent = delivered_by_school.get(sid, 0)
+                
+                tot_target += target_porsi
+                tot_sent += sent
+                
+                ws.cell(row, 1, i)
+                ws.cell(row, 2, sname)
+                ws.cell(row, 3, al_label)
+                ws.cell(row, 4, bt_name)
+                ws.cell(row, 5, target_porsi)
+                ws.cell(row, 6, sent)
+                
+                self._alt_row(ws, row, 6)
+                row += 1
+                
+        # Total Row PM
+        self._write_total_row(ws, row, {5: tot_target, 6: tot_sent}, max_col=6)
+        
         self._set_column_widths(ws)
 
     def _fetch_schedule_for_export(self, tenant_id: str) -> dict:

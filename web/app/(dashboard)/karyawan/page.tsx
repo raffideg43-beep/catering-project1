@@ -9,8 +9,8 @@ export default function KaryawanPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Karyawan");
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-in mt-2 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="animate-in mt-2 max-w-7xl mx-auto pb-20">
+      <div className="flex items-center justify-between pt-2">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
             Karyawan & HR
@@ -20,7 +20,7 @@ export default function KaryawanPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-6">
+      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-4 mt-6">
         <div className="flex space-x-8 px-2 overflow-x-auto no-scrollbar">
         {["Karyawan", "Jabatan", "Absensi", "Penggajian"].map((tab) => (
           <button
@@ -39,10 +39,12 @@ export default function KaryawanPage() {
       </div>
 
       {/* Content */}
-      {activeTab === "Karyawan" && <KaryawanTab />}
-      {activeTab === "Jabatan" && <JabatanTab />}
-      {activeTab === "Absensi" && <AbsensiTab />}
-      {activeTab === "Penggajian" && <PenggajianTab />}
+      <div className="mt-4">
+        {activeTab === "Karyawan" && <KaryawanTab />}
+        {activeTab === "Jabatan" && <JabatanTab />}
+        {activeTab === "Absensi" && <AbsensiTab />}
+        {activeTab === "Penggajian" && <PenggajianTab />}
+      </div>
     </div>
   );
 }
