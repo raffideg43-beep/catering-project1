@@ -550,6 +550,7 @@ async def create_bulk_delivery(
     if menu_id:
         stock_check = recipe_svc.calculate(menu_id, total_portions, tenant_id, supabase)
         if stock_check.get("has_bom") and not stock_check.get("can_produce"):
+            # Stok kurang — LANJUTKAN dengan warning, jangan block
             shortage_details = [
                 {
                     "ingredient": ing["name"],
@@ -563,11 +564,13 @@ async def create_bulk_delivery(
                 for ing in stock_check.get("ingredients", [])
                 if not ing["sufficient"]
             ]
-            raise HTTPException(status_code=400, detail={
-                "success": False,
-                "error": "Stok tidak cukup",
-                "details": shortage_details,
-            })
+            shortage_names = [s["ingredient"] for s in shortage_details[:3]]
+            warning = f"⚠️ Stok kurang untuk: {', '.join(shortage_names)}. Penyerahan tetap dicatat, stok dipotong sebagian."
+            # Tetap potong stok yang tersedia (partial deduction)
+        elif stock_check.get("has_bom"):
+            pass  # stok cukup, akan dipotong di Langkah 5
+        else:
+            warning = "Menu tidak memiliki BOM, stok tidak dipotong"
     else:
         warning = "Tidak ada menu/BOM hari ini, stok tidak dipotong"
 

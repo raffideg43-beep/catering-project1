@@ -1059,24 +1059,40 @@ async def create_manual_transaction(
         # Jika produk belum ada, buat otomatis sebagai bahan_baku
         if not product_id:
             try:
-                base, c_factor = get_base_unit(satuan)
-                new_prod_resp = supabase.table("products").insert({
-                    "tenant_id": current_user.tenant_id,
-                    "name": product_name,
-                    "category": "bahan_baku",
-                    "unit": satuan,
-                    "base_unit": base,
-                    "display_unit": satuan,
-                    "conversion_factor": float(c_factor),
-                    "is_active": True,
-                    "harga": str(harga),
-                    "sell_price": "0.00",
-                    "stock_min": "0",
-                    "stock_qty": "0" 
-                }).execute()
-                new_prod_data = getattr(new_prod_resp, "data", None) or []
-                if new_prod_data:
-                    product_id = new_prod_data[0]["id"]
+                # ─── Check if product with same name already exists ───
+                existing_check = (
+                    supabase.table("products")
+                    .select("id")
+                    .eq("tenant_id", current_user.tenant_id)
+                    .ilike("name", product_name.strip())
+                    .limit(1)
+                    .execute()
+                )
+                existing_prods = getattr(existing_check, "data", None) or []
+
+                if existing_prods:
+                    # Reuse existing product instead of creating duplicate
+                    product_id = existing_prods[0]["id"]
+                else:
+                    # Create new product
+                    base, c_factor = get_base_unit(satuan)
+                    new_prod_resp = supabase.table("products").insert({
+                        "tenant_id": current_user.tenant_id,
+                        "name": product_name.strip(),
+                        "category": "bahan_baku",
+                        "unit": satuan,
+                        "base_unit": base,
+                        "display_unit": satuan,
+                        "conversion_factor": float(c_factor),
+                        "is_active": True,
+                        "harga": str(harga),
+                        "sell_price": "0.00",
+                        "stock_min": "0",
+                        "stock_qty": "0" 
+                    }).execute()
+                    new_prod_data = getattr(new_prod_resp, "data", None) or []
+                    if new_prod_data:
+                        product_id = new_prod_data[0]["id"]
                     
                     # Auto-map and link nutrition in background
                     background_tasks.add_task(

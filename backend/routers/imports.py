@@ -379,9 +379,10 @@ async def execute_import(
             elif bahan_key in alias_map:
                 product_id = alias_map[bahan_key]
             elif create_missing_products:
+                # prod_by_name already checked — no duplicate possible within same import
                 resp = supabase.table("products").insert({
                     "tenant_id": tid,
-                    "name": nama_bahan,
+                    "name": nama_bahan.strip(),
                     "category": "bahan_baku",
                     "unit": satuan,
                     "harga": str(harga),

@@ -81,12 +81,27 @@ def create_product(
     stock_qty_base = to_base(float(body.stock_qty), disp_unit, factor)
     stock_min_base = to_base(float(body.stock_min), disp_unit, factor)
 
+    # ─── Check for duplicate name within tenant ─────────────────────
+    existing = (
+        supabase.table("products")
+        .select("id, name")
+        .eq("tenant_id", current_user.tenant_id)
+        .ilike("name", body.name.strip())
+        .limit(1)
+        .execute()
+    )
+    if getattr(existing, "data", None):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Produk '{body.name}' sudah ada. Gunakan produk yang sudah ada atau ubah nama.",
+        )
+
     response = (
         supabase.table("products")
         .insert(
             {
                 "tenant_id": current_user.tenant_id,
-                "name": body.name,
+                "name": body.name.strip(),
                 "sku": body.sku,
                 "category": body.category,
                 "unit": disp_unit,
