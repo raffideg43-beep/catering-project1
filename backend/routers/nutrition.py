@@ -626,6 +626,41 @@ async def calculate_nutrition_ai(
         raise HTTPException(status_code=500, detail=f"Kalkulasi nutrisi gagal: {str(e)}")
 
 
+class NutritionBatchRequest(BaseModel):
+    items: List[NutritionCalcRequest] = Field(..., description="List of items to calculate")
+
+@router.post("/batch-calculate")
+async def batch_calculate_nutrition_ai(
+    body: NutritionBatchRequest,
+    active_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Batch Hybrid AI + TKPI Nutrition Calculator.
+    
+    Proses banyak bahan makanan sekaligus untuk menghemat API requests ke Gemini.
+    Penggunaan: list of {food_name: "timun", portion: "3 iris"}
+    """
+    from services.gram_converter import gram_converter
+    
+    supabase = get_supabase()
+    
+    # Convert request models to dicts
+    items_dict = [
+        {"food_name": item.food_name, "portion_desc": item.portion}
+        for item in body.items
+    ]
+    
+    try:
+        results = await gram_converter.batch_calculate_nutrition(
+            items=items_dict,
+            tenant_id=active_user.tenant_id,
+            supabase=supabase,
+        )
+        return {"success": True, "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch kalkulasi nutrisi gagal: {str(e)}")
+
+
 @router.get("/search-ref")
 async def search_nutrition_ref(
     q: str = "",
