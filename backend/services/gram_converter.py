@@ -17,24 +17,17 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ─── System Prompt (hemat token, akurat) ────────────────────────────────────
-SYSTEM_INSTRUCTION = """Kamu adalah asisten ahli gizi katering Indonesia (MBG - Makan Bergizi Gratis).
-Tugasmu HANYA mengonversi satuan porsi makanan menjadi berat dalam GRAM.
-Gunakan standar rata-rata porsi katering sekolah Indonesia.
+# ─── System Prompt (hemat token, akurat, yield factor) ──────────────────────
+SYSTEM_INSTRUCTION = """Kamu adalah asisten ahli gizi katering Indonesia (MBG).
+Tugasmu adalah mengonversi satuan porsi makanan menjadi berat dalam GRAM/ML.
+Perhatikan Yield Factor (PenyusutanMentah->Matang). Contoh: 80g Ayam Goreng butuh ~112g Ayam Mentah (faktor 1.4).
+Bahan yang cair (susu, kuah) gunakan ML/Liter yang setara (misal 1 gelas = 200ml).
 
 ATURAN KETAT:
-1. Balas HANYA dengan angka integer (gram), TANPA teks lain.
-2. Jika input ambigu, gunakan estimasi terbaik berdasarkan standar porsi katering.
-3. Referensi standar:
-   - 1 centong nasi = 100g
-   - 1 potong ayam goreng sedang = 80g
-   - 1 butir telur rebus = 55g
-   - 1 iris tipis timun = 5g
-   - 1 potong tempe goreng = 50g
-   - 1 potong tahu goreng = 40g
-   - 1 sendok sayur = 30g
-   - 1 buah pisang sedang = 80g
-   - 1 gelas air putih = 250g"""
+1. Jika input ambigu, gunakan estimasi standar porsi katering.
+2. Jika input adalah makanan matang, hitung estimasi berat Mentah (Raw) berdasarkan knowledge penyusutan/mekar standar masakan Indonesia. Nasi matang 100g itu berasal dari beras mentah ~40g (mekar).
+3. Jika input adalah mentah, maka mentah dan matang nilainya sama atau sesuai logika normal.
+4. Kamu HARUS mematuhi output format yang diminta oleh user prompt."""
 
 
 class GramConverterService:
@@ -60,45 +53,24 @@ class GramConverterService:
 
     async def convert_to_grams(self, user_input: str) -> int:
         """
-        Konversi deskripsi porsi ke gram menggunakan AI.
-        
-        Args:
-            user_input: "3 iris timun", "1 potong ayam sedang", "2 centong nasi"
-            
-        Returns:
-            Estimasi berat dalam gram (integer)
+        Legacy: Konversi deskripsi porsi ke gram (hanya matang).
+        Sebaiknya gunakan batch_calculate_nutrition untuk fitur lengkap.
         """
         if not settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY tidak dikonfigurasi")
 
         model = self._get_model()
-
-        prompt = f"Konversi ke gram: '{user_input}'"
+        prompt = f"Berapa estimasi berat matangnya (angka saja) untuk: '{user_input}'"
 
         try:
             response = model.generate_content(prompt)
             raw = response.text.strip()
-            
-            # Extract number from response (handle cases like "15 gram" or "~15")
             numbers = re.findall(r'\d+', raw)
             if not numbers:
-                logger.warning(f"AI tidak mengembalikan angka untuk '{user_input}': '{raw}'")
-                raise ValueError(f"AI tidak bisa mengkonversi: '{user_input}'")
-            
+                raise ValueError("Gagal parse AI")
             grams = int(numbers[0])
-            
-            # Sanity check: porsi normal katering antara 1-2000 gram
-            if grams < 1:
-                grams = 1
-            elif grams > 5000:
-                logger.warning(f"AI mengembalikan {grams}g untuk '{user_input}', capping to 5000")
-                grams = 5000
-
-            logger.info(f"GramConverter: '{user_input}' -> {grams}g")
-            return grams
-
+            return max(1, min(grams, 5000))
         except Exception as e:
-            logger.error(f"GramConverter error untuk '{user_input}': {e}")
             raise
 
     async def calculate_nutrition(
@@ -109,50 +81,14 @@ class GramConverterService:
         supabase,
     ) -> Dict[str, Any]:
         """
-        Hitung nutrisi dengan hybrid approach:
-        1. AI convert portion → grams
-        2. Lookup nutrition_ref dari DB (per 100g)
-        3. Kalkulasi: (grams / 100) × nutrition_per_100g
+        Gunakan batch_calculate_nutrition yang memiliki dukungan Yield Factor
         """
-        full_input = f"{portion_desc} {food_name}"
-        estimated_grams = await self.convert_to_grams(full_input)
-
-        nutrition_data = await self._find_nutrition_ref(food_name, supabase)
-
-        if not nutrition_data:
-            return {
-                "food_name": food_name,
-                "portion_desc": portion_desc,
-                "estimated_weight_gram": estimated_grams,
-                "nutrition_ref_found": False,
-                "message": f"Data nutrisi untuk '{food_name}' tidak ditemukan di database TKPI",
-                "calories": 0,
-                "proteins": 0,
-                "fat": 0,
-                "carbohydrates": 0,
-            }
-
-        factor = estimated_grams / 100.0
-
-        return {
-            "food_name": food_name,
-            "nutrition_ref_name": nutrition_data.get("name", ""),
-            "portion_desc": portion_desc,
-            "estimated_weight_gram": estimated_grams,
-            "nutrition_ref_found": True,
-            "per_100g": {
-                "calories": nutrition_data.get("calories", 0),
-                "proteins": nutrition_data.get("proteins", 0),
-                "fat": nutrition_data.get("fat", 0),
-                "carbohydrates": nutrition_data.get("carbohydrates", 0),
-            },
-            "total_nutrition": {
-                "calories": round(factor * float(nutrition_data.get("calories", 0) or 0), 2),
-                "proteins": round(factor * float(nutrition_data.get("proteins", 0) or 0), 2),
-                "fat": round(factor * float(nutrition_data.get("fat", 0) or 0), 2),
-                "carbohydrates": round(factor * float(nutrition_data.get("carbohydrates", 0) or 0), 2),
-            },
-        }
+        results = await self.batch_calculate_nutrition(
+            [{"food_name": food_name, "portion_desc": portion_desc}], 
+            tenant_id, 
+            supabase
+        )
+        return results[0] if results else {}
 
     async def batch_calculate_nutrition(
         self,
@@ -162,22 +98,21 @@ class GramConverterService:
     ) -> list:
         """
         Batch process multiple ingredients at once to save AI requests.
-        Prompt Gemini to return JSON mapping of original inputs to grams.
+        Prompt Gemini to return JSON mapping of original inputs to cooked, raw, and unit.
         """
         if not items:
             return []
             
-        # Compile all descriptions for AI batch prompt
         inputs_dict = {
             f"item_{i}": f"{item['portion_desc']} {item['food_name']}"
             for i, item in enumerate(items)
         }
         
         prompt = (
-            "Konversi porsi berikut ke gram.\n"
+            "Konversi porsi berikut ke detail berat.\n"
             f"Inputs: {json.dumps(inputs_dict, ensure_ascii=False)}\n"
-            "Kembalikan HANYA JSON berisi key (sama dengan input) dan value (integer gram hitunganmu), tanpa code block atau teks lainnya. "
-            "Contoh balasan: {\"item_0\": 100, \"item_1\": 15}"
+            "Kembalikan HANYA JSON. Tiap key input harus punya object dengan key 'cooked' (integer berat matang), 'raw' (integer berat mentah), dan 'unit' (string 'gram' atau 'ml').\n"
+            "Contoh balasan: {\"item_0\": {\"cooked\": 80, \"raw\": 112, \"unit\": \"gram\"}, \"item_1\": {\"cooked\": 200, \"raw\": 200, \"unit\": \"ml\"}}"
         )
         
         model = self._get_model()
@@ -193,18 +128,25 @@ class GramConverterService:
             if raw.endswith("```"):
                 raw = raw[:-3]
                 
-            ai_grams = json.loads(raw.strip())
+            ai_data = json.loads(raw.strip())
         except Exception as e:
             logger.error(f"Batch GramConverter error: {e}")
-            # Fallback to 1 g for parsing failures
-            ai_grams = {k: 1 for k in inputs_dict.keys()}
+            # Fallback
+            ai_data = {k: {"cooked": 1, "raw": 1, "unit": "gram"} for k in inputs_dict.keys()}
             
         for i, item in enumerate(items):
             food_name = item["food_name"]
             portion_desc = item["portion_desc"]
             key = f"item_{i}"
             
-            estimated_grams = int(ai_grams.get(key, 1))
+            ai_res = ai_data.get(key, {"cooked": 1, "raw": 1, "unit": "gram"})
+            if isinstance(ai_res, int) or isinstance(ai_res, float):
+                # Fallback if AI gives integer anyway
+                ai_res = {"cooked": int(ai_res), "raw": int(ai_res), "unit": "gram"}
+                
+            estimated_grams = int(ai_res.get("cooked", 1))
+            raw_grams = int(ai_res.get("raw", estimated_grams))
+            suggested_unit = str(ai_res.get("unit", "gram")).lower()
             
             # Lookup DB per 100g
             nutrition_data = await self._find_nutrition_ref(food_name, supabase)
@@ -214,6 +156,8 @@ class GramConverterService:
                     "food_name": food_name,
                     "portion_desc": portion_desc,
                     "estimated_weight_gram": estimated_grams,
+                    "raw_weight_gram": raw_grams,
+                    "suggested_unit": suggested_unit,
                     "nutrition_ref_found": False,
                     "message": f"Data nutrisi untuk '{food_name}' tidak ditemukan di database TKPI",
                     "calories": 0, "proteins": 0, "fat": 0, "carbohydrates": 0,
@@ -226,6 +170,8 @@ class GramConverterService:
                 "nutrition_ref_name": nutrition_data.get("name", ""),
                 "portion_desc": portion_desc,
                 "estimated_weight_gram": estimated_grams,
+                "raw_weight_gram": raw_grams,
+                "suggested_unit": suggested_unit,
                 "nutrition_ref_found": True,
                 "per_100g": {
                     "calories": nutrition_data.get("calories", 0),
