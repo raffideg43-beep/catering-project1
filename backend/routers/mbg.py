@@ -463,7 +463,7 @@ delivery_router = APIRouter(prefix="/deliveries", tags=["mbg-deliveries"])
 @delivery_router.post(
     "/bulk",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan", "gizi"]))],
 )
 async def create_bulk_delivery(
     body: DeliveryBulkRequest,

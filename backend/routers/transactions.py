@@ -54,7 +54,7 @@ ALLOWED_MIME = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
 @router.post(
     "/from-photo",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 async def upload_photo(
     background_tasks: BackgroundTasks,
@@ -151,7 +151,7 @@ async def upload_photo(
 @router.post(
     "/{trx_id}/confirm",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 async def confirm_transaction(
     trx_id: str,
@@ -558,7 +558,7 @@ def delete_transaction(
 @router.post(
     "/from-photo-batch",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 async def upload_photo_batch(
     background_tasks: BackgroundTasks,
@@ -704,7 +704,7 @@ async def upload_photo_batch(
 @router.get(
     "/batch/{batch_id}",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 def get_batch_status(
     batch_id: str,
@@ -769,7 +769,7 @@ def get_batch_status(
 @router.put(
     "/{trx_id}/items/bulk",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 def update_transaction_items_bulk(
     trx_id: str,
@@ -859,7 +859,7 @@ def update_transaction_items_bulk(
 @router.put(
     "/{trx_id}/items/{item_id}",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 def update_transaction_item(
     trx_id: str,
@@ -950,7 +950,7 @@ def update_transaction_item(
 @router.post(
     "/manual",
     response_model=Dict[str, Any],
-    dependencies=[Depends(require_role(["owner", "admin", "kasir"]))],
+    dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))],
 )
 async def create_manual_transaction(
     background_tasks: BackgroundTasks,

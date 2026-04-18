@@ -169,7 +169,7 @@ def get_hygiene_checks(
 # ═══════════════════════════════════════════════════════════════════════════
 
 @router.post("/temperature", response_model=Dict[str, Any],
-             dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+             dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def create_temperature_log(
     body: TemperatureLogCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -263,7 +263,7 @@ def get_temperature_logs(
 # ═══════════════════════════════════════════════════════════════════════════
 
 @router.post("/food-samples", response_model=Dict[str, Any],
-             dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+             dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def create_food_sample(
     body: FoodSampleCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -403,7 +403,7 @@ def dispose_food_sample(
 # ═══════════════════════════════════════════════════════════════════════════
 
 @router.post("/food-waste", response_model=Dict[str, Any],
-             dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+             dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def create_food_waste_report(
     body: FoodWasteCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -441,7 +441,7 @@ def create_food_waste_report(
 
 
 @router.get("/food-waste-targets", response_model=Dict[str, Any],
-            dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+            dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def get_food_waste_targets(
     target_date: date = Query(...),
     current_user: UserInDB = Depends(get_current_user),

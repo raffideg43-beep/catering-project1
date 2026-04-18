@@ -19,7 +19,7 @@ router = APIRouter(prefix="/employees", tags=["hr"])
 
 # ─── Job Positions ────────────────────────────────────────────────────────────
 
-@router.get("/positions", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.get("/positions", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def list_job_positions(
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -54,7 +54,7 @@ def list_job_positions(
     }
 
 
-@router.post("/positions", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("/positions", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def create_job_position(
     body: JobPositionCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -98,7 +98,7 @@ def create_job_position(
     return {"success": True, "data": data[0]}
 
 
-@router.put("/positions/{position_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.put("/positions/{position_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def update_job_position(
     position_id: str,
     body: JobPositionUpdate,
@@ -131,7 +131,7 @@ def update_job_position(
 
 # ─── Employees ────────────────────────────────────────────────────────────────
 
-@router.get("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.get("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def list_employees(
     is_active: bool = Query(True),
     current_user: UserInDB = Depends(get_current_user),
@@ -168,7 +168,7 @@ def list_employees(
     }
 
 
-@router.post("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def create_employee(
     body: EmployeeCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -190,7 +190,7 @@ def create_employee(
     return {"success": True, "data": data[0]}
 
 
-@router.put("/{employee_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.put("/{employee_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def update_employee(
     employee_id: str,
     body: EmployeeUpdate,

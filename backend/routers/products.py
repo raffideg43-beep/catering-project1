@@ -221,7 +221,7 @@ def update_product(
     return {"success": True, "data": ProductResponse(**data[0])}
 
 
-@router.delete("/{product_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "kasir"]))])
+@router.delete("/{product_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "akuntan"]))])
 def delete_product(
     product_id: str,
     current_user: UserInDB = Depends(get_current_user),

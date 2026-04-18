@@ -23,39 +23,40 @@ import {
 } from "lucide-react";
 
 type NavItem = 
-  | { type: "divider", label: string }
-  | { href: string; icon: React.ReactNode; label: string; children?: { href: string; label: string; icon?: React.ReactNode }[] };
+  | { type: "divider", label: string, allowedRoles?: string[] }
+  | { href: string; icon: React.ReactNode; label: string; allowedRoles?: string[]; children?: { href: string; label: string; icon?: React.ReactNode }[] };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", icon: <Home className="w-5 h-5" />, label: "Dashboard" },
+  { href: "/dashboard", icon: <Home className="w-5 h-5" />, label: "Dashboard", allowedRoles: ["owner", "admin", "akuntan", "gizi"] },
   
-  { type: "divider", label: "OPERASIONAL" },
-  { href: "/dapur", icon: <UtensilsCrossed className="w-5 h-5" />, label: "Dapur & Resep (BOM)" },
-  { href: "/pembukuan", icon: <BookOpen className="w-5 h-5" />, label: "Pembukuan" },
-  { href: "/mbg", icon: <Package className="w-5 h-5" />, label: "MBG Penyerahan" },
+  { type: "divider", label: "OPERASIONAL", allowedRoles: ["owner", "admin", "akuntan", "gizi"] },
+  { href: "/dapur", icon: <UtensilsCrossed className="w-5 h-5" />, label: "Dapur & Resep (BOM)", allowedRoles: ["owner", "admin", "gizi"] },
+  { href: "/pembukuan", icon: <BookOpen className="w-5 h-5" />, label: "Pembukuan", allowedRoles: ["owner", "admin", "akuntan"] },
+  { href: "/mbg", icon: <Package className="w-5 h-5" />, label: "MBG Penyerahan", allowedRoles: ["owner", "admin", "akuntan", "gizi"] },
   { 
     href: "/stok", 
     icon: <Package className="w-5 h-5" />, 
     label: "Stok Barang", 
+    allowedRoles: ["owner", "admin", "akuntan"],
     children: [
       { href: "/stok", label: "Stok Utama", icon: <Package className="w-4 h-4" /> }, 
       { href: "/stok/riwayat", label: "Riwayat Perubahan", icon: <FileClock className="w-4 h-4" /> }
     ] 
   },
-  { href: "/compliance", icon: <ClipboardCheck className="w-5 h-5" />, label: "Kepatuhan & Dokumen" },
+  { href: "/compliance", icon: <ClipboardCheck className="w-5 h-5" />, label: "Kepatuhan & Dokumen", allowedRoles: ["owner", "admin", "gizi"] },
   
-  { type: "divider", label: "KEUANGAN" },
-  { href: "/keuangan", icon: <CircleDollarSign className="w-5 h-5" />, label: "Piutang & Hutang" },
-  { href: "/anggaran", icon: <PieChart className="w-5 h-5" />, label: "Anggaran Dasar" },
+  { type: "divider", label: "KEUANGAN", allowedRoles: ["owner", "admin", "akuntan"] },
+  { href: "/keuangan", icon: <CircleDollarSign className="w-5 h-5" />, label: "Piutang & Hutang", allowedRoles: ["owner", "admin", "akuntan"] },
+  { href: "/anggaran", icon: <PieChart className="w-5 h-5" />, label: "Anggaran Dasar", allowedRoles: ["owner", "admin", "akuntan"] },
   
-  { type: "divider", label: "SDM" },
-  { href: "/karyawan", icon: <Users className="w-5 h-5" />, label: "Karyawan & Staff" },
+  { type: "divider", label: "SDM", allowedRoles: ["owner", "admin", "akuntan"] },
+  { href: "/karyawan", icon: <Users className="w-5 h-5" />, label: "Karyawan & Staff", allowedRoles: ["owner", "admin", "akuntan"] },
   
-  { type: "divider", label: "ANALITIK" },
-  { href: "/insights", icon: <LineChart className="w-5 h-5" />, label: "Insights & Harga" },
+  { type: "divider", label: "ANALITIK", allowedRoles: ["owner", "admin", "akuntan"] },
+  { href: "/insights", icon: <LineChart className="w-5 h-5" />, label: "Insights & Harga", allowedRoles: ["owner", "admin", "akuntan"] },
   
-  { type: "divider", label: "LAINNYA" },
-  { href: "/settings", icon: <Settings className="w-5 h-5" />, label: "Pengaturan Sistem" },
+  { type: "divider", label: "LAINNYA", allowedRoles: ["owner", "admin"] },
+  { href: "/settings", icon: <Settings className="w-5 h-5" />, label: "Pengaturan Sistem", allowedRoles: ["owner", "admin"] },
 ];
 
 const Sidebar = ({ 
@@ -63,11 +64,13 @@ const Sidebar = ({
   collapsed,
   setCollapsed,
   pathname,
+  userRole,
 }: { 
   mobile?: boolean;
   collapsed: boolean;
   setCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void;
   pathname: string;
+  userRole: string;
 }) => {
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -95,7 +98,7 @@ const Sidebar = ({
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-base font-bold text-gray-900 tracking-tight truncate leading-tight">MBG Catering</h1>
-              <p className="text-[11px] font-semibold text-blue-600 tracking-wider uppercase mt-0.5">Administrator</p>
+              <p className="text-[11px] font-semibold text-blue-600 tracking-wider uppercase mt-0.5">{userRole || "Administrator"}</p>
             </div>
           </div>
         ) : (
@@ -117,7 +120,7 @@ const Sidebar = ({
 
       {/* Navigation Scroll Area */}
       <nav className="flex-1 py-4 px-4 overflow-y-auto overflow-x-hidden no-scrollbar relative z-10 space-y-1">
-        {NAV_ITEMS.map((item, index) => {
+        {NAV_ITEMS.filter(item => !item.allowedRoles || item.allowedRoles.includes(userRole)).map((item, index) => {
           if ("type" in item && item.type === "divider") {
             if (collapsed && !mobile) return <div key={`div-${index}`} className="my-5 border-b border-gray-100 w-8 mx-auto" />;
             return (
@@ -200,12 +203,24 @@ export default function DashboardLayout({
   const [isReady, setIsReady] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userRole, setUserRole] = useState("owner");
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login");
-    }
-    setIsReady(true);
+    const initAuth = async () => {
+      if (!isAuthenticated()) {
+        router.push("/login");
+        return;
+      }
+      try {
+        const { apiGet } = await import("@/lib/api");
+        const res = await apiGet("/auth/me");
+        setUserRole(res.data.user.role);
+      } catch (e) {
+        console.error("Failed to load user role", e);
+      }
+      setIsReady(true);
+    };
+    initAuth();
   }, [router]);
 
   // Close mobile sidebar on route change
@@ -241,7 +256,7 @@ export default function DashboardLayout({
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex flex-col h-[100dvh]">
-        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} pathname={pathname} />
+        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} pathname={pathname} userRole={userRole} />
         {/* Logout / User Area */}
         <div className="p-4 border-t border-gray-100 relative z-10 shrink-0 bg-gray-50/50 w-full">
           <button
@@ -263,7 +278,7 @@ export default function DashboardLayout({
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 h-full z-50 flex flex-col w-72 bg-white">
-            <Sidebar mobile={true} collapsed={false} setCollapsed={setCollapsed} pathname={pathname} />
+            <Sidebar mobile={true} collapsed={false} setCollapsed={setCollapsed} pathname={pathname} userRole={userRole} />
             <div className="p-4 border-t border-gray-100 relative z-10 shrink-0 bg-gray-50/50">
               <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 px-3 py-2.5 rounded-xl font-medium text-red-600 hover:bg-red-50 focus:ring-2 focus:ring-red-100 active:bg-red-100 outline-none transition-all group">
                 <LogOut className="w-5 h-5 text-red-500 group-hover:text-red-700 transition-colors shrink-0" />

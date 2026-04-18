@@ -14,7 +14,7 @@ from models.user import LoginRequest, TokenResponse, UserCreate, UserInDB, UserR
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-VALID_ROLES = {"owner", "admin", "kasir", "viewer", "driver"}
+VALID_ROLES = {"owner", "admin", "akuntan", "gizi", "viewer", "driver"}
 
 
 def _build_success(data: Any) -> Dict[str, Any]:

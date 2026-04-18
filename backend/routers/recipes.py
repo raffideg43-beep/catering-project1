@@ -58,7 +58,7 @@ def list_recipes(current_user: UserInDB = Depends(get_current_user)):
     }
 
 
-@router.post("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def create_recipe(
     body: RecipeCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -135,7 +135,7 @@ def create_recipe(
     return {"success": True, "data": data[0]}
 
 
-@router.put("/{recipe_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.put("/{recipe_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def update_recipe(
     recipe_id: str,
     body: RecipeUpdate,
@@ -179,7 +179,7 @@ def update_recipe(
     return {"success": True, "data": data[0]}
 
 
-@router.delete("/{recipe_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.delete("/{recipe_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def delete_recipe(
     recipe_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -354,7 +354,7 @@ def list_components(current_user: UserInDB = Depends(get_current_user)):
     return {"success": True, "data": result, "total": len(result)}
 
 
-@router.post("/components", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("/components", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def create_component(
     body: ComponentCreate,
     current_user: UserInDB = Depends(get_current_user),
@@ -378,7 +378,7 @@ def create_component(
     return {"success": True, "data": ComponentResponse(**data[0], items=[])}
 
 
-@router.put("/components/{component_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.put("/components/{component_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def update_component(
     component_id: str,
     body: ComponentUpdate,
@@ -412,7 +412,7 @@ def update_component(
     return {"success": True, "data": data[0]}
 
 
-@router.delete("/components/{component_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.delete("/components/{component_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def delete_component(
     component_id: str,
     current_user: UserInDB = Depends(get_current_user),
@@ -440,7 +440,7 @@ def delete_component(
     return {"success": True, "message": "Komponen dihapus"}
 
 
-@router.post("/components/{component_id}/items", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("/components/{component_id}/items", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def add_component_item(
     component_id: str,
     body: ComponentItemCreate,
@@ -494,7 +494,7 @@ def add_component_item(
     return {"success": True, "data": data[0]}
 
 
-@router.delete("/components/{component_id}/items/{item_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.delete("/components/{component_id}/items/{item_id}", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def delete_component_item(
     component_id: str,
     item_id: str,
@@ -512,7 +512,7 @@ def delete_component_item(
 # ATTACH COMPONENT TO MENU
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/attach-component", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin"]))])
+@router.post("/attach-component", response_model=Dict[str, Any], dependencies=[Depends(require_role(["owner", "admin", "gizi"]))])
 def attach_component(
     body: AttachComponentRequest,
     current_user: UserInDB = Depends(get_current_user),
