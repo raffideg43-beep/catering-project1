@@ -9,18 +9,18 @@ export default function KaryawanPage() {
   const [activeTab, setActiveTab] = useState<Tab>("Karyawan");
 
   return (
-    <div className="animate-in mt-2 max-w-7xl mx-auto pb-20">
-      <div className="flex items-center justify-between pt-2">
+    <div className="animate-in max-w-7xl mx-auto pb-20">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
             Karyawan & HR
           </h1>
-          <p className="text-gray-500 font-medium text-sm mt-1">Kelola data pegawai, absensi, dan penggajian</p>
+          <p className="text-gray-500 font-medium text-sm">Kelola data pegawai, absensi, dan penggajian</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-2 mt-4">
+      <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 mb-2 mt-2">
         <div className="flex space-x-8 px-2 overflow-x-auto no-scrollbar">
         {["Karyawan", "Jabatan", "Absensi", "Penggajian"].map((tab) => (
           <button

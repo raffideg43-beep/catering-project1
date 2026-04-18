@@ -19,10 +19,10 @@ export function PageHeader({
     breadcrumbs,
 }: PageHeaderProps) {
     return (
-        <div className="mb-2 animate-in">
+        <div className="mb-0 animate-in">
             {/* Optional Breadcrumbs or Back button */}
             {(backHref || breadcrumbs) && (
-                 <nav className="flex items-center text-sm text-gray-500 mb-3 sm:mb-4 gap-1">
+                 <nav className="flex items-center text-sm text-gray-500 mb-2 gap-1">
                      {backHref && (
                         <a href={backHref} className="inline-flex items-center gap-1 hover:text-blue-600 transition-colors font-medium">
                             ← {backLabel}

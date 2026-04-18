@@ -319,7 +319,7 @@ export default function DashboardLayout({
 
         {/* Content Area */}
         <div className="flex-1 overflow-x-hidden overflow-y-auto bg-[#fafafa]">
-          <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full animate-in">
+          <div className="p-4 sm:px-6 sm:pt-2 sm:pb-6 lg:px-8 lg:pt-4 lg:pb-8 max-w-[1600px] mx-auto w-full animate-in">
             {children}
           </div>
         </div>
