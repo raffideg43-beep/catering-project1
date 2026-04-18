@@ -589,7 +589,7 @@ function AnggaranTabs() {
         <div className="space-y-6 sm:space-y-8 max-w-6xl mx-auto pb-20 animate-in">
             <PageHeader title="📊 Keuangan & Anggaran" subtitle="Pantau realisasi anggaran dan riwayat kas" />
 
-            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 mb-4 mt-2">
+            <div className="border-b border-gray-200/50 sticky top-0 lg:-top-4 bg-gray-50/80 backdrop-blur-md z-10 mb-4 mt-2">
                 <div className="flex space-x-8 px-2">
                     <button onClick={() => setTab("overview")}
                         className={`px-4 py-3 font-semibold border-b-[3px] transition-all duration-200 ${

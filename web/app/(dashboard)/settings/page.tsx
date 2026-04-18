@@ -34,7 +34,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="sticky top-16 z-10 pt-1 pb-1 mt-2 bg-gray-50/80 backdrop-blur-md">
+      <div className="sticky top-0 lg:-top-4 z-10 pt-1 pb-1 mt-2 bg-gray-50/80 backdrop-blur-md">
         <div className="flex gap-2 bg-white/70 backdrop-blur-xl rounded-2xl p-2 overflow-x-auto flex-nowrap no-scrollbar border border-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
           {tabs.map((tab) => (
             <button

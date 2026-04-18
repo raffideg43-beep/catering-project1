@@ -733,7 +733,7 @@ function InsightsTabs() {
         <div className="max-w-6xl mx-auto pb-20 animate-in mt-2">
             <PageHeader title="📈 Insights & AI Analisis" />
 
-            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-2 mt-4">
+            <div className="border-b border-gray-200/50 sticky top-0 lg:-top-4 bg-gray-50/80 backdrop-blur-md z-10 pt-2 mb-2 mt-4">
                 <div className="flex space-x-8 px-2">
                     <button
                         onClick={() => setTab("harga")}

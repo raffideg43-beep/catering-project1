@@ -338,7 +338,7 @@ function KeuanganTabs() {
             <PageHeader title="💳 Piutang & Hutang" />
 
             {/* Tab Navigation */}
-            <div className="border-b border-gray-200/50 sticky top-16 bg-gray-50/80 backdrop-blur-md z-10 mb-2 mt-2">
+            <div className="border-b border-gray-200/50 sticky top-0 lg:-top-4 bg-gray-50/80 backdrop-blur-md z-10 mb-2 mt-2">
                 <div className="flex space-x-8 px-2">
                     <button
                         onClick={() => setTab("piutang")}
