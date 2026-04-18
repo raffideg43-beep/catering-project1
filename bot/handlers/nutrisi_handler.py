@@ -51,8 +51,24 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     menu_name = today_data["menu_name"]
-    nut = today_data.get("nutrition", {})
-    issues = today_data.get("issues", [])
+    nut_info = today_data.get("nutrition") or {}
+    nut_totals = nut_info.get("totals", {})
+
+    energi = nut_totals.get("calories", 0.0)
+    protein = nut_totals.get("proteins", 0.0)
+    lemak = nut_totals.get("fat", 0.0)
+    karbo = nut_totals.get("carbohydrate", 0.0)
+    berat = nut_totals.get("total_gram", 0.0)
+    porsi_sayur = nut_info.get("sayur_percentage", 0.0)
+    is_balanced = nut_info.get("is_balanced", False)
+
+    issues = []
+    if energi < 400:
+        issues.append("Energi sangat rendah (< 400 kkal)")
+    if protein < 12:
+        issues.append("Kandungan protein rendah (< 12 gr)")
+    if not is_balanced:
+        issues.append(f"Porsi sayur kurang dari 30% (Saat ini: {porsi_sayur}%)")
     
     lines = [
         f"🩺 <b>Status Gizi MBG Hari Ini</b>",
@@ -60,15 +76,14 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🍽️ Menu: <b>{menu_name}</b>",
         "",
         "📊 <b>Kandungan per Porsi:</b>",
-        f"• Energi: {nut.get('energi', 0):.1f} kkal",
-        f"• Protein: {nut.get('protein', 0):.1f} gr",
-        f"• Lemak: {nut.get('lemak', 0):.1f} gr",
-        f"• Karbo: {nut.get('karbo', 0):.1f} gr",
-        f"• Netto Bahan: {nut.get('weight', 0):.1f} gr",
+        f"• Energi: {energi:.1f} kkal",
+        f"• Protein: {protein:.1f} gr",
+        f"• Lemak: {lemak:.1f} gr",
+        f"• Karbo: {karbo:.1f} gr",
+        f"• Netto Bahan: {berat:.1f} gr",
         ""
     ]
 
-    porsi_sayur = nut.get("porsi_sayur", 0)
     lines.append(f"🥬 <b>Porsi Sayur:</b> {porsi_sayur:.0f}%")
 
     if issues:
