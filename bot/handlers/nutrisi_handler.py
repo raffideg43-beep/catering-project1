@@ -38,12 +38,13 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         resp = await api.get("/nutrition/calendar", token=token, params={"year": today_dt.year, "month": today_dt.month})
-        data = resp.get("data", [])
+        calendar_data = resp.get("data", {})
+        days_list = calendar_data.get("days", [])
     except Exception as e:
         await loading_msg.edit_text(format_error(f"Gagal mengambil kalender gizi: {e}"))
         return
 
-    today_data = next((d for d in data if d["date"] == today_str), None)
+    today_data = next((d for d in days_list if d["date"] == today_str), None)
     
     if not today_data or not today_data.get("menu_name"):
         await loading_msg.edit_text("📅 Hari ini tidak ada menu tersimpan.")
