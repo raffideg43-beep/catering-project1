@@ -239,21 +239,26 @@ export default function DashboardPage() {
                     {budget ? (
                         <CategoryPieChart data={(() => {
                            const b = budget.juknis_breakdown || {};
-                           const bPangan = parseFloat(b.bahan_pangan?.amount || "0");
-                           const bOps = parseFloat(b.operasional?.amount || "0");
-                           // Extract from budget realisasi directly
-                           const bInsentif = parseFloat(budget.realisasi?.insentif || "0");
-                           // Ops in breakdown usually contains insentif + ops. So separate them if possible. Let's rely on realisasi exactly.
                            const rs = budget.realisasi || {};
                            const sumPangan = Object.keys(rs).reduce((s, k) => (k !== "operasional" && k !== "insentif" && k !== "sewa") ? s + parseFloat(rs[k]) : s, 0);
                            const sumOps = parseFloat(rs.operasional || "0");
                            const sumInsentif = parseFloat(rs.insentif || "0");
+                           
+                           const pagu = parseFloat(budget.pagu_amount || "0");
+                           const total_spent = sumPangan + sumOps + sumInsentif;
+                           const sisa = Math.max(pagu - total_spent, 0);
 
-                           return [
-                              { name: "Bahan Pangan MBG", value: sumPangan },
-                              { name: "Insentif Dapur", value: sumInsentif },
-                              { name: "Operasional", value: sumOps },
-                           ].filter(x => x.value > 0);
+                           const result = [
+                              { name: "Bahan Pangan MBG", value: sumPangan, color: "#3B82F6" },
+                              { name: "Insentif Dapur", value: sumInsentif, color: "#F59E0B" },
+                              { name: "Operasional", value: sumOps, color: "#8B5CF6" },
+                           ];
+                           
+                           if (pagu > 0) {
+                               result.push({ name: "Sisa Pagu (Aman)", value: sisa, color: "#E5E7EB" });
+                           }
+                           
+                           return result.filter(x => x.value > 0);
                         })()} />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Memuat data pagu...</div>
