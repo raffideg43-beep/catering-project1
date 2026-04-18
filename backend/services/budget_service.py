@@ -157,8 +157,9 @@ class BudgetService:
         # Realisasi operasional: ops costs + gaji + nota non-bahan
         real_ops_base = realisasi.get("operasional", Decimal("0"))
         real_gaji = realisasi.get("insentif", Decimal("0"))
+        # Sum transactions that are strictly NOT bahan_pangan and NOT operasional, because operasional was already in real_ops_base.
         ops_from_trx = sum(_d(t.get("total")) for t in trx_rows 
-                          if str(t.get("juknis_category") or "").lower() != "bahan_pangan")
+                          if str(t.get("juknis_category") or "").lower() not in ["bahan_pangan", "operasional"])
         realisasi["operasional"] = real_ops_base + real_gaji + ops_from_trx
 
         def _breakdown(cat_key: str, target: Decimal, label: str):
