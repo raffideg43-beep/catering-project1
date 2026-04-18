@@ -155,25 +155,31 @@ def get_daily_report(
     # ─── Stock alerts ─────────────────────────────────────────────────
     prod_resp = (
         supabase.table("products")
-        .select("name, stock_qty, stock_min, unit")
+        .select("name, stock_qty, stock_min, unit, conversion_factor, display_unit")
         .eq("tenant_id", tid)
         .eq("is_active", True)
         .execute()
     )
     prod_rows = getattr(prod_resp, "data", None) or []
-    stock_alerts = [
-        {
-            "product_name": p["name"],
-            "stock_qty": float(p.get("stock_qty") or 0),
-            "stock_min": float(p.get("stock_min") or 0),
-            "unit": p.get("unit", ""),
-            "deficit": float(max(
-                _d(p.get("stock_min")) - _d(p.get("stock_qty")), Decimal("0")
-            )),
-        }
-        for p in prod_rows
-        if _d(p.get("stock_qty")) < _d(p.get("stock_min"))
-    ]
+    stock_alerts = []
+    for p in prod_rows:
+        stk = _d(p.get("stock_qty") or 0)
+        stk_min = _d(p.get("stock_min") or 0)
+        if stk < stk_min:
+            factor = float(p.get("conversion_factor") or 1)
+            unit_disp = p.get("display_unit") or p.get("unit") or ""
+            
+            stk_disp = float(stk / Decimal(str(factor))) if factor else float(stk)
+            min_disp = float(stk_min / Decimal(str(factor))) if factor else float(stk_min)
+            deficit_disp = float(max(min_disp - stk_disp, 0.0))
+            
+            stock_alerts.append({
+                "product_name": p["name"],
+                "stock_qty": stk_disp,
+                "stock_min": min_disp,
+                "unit": unit_disp,
+                "deficit": deficit_disp,
+            })
 
     return {
         "success": True,
