@@ -8,11 +8,20 @@ import { TabAlokasi } from "./components/TabAlokasi";
 import { TabTelegram } from "./components/TabTelegram";
 import { TabImport } from "./components/TabImport";
 import { TabUsers } from "./components/TabUsers";
+import { clearToken } from "@/lib/auth";
+import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 
 type TabType = "identitas" | "sekolah" | "supplier" | "alokasi" | "telegram" | "import" | "users";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("identitas");
+
+  const handleLogout = () => {
+    clearToken();
+    router.push("/login");
+  };
 
   const tabs: { id: TabType; label: string }[] = [
     { id: "identitas", label: "Identitas SPPG" },
@@ -26,11 +35,20 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-7xl mx-auto pb-20 animate-in">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-          Pengaturan Sistem
-        </h1>
-        <p className="text-gray-500 font-medium text-sm">Kelola data master dan konfigurasi aplikasi MBG.</p>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
+            Pengaturan Sistem
+          </h1>
+          <p className="text-gray-500 font-medium text-sm">Kelola data master dan konfigurasi aplikasi MBG.</p>
+        </div>
+        
+        <button 
+          onClick={handleLogout} 
+          className="flex items-center justify-center gap-2 bg-red-50 text-red-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-100 transition-colors border border-red-100 shadow-sm self-start"
+        >
+          <LogOut className="w-4 h-4" /> Logout / Keluar
+        </button>
       </div>
 
       {/* Tab Navigation */}

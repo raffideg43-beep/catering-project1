@@ -89,10 +89,10 @@ export default function DashboardPage() {
         setError(null);
         try {
             const [d, m, b, t, empList] = await Promise.all([
-                apiGet("/reports/daily"),
-                apiGet("/reports/monthly"),
-                apiGet("/budget/summary"),
-                apiGet("/transactions", { limit: 10, sort: "created_at_desc" }),
+                apiGet("/reports/daily").catch(() => null),
+                apiGet("/reports/monthly").catch(() => null),
+                apiGet("/budget/summary").catch(() => null),
+                apiGet("/transactions", { limit: 10, sort: "created_at_desc" }).catch(() => null),
                 apiGet("/employees?is_active=true").catch(() => null),
             ]);
             setDaily(d?.data ?? null);
