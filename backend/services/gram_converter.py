@@ -177,13 +177,13 @@ class GramConverterService:
                     "calories": nutrition_data.get("calories", 0),
                     "proteins": nutrition_data.get("proteins", 0),
                     "fat": nutrition_data.get("fat", 0),
-                    "carbohydrates": nutrition_data.get("carbohydrates", 0),
+                    "carbohydrates": nutrition_data.get("carbohydrate", 0),
                 },
                 "total_nutrition": {
                     "calories": round(factor * float(nutrition_data.get("calories", 0) or 0), 2),
                     "proteins": round(factor * float(nutrition_data.get("proteins", 0) or 0), 2),
                     "fat": round(factor * float(nutrition_data.get("fat", 0) or 0), 2),
-                    "carbohydrates": round(factor * float(nutrition_data.get("carbohydrates", 0) or 0), 2),
+                    "carbohydrates": round(factor * float(nutrition_data.get("carbohydrate", 0) or 0), 2),
                 },
             })
             
