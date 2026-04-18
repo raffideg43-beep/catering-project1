@@ -430,8 +430,8 @@ function WasteTab() {
       });
       // Update local targets state
       setTargets(targets.map(t => t.school_id === target.school_id ? { ...t, is_reported: true, report_id: res.data.id } : t));
-      // Add to reports history
-      setReports([res.data, ...reports]);
+      // Add to reports history with injected school name
+      setReports([{ ...res.data, schools: { name: target.school_name } }, ...reports]);
       setActiveSchoolId(null);
       setForm({ portions_consumed: "", comstock_score: 3, waste_reason: "" });
     } catch (e: any) { 
@@ -478,7 +478,21 @@ function WasteTab() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-gray-700 mb-1 block">Skor Comstock</label>
-                      <select value={form.comstock_score} onChange={(e) => setForm({ ...form, comstock_score: +e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm bg-white">
+                      <select 
+                        value={form.comstock_score} 
+                        onChange={(e) => {
+                          const score = +e.target.value;
+                          let sisa_pct = 0;
+                          if (score === 1) sisa_pct = 0;
+                          else if (score === 2) sisa_pct = 0.125;
+                          else if (score === 3) sisa_pct = 0.375;
+                          else if (score === 4) sisa_pct = 0.625;
+                          else if (score === 5) sisa_pct = 0.875;
+                          const consumed = Math.round(t.portions_sent * (1 - sisa_pct));
+                          setForm({ ...form, comstock_score: score, portions_consumed: consumed.toString() });
+                        }} 
+                        className="w-full border rounded px-2 py-1.5 text-sm bg-white"
+                      >
                         <option value={1}>1 ⭐ Habis (0%)</option>
                         <option value={2}>2 ⭐ Sisa &lt;25%</option>
                         <option value={3}>3 ⭐ Sisa 25-50%</option>
