@@ -26,7 +26,8 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     token = get_token(context)
     api = get_api_client(settings.backend_url)
-    today_str = date.today().isoformat()
+    today_dt = date.today()
+    today_str = today_dt.isoformat()
 
     loading_msg = None
     if update.callback_query:
@@ -36,7 +37,7 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loading_msg = await update.message.reply_text("⏳ Memeriksa data gizi hari ini...")
 
     try:
-        resp = await api.get("/nutrition/calendar", token=token, params={"target_date": today_str})
+        resp = await api.get("/nutrition/calendar", token=token, params={"year": today_dt.year, "month": today_dt.month})
         data = resp.get("data", [])
     except Exception as e:
         await loading_msg.edit_text(format_error(f"Gagal mengambil kalender gizi: {e}"))
