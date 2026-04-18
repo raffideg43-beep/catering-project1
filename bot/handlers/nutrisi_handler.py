@@ -13,32 +13,39 @@ logger = logging.getLogger(__name__)
 
 async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Pengecekan Nutrisi & Kalori hari ini."""
+    msg = update.effective_message
+    
     if not is_authenticated(context):
-        await update.message.reply_text("❌ Silakan /start dulu untuk login.")
+        await msg.reply_text("❌ Silakan /start dulu untuk login.")
         return
 
     role = get_role(context)
     if role not in ["owner", "admin"]:
-        await update.message.reply_text("⛔ Akses Ditolak. Fitur ini hanya untuk Owner/Admin.")
+        await msg.reply_text("⛔ Akses Ditolak. Fitur ini hanya untuk Owner/Admin.")
         return
 
     token = get_token(context)
     api = get_api_client(settings.backend_url)
     today_str = date.today().isoformat()
 
-    await update.message.reply_text("⏳ Memeriksa data gizi hari ini...")
+    loading_msg = None
+    if update.callback_query:
+        await update.callback_query.answer()
+        loading_msg = await update.callback_query.edit_message_text("⏳ Memeriksa data gizi hari ini...")
+    else:
+        loading_msg = await update.message.reply_text("⏳ Memeriksa data gizi hari ini...")
 
     try:
         resp = await api.get("/nutrition/calendar", token=token, params={"target_date": today_str})
         data = resp.get("data", [])
     except Exception as e:
-        await update.message.reply_text(format_error(f"Gagal mengambil kalender gizi: {e}"))
+        await loading_msg.edit_text(format_error(f"Gagal mengambil kalender gizi: {e}"))
         return
 
     today_data = next((d for d in data if d["date"] == today_str), None)
     
     if not today_data or not today_data.get("menu_name"):
-        await update.message.reply_text("📅 Hari ini tidak ada menu tersimpan.")
+        await loading_msg.edit_text("📅 Hari ini tidak ada menu tersimpan.")
         return
 
     menu_name = today_data["menu_name"]
@@ -73,19 +80,11 @@ async def nutrisi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📋 Menu Utama", callback_data="main_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            "\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text(
-            "\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
+    await loading_msg.edit_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
 
 async def cek_gizi_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await nutrisi_command(update, context)
