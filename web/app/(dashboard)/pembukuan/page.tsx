@@ -384,7 +384,7 @@ export default function PembukuanPage() {
             {monthly && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-4">
                     <StatCard title="Total Transaksi" value={`${monthly.expenses.count} nota`} icon="🧾" />
-                    <StatCard title="Total Pengeluaran" value={formatRp(monthly.expenses.total)} icon="💸" />
+                    <StatCard title="Total Belanja Struk/Kas" value={formatRp(monthly.expenses.total)} subtitle="*Belum termasuk target Gaji/Ops" icon="💸" />
                     <StatCard title="Hutang Outstanding" value={formatRp(monthly.expenses.hutang_outstanding)} icon="📋" />
                     <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-gray-100 p-6 flex flex-col items-center justify-center gap-2 hover:-translate-y-0.5 transition-all">
                         <span className="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-1">Status Laporan</span>
