@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class SupplierCreate(BaseModel):
     name: str
-    category: str
+    category: Optional[str] = "general"
     is_pkp: bool
     address: Optional[str] = None
     phone: Optional[str] = None
@@ -25,7 +25,7 @@ class SupplierResponse(BaseModel):
     id: str
     tenant_id: str
     name: str
-    category: str
+    category: Optional[str] = "general"
     is_pkp: bool
     address: Optional[str] = None
     phone: Optional[str] = None
