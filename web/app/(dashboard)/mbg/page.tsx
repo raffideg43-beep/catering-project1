@@ -187,7 +187,7 @@ export default function MbgPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard title="Total Porsi" value={`${monthly.mbg?.total_portions?.toLocaleString("id-ID")} porsi`} icon="🍱" />
                     <StatCard title="Hari Kirim" value={`${monthly.mbg?.total_delivery_days} hari`} icon="📅" />
-                    <StatCard title="Gross Revenue" value={formatRp(monthly.mbg?.revenue_gross)} icon="💰" />
+                    <StatCard title="Tagihan Terbentuk" value={formatRp(monthly.mbg?.revenue_gross)} icon="💰" />
                     <StatCard title="Rata-rata/Hari" value={`${monthly.mbg?.avg_portions_per_day} porsi`} icon="📊" />
                 </div>
             )}

@@ -376,6 +376,8 @@ def get_monthly_report(
         supabase.table("receivables")
         .select("amount")
         .eq("tenant_id", tid)
+        .gte("created_at", first.isoformat())
+        .lte("created_at", last.isoformat())
         .execute()
     )
     recv_rows = getattr(recv_resp, "data", None) or []

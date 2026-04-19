@@ -157,7 +157,7 @@ export default function DashboardPage() {
                     icon="🍱"
                 />
                 <StatCard
-                    title="Pendapatan Bulan Ini"
+                    title="Tagihan Negara (Gross)"
                     value={monthly ? formatRp(monthly.mbg.revenue_calculated || monthly.mbg.revenue_gross) : "—"}
                     subtitle={`${monthly?.mbg.total_portions.toLocaleString("id-ID") ?? 0} total porsi`}
                     icon="💰"
@@ -197,9 +197,9 @@ export default function DashboardPage() {
             {/* ─── Stat Cards (Baris 2) ─ */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
                 <StatCard
-                    title="Total Piutang"
+                    title="Piutang Bahan Pangan"
                     value={monthly ? formatRp(monthly.piutang_total || "0") : "—"}
-                    subtitle="Receivables"
+                    subtitle="Belum masuk kas"
                     icon="📋"
                 />
                 <StatCard

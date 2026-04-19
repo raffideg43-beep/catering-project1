@@ -1296,7 +1296,7 @@ class ExportService:
         piutang = float(sum(_d(r.get("amount")) for r in data.get("receivables", [])))
         hutang = float(sum(_d(p.get("amount")) for p in data.get("payables", [])))
 
-        ws.cell(row, 1, "Total Piutang (Receivables)"); ws.cell(row, 2, piutang).number_format = ACCOUNTING_FORMAT
+        ws.cell(row, 1, "Piutang Cair Bahan Pangan (Aset)"); ws.cell(row, 2, piutang).number_format = ACCOUNTING_FORMAT
         ws.cell(row, 1).font = lbl_font; ws.cell(row, 2).font = val_font
         ws.cell(row, 1).border = border_all; ws.cell(row, 2).border = border_all
         row += 1
