@@ -239,20 +239,22 @@ export default function DashboardPage() {
                     {budget ? (
                         <CategoryPieChart data={(() => {
                            const b = budget.juknis_breakdown || {};
-                           const rs = budget.realisasi || {};
-                           const sumPangan = Object.keys(rs).reduce((s, k) => (k !== "operasional" && k !== "insentif" && k !== "sewa") ? s + parseFloat(rs[k]) : s, 0);
-                           const sumOps = parseFloat(rs.operasional || "0");
-                           const sumInsentif = parseFloat(rs.insentif || "0");
+                           const sumPangan = parseFloat(b.bahan_pangan?.realisasi || "0");
+                           const sumOpsGaji = parseFloat(b.operasional?.realisasi || "0");
                            
                            const pagu = parseFloat(budget.pagu_amount || "0");
-                           const total_spent = sumPangan + sumOps + sumInsentif;
+                           const total_spent = parseFloat(budget.total_spent || "0");
                            const sisa = Math.max(pagu - total_spent, 0);
+
+                           const sumLainnya = Math.max(total_spent - sumPangan - sumOpsGaji, 0);
 
                            const result = [
                               { name: "Bahan Pangan MBG", value: sumPangan, color: "#3B82F6" },
-                              { name: "Insentif Dapur", value: sumInsentif, color: "#F59E0B" },
-                              { name: "Operasional", value: sumOps, color: "#8B5CF6" },
+                              { name: "Operasional & Gaji", value: sumOpsGaji, color: "#8B5CF6" },
                            ];
+                           if (sumLainnya > 0) {
+                               result.push({ name: "Biaya Lainnya", value: sumLainnya, color: "#F59E0B" });
+                           }
                            
                            if (pagu > 0) {
                                result.push({ name: "Sisa Pagu (Aman)", value: sisa, color: "#E5E7EB" });
