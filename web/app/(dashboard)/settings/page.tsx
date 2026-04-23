@@ -8,11 +8,12 @@ import { TabAlokasi } from "./components/TabAlokasi";
 import { TabTelegram } from "./components/TabTelegram";
 import { TabImport } from "./components/TabImport";
 import { TabUsers } from "./components/TabUsers";
+import { TabTips } from "./components/TabTips";
 import { clearToken } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
-type TabType = "identitas" | "sekolah" | "supplier" | "alokasi" | "telegram" | "import" | "users";
+type TabType = "identitas" | "sekolah" | "supplier" | "alokasi" | "telegram" | "import" | "users" | "tips";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function SettingsPage() {
     { id: "telegram", label: "Telegram" },
     { id: "import", label: "Import Data" },
     { id: "users", label: "👥 Tim & Akses" },
+    { id: "tips", label: "📖 Panduan" },
   ];
 
   return (
@@ -78,6 +80,7 @@ export default function SettingsPage() {
         {activeTab === "telegram" && <TabTelegram />}
         {activeTab === "import" && <TabImport />}
         {activeTab === "users" && <TabUsers />}
+        {activeTab === "tips" && <TabTips />}
       </div>
     </div>
   );
