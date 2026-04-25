@@ -15,50 +15,20 @@ def _recipe_to_grams(r: dict, prod: dict) -> float:
     """
     Convert recipe qty_needed to grams properly.
     
-    Recipe stores qty_needed in the unit specified in recipe.unit (e.g. 'gram', 'kg', 'pcs').
-    Product has conversion_factor which converts product.unit to grams.
-    
-    Rules:
-    - If recipe.unit is 'gram' or 'g' → qty_needed IS grams already
-    - If recipe.unit is 'kg' → qty_needed * 1000
-    - If recipe.unit is 'liter' or 'ml' → qty_needed * 1000 or 1
-    - If recipe.unit matches product.unit → qty_needed * product.conversion_factor
-    - Otherwise use qty_needed as-is (best effort)
+    IMPORTANT: The `recipes` table ALREADY stores `qty_needed` in the product's `base_unit`.
+    - If base_unit is 'gram' or 'ml', `qty_needed` is already in grams/ml.
+    - If base_unit is 'pcs', `qty_needed` is the number of pieces, so we multiply by `conversion_factor` (grams per pc).
     """
     qty = float(r.get("qty_needed", 0))
-    recipe_unit = (r.get("unit") or "").lower().strip()
+    base_unit = (prod.get("base_unit") or "").lower().strip()
     
-    # Direct gram/g
-    if recipe_unit in ("gram", "g", "gr"):
+    if base_unit in ("gram", "ml", "g", "gr"):
         return qty
     
-    # kg
-    if recipe_unit == "kg":
-        return qty * 1000
-    
-    # liter
-    if recipe_unit == "liter" or recipe_unit == "l":
-        return qty * 1000  # approximation: 1L ≈ 1000g for water/oil
-    
-    # ml
-    if recipe_unit in ("ml", "mililiter"):
-        return qty
-    
-    # pcs/buah/butir/siung etc — use product's conversion_factor 
-    # (which represents grams per 1 unit of the product's display unit)
-    prod_conv = float(prod.get("conversion_factor") or 1.0)
-    prod_unit = (prod.get("unit") or "").lower().strip()
-    
-    # If product unit matches recipe unit, use conversion_factor
-    if recipe_unit == prod_unit.lower():
+    if base_unit in ("pcs", "buah", "butir", "siung", "lembar", "ikat", "biji", "ekor", "batang"):
+        prod_conv = float(prod.get("conversion_factor") or 1.0)
         return qty * prod_conv
-    
-    # Fallback for pcs/buah/butir etc
-    if recipe_unit in ("pcs", "buah", "butir", "siung", "lembar", "ikat", "biji", "ekor", "batang"):
-        # conversion_factor for pcs-based products typically = grams per 1 piece
-        return qty * prod_conv
-    
-    # Ultimate fallback: assume it's already grams
+        
     return qty
 
 
